@@ -1,0 +1,14 @@
+[package]
+name = "lamina-core"
+description = "Lamina's model and command engine: meshes, a scene, STL files and the commands every front end runs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }

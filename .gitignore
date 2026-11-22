@@ -21,3 +21,6 @@ build/
 
 # Local tooling
 .claude/
+
+# Rust
+target/

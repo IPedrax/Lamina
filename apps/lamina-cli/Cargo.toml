@@ -1,0 +1,18 @@
+[package]
+name = "lamina-cli"
+description = "Lamina from the command line: scripts, conversion, slicing, and an MCP server for agents"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "lamina"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+lamina-core = { workspace = true }
+serde_json = { workspace = true }
