@@ -1,0 +1,16 @@
+[package]
+name = "lamina-slicer"
+description = "Lamina's slicer: a mesh to layers, toolpaths and G-code"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+i_overlay = "9.2.0"
+lamina-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

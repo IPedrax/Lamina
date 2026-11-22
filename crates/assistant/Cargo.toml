@@ -1,0 +1,24 @@
+[package]
+name = "lamina-assistant"
+description = "Lamina's assistant: an AI chat, on the user's own key, that manages the scene on the plate through its commands"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# `testing::Fake`, a network that is a queue of replies, for the desktop's tests too.
+testing = []
+
+[dependencies]
+lamina-core = { workspace = true }
+serde_json = { workspace = true }
+# HTTPS with rustls (ring and the Mozilla roots built in), and nothing else of ureq.
+ureq = { version = "3", default-features = false, features = ["rustls"] }
+# The folder the files sent with a message are copied into, removed as it is dropped.
+tempfile = "3"
+# The saved key's encryption.
+ring = "0.17"

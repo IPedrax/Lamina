@@ -34,4 +34,12 @@ cargo test --workspace
 
 - `crates/core`: `mesh.rs` (triangle mesh, primitives, `Transform`), `stl.rs` (read and write), `scene.rs` (objects on the plate),
   `engine.rs` (`Session`: execute, undo, script, catalog), `commands.rs` (the built-in commands).
-- `docs/`: the plan and the research. `docs/ARCHITECTURE.md` says what is ported from BIMCraft and where it comes from.
+  `bridge.rs` (what an agent may ask: execute, script, catalog; read-only access).
+- `crates/slicer`: `slice.rs` (mesh to closed loops per layer), `geom.rs` (polygon booleans, offsets, line clipping on i_overlay),
+  `print.rs` (walls, skins, infill, skirt, the G-code writer), `profile.rs` (settings, checks, `[name]` placeholders), `commands.rs`
+  (`slice`, `slicer_profile`; an app adds them with `session.register(lamina_slicer::COMMANDS)`).
+- `crates/assistant`: the AI chat, ported from BIMCraft. Notes: [crates/assistant/CLAUDE.md](crates/assistant/CLAUDE.md). The only
+  crate that may use `ureq` or `ring` (a test in `lamina-core` checks every manifest).
+- `apps/lamina-cli`: the `lamina` binary and `mcp.rs`, the MCP server.
+- `docs/`: `ARCHITECTURE.md` (what is ported from BIMCraft and what is not), `RESEARCH.md` (slicers, editors, crates, licence flags),
+  `ROADMAP.md` (the order of work and the known limits).

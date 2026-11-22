@@ -1,1 +1,47 @@
 # Lamina
+
+A 3D slicer and modelling tool for 3D printing, in pure Rust, with an AI assistant built in. You describe a part, the assistant
+models it, and Lamina slices it to G-code for a real printer.
+
+**Status: early.** A CLI and an MCP server work today: build a plate from primitives or an STL, move, rotate and scale
+objects, and slice them to Marlin-style G-code (walls, solid and sparse infill, skirt, retraction, time and filament estimates). The
+AI chat engine is ported and tested, but no window shows it yet, and there is no desktop viewport. The plan is in
+[docs/ROADMAP.md](docs/ROADMAP.md).
+
+## Try it
+
+```sh
+cargo build --release
+# Model a part and slice it
+target/release/lamina run --cmd 'add_primitive {"kind":"cylinder","radius":15,"height":12}' \
+                          --cmd 'export_mesh {"path":"part.stl"}'
+target/release/lamina slice part.stl part.gcode            # defaults: 0.4 nozzle, 0.2 layers, 220 mm plate
+target/release/lamina slice part.stl part.gcode my.json    # my.json holds only the settings that differ
+target/release/lamina run --cmd slicer_profile             # every setting and its default
+target/release/lamina commands                             # every command and its parameters
+```
+
+## How it is built
+
+Everything is a command. The CLI, scripts, the MCP server and the AI chat all go through one engine, `Session::execute`, so a
+command that fails, panics or leaves the scene invalid changes nothing, and each command's parameters are documented for agents.
+
+- `crates/core`: meshes, the scene, STL files, the command engine.
+- `crates/slicer`: layers, walls, infill, G-code, printer profiles.
+- `crates/assistant`: the AI chat (Anthropic, OpenAI, Gemini; your own key). The only crate that touches the network.
+- `apps/lamina-cli`: the `lamina` command and its MCP server (`lamina mcp`, `--read-only` to let an agent look but not change).
+
+To let an agent model for you, point your MCP client at `lamina mcp`.
+
+## Design notes
+
+Lamina reuses the design of [BIMCraft](https://github.com/IPedrax/BIMCraft), the same author's building-model tool: one command
+engine under every front end, hostile input everywhere, no panics. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) says what is
+ported from it. [docs/RESEARCH.md](docs/RESEARCH.md) is the survey of existing slicers and editors behind the roadmap.
+
+The slicer is clean-room: PrusaSlicer, OrcaSlicer, Bambu Studio and Cura are AGPL or LGPL, so Lamina follows what they document
+and never copies their code.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

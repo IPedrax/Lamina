@@ -32,3 +32,6 @@ dbg_macro = "warn"
 opt-level = 2
 [profile.dev.package.lamina-core]
 opt-level = 2
+# A key saved under a passphrase is stretched with 600,000 rounds of PBKDF2, which a debug build takes about 20 seconds over.
+[profile.dev.package.ring]
+opt-level = 3
