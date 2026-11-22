@@ -21,6 +21,13 @@ pub static COMMANDS: &[Command] = &[
         files: Files::Write,
     },
     Command {
+        id: "slice_check",
+        params: "{ids?, profile?} the same slice as `slice`, with no file written: what would print and whether it can. Returns {layers, filament_mm, print_seconds, print_time, warnings}, or an error saying what does not fit the plate (off it, below it, too tall) or what a setting must be. Use it to check a model before the user exports it",
+        run: slice_check,
+        undoable: false,
+        files: Files::None,
+    },
+    Command {
         id: "slicer_profile",
         params: "{} every profile field with its default value: the printer (bed, nozzle, start_gcode), the process (layer_height, perimeters, infill_density) and speeds, temperatures and retraction",
         run: profile,
@@ -38,9 +45,16 @@ struct Args {
     profile_path: Option<String>,
 }
 
-fn slice(s: &mut Session, p: &Value) -> Result<Value, String> {
-    let a = Args::deserialize(p).map_err(|e| format!("bad parameters: {e}"))?;
-    let mut merged = match &a.profile_path {
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Check {
+    ids: Option<Vec<u32>>,
+    profile: Option<Value>,
+}
+
+/// Slices the objects named (or all) with the profile: the file's, if any, with `over`'s fields on top.
+fn run(s: &Session, ids: Option<&[u32]>, over: Option<Value>, profile_path: Option<&str>) -> Result<print::Output, String> {
+    let mut merged = match profile_path {
         Some(file) => {
             if std::fs::metadata(file).map_err(|e| format!("{file}: {e}"))?.len() > MAX_PROFILE_FILE {
                 return Err(format!("{file} is larger than {MAX_PROFILE_FILE} bytes"));
@@ -50,22 +64,44 @@ fn slice(s: &mut Session, p: &Value) -> Result<Value, String> {
         }
         None => json!({}),
     };
-    match (&mut merged, a.profile) {
+    match (&mut merged, over) {
         (Value::Object(base), Some(Value::Object(over))) => base.extend(over),
         (_, Some(Value::Null) | None) => {}
         (_, Some(_)) => return Err("`profile` is an object".into()),
     }
     let profile = Profile::from_json(&merged)?;
-    let objects: Vec<(u32, Mesh)> = match &a.ids {
+    let objects: Vec<(u32, Mesh)> = match ids {
         Some(ids) => ids.iter().map(|&id| s.scene.get(id).map(|o| (id, o.world()))).collect::<Result<_, _>>()?,
         None => s.scene.objects.iter().map(|o| (o.id, o.world())).collect(),
     };
-    let out = print::gcode(&objects, &profile)?;
+    print::gcode(&objects, &profile)
+}
+
+/// 3725 seconds as "1h 02m".
+fn clock(seconds: f64) -> String {
+    let m = (seconds / 60.0).round() as u64;
+    if m >= 60 { format!("{}h {:02}m", m / 60, m % 60) } else { format!("{m}m") }
+}
+
+fn summary(out: &print::Output) -> Value {
+    json!({
+        "layers": out.layers, "filament_mm": out.filament_mm, "print_seconds": out.seconds.round(),
+        "print_time": clock(out.seconds), "warnings": out.warnings,
+    })
+}
+
+fn slice(s: &mut Session, p: &Value) -> Result<Value, String> {
+    let a = Args::deserialize(p).map_err(|e| format!("bad parameters: {e}"))?;
+    let out = run(s, a.ids.as_deref(), a.profile, a.profile_path.as_deref())?;
     std::fs::write(&a.path, &out.gcode).map_err(|e| format!("{}: {e}", a.path))?;
-    Ok(json!({
-        "path": a.path, "layers": out.layers, "filament_mm": out.filament_mm,
-        "print_seconds": out.seconds.round(), "warnings": out.warnings,
-    }))
+    let mut v = summary(&out);
+    v["path"] = json!(a.path);
+    Ok(v)
+}
+
+fn slice_check(s: &mut Session, p: &Value) -> Result<Value, String> {
+    let a = Check::deserialize(p).map_err(|e| format!("bad parameters: {e}"))?;
+    run(s, a.ids.as_deref(), a.profile, None).map(|out| summary(&out))
 }
 
 fn profile(_: &mut Session, _: &Value) -> Result<Value, String> {
@@ -97,6 +133,25 @@ mod tests {
         assert!(g.contains(";LAYER:49") && !g.contains(";LAYER:50"));
         assert!(r["filament_mm"].as_f64().unwrap() > 100.0);
         assert!(s.execute("slicer_profile", &json!({})).unwrap()["nozzle"] == 0.4);
+    }
+
+    #[test]
+    fn slice_check_says_what_would_print_without_writing_a_file() {
+        let mut s = session();
+        s.execute("add_primitive", &json!({"kind": "box", "size": [20, 20, 20]})).unwrap();
+        let r = s.execute("slice_check", &json!({})).unwrap();
+        assert_eq!(r["layers"], 100);
+        assert!(r["print_time"].as_str().unwrap().contains('m') && r["filament_mm"].as_f64().unwrap() > 100.0);
+        // It is not a file command, so the chat may run it, and it says why a model cannot print.
+        assert_eq!(s.find("slice_check").unwrap().files, Files::None);
+        s.execute("scale", &json!({"id": 1, "factor": 20})).unwrap();
+        assert!(s.execute("slice_check", &json!({})).unwrap_err().contains("does not fit"));
+        assert!(s.execute("slice_check", &json!({"path": "/tmp/x"})).is_err());
+    }
+
+    #[test]
+    fn a_duration_reads_as_hours_and_minutes() {
+        assert_eq!((clock(30.0), clock(1500.0), clock(3725.0)), ("1m".into(), "25m".into(), "1h 02m".into()));
     }
 
     #[test]

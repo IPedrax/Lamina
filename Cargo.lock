@@ -149,6 +149,7 @@ name = "lamina-assistant"
 version = "0.1.0"
 dependencies = [
  "lamina-core",
+ "lamina-slicer",
  "ring",
  "serde_json",
  "tempfile",

@@ -38,6 +38,10 @@ What comes from the network is hostile, and what goes out is the user's:
   because it is inside `<file name="…">`. File bytes are capped apart from the words (`MAX_FILES_TOTAL`, `Msg::file_bytes`).
 - `Reply` carries `thinking` (the provider's summary, shown apart from the answer; `raw` is still what goes back) and `usage` (`Usage`,
   what the provider counted: the chat hands it over with `take_usage`). A new provider reads both.
+- `skills.rs` and `skills/*.md`: notes the model reads on demand with `read_skill` (no name lists them), compiled in with
+  `include_str!`, so nothing is read from disk at run time. The model sees only names and descriptions until it asks for one. A skill is
+  written for Lamina's commands, not borrowed: tests check its header, its size, and that every `command {params}` it shows exists in
+  the real catalog (the slicer's included, as a dev dependency). Add a skill by adding a file and a line in `FILES`.
 - `todo_write` (`tools::TODO`) is answered by `tools::run` but its list is kept by the chat (`Chat::todos`), not logged as a call.
 - Look at `tools::all()`'s schemas when adding a tool: plain types only (Gemini takes a subset of OpenAPI; `gemini::schema` writes a
   free-form object as text that the tool reads back). A test checks it.

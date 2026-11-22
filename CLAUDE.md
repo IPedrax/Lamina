@@ -13,6 +13,10 @@ Lamina is a 3D slicer and modelling tool with a built-in AI chat, a CLI and an M
   server, AI chat and desktop all go through `Session::execute`, so new behaviour is a new command or parameter, with a test. Each
   command's `params` text is written for agents: they read it to call the command.
 - **Strict in, kind out.** Command parameters use `#[serde(deny_unknown_fields)]`: a misspelled key is an error.
+- **Rust all the way.** The app, the engine, the viewport and the tooling are Rust: the desktop is egui with eframe and wgpu, as
+  BIMCraft's is. No web view, Electron, Tauri, JavaScript, Node or Python in the app or its build (Python is fine for one-off
+  checks in `tmp`, never as a dependency). Skills for the AI are plain Markdown compiled in; a Three.js, WebGPU or Python skill
+  from elsewhere is read for its ideas and never used as code.
 - **The core has no UI and no network.** `lamina-core` must not depend on a UI toolkit or an HTTP client, so front ends stay swappable.
   Only the desktop's AI chat will reach the network, through its own crate.
 - **Clean-room slicing.** PrusaSlicer, OrcaSlicer, Bambu Studio and Cura are AGPL or LGPL: read their documentation and behave
@@ -37,8 +41,10 @@ cargo test --workspace
   `bridge.rs` (what an agent may ask: execute, script, catalog; read-only access).
 - `crates/slicer`: `slice.rs` (mesh to closed loops per layer), `geom.rs` (polygon booleans, offsets, line clipping on i_overlay),
   `print.rs` (walls, skins, infill, skirt, the G-code writer), `profile.rs` (settings, checks, `[name]` placeholders), `commands.rs`
-  (`slice`, `slicer_profile`; an app adds them with `session.register(lamina_slicer::COMMANDS)`).
-- `crates/assistant`: the AI chat, ported from BIMCraft. Notes: [crates/assistant/CLAUDE.md](crates/assistant/CLAUDE.md). The only
+  (`slice`, `slice_check`, `slicer_profile`; an app adds them with `session.register(lamina_slicer::COMMANDS)`).
+- `crates/assistant`: the AI chat, ported from BIMCraft. `skills/*.md` are the notes the model reads with `read_skill`
+  (modelling, designing for FDM, slicer settings, working from a picture), written for Lamina's own commands: a test checks that every
+  command they name exists. A command a skill promises must exist, and a new command the model needs gets a line in the skill. Notes: [crates/assistant/CLAUDE.md](crates/assistant/CLAUDE.md). The only
   crate that may use `ureq` or `ring` (a test in `lamina-core` checks every manifest).
 - `apps/lamina-cli`: the `lamina` binary and `mcp.rs`, the MCP server.
 - `docs/`: `ARCHITECTURE.md` (what is ported from BIMCraft and what is not), `RESEARCH.md` (slicers, editors, crates, licence flags),

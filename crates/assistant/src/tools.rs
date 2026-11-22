@@ -79,6 +79,12 @@ pub fn all() -> Vec<Tool> {
             schema: json!({"type": "object", "properties": {}}),
         },
         Tool {
+            name: "read_skill",
+            about: "Skills are short notes on modelling for a printer, the slicer's settings and working from a picture. Call with no name for the \
+                    list, then with a name to read one. Read the ones that fit before you model, slice or change a setting.",
+            schema: json!({"type": "object", "properties": {"name": {"type": "string", "description": "a skill's name, from the list"}}}),
+        },
+        Tool {
             name: TODO,
             about: "Show the user your checklist for a request of three or more steps: the whole list each time, with exactly one item in_progress. \
                     Call it again as each step finishes. It changes nothing in the scene.",
@@ -141,7 +147,8 @@ pub fn run(session: &mut Session, call: &Call, access: Access) -> Result<Value, 
             Ok(all.as_array().map(|cmds| cmds.iter().filter(|c| has(&c["id"]) || has(&c["params"])).cloned().collect()).unwrap_or_default())
         }
         "inspect_scene" => exec(session, "info", json!({}), access),
+        "read_skill" => crate::skills::read(args["name"].as_str()),
         TODO => todos(&args).map(|_| json!("checklist shown")),
-        other => Err(format!("unknown tool `{}`: execute, list_commands, inspect_scene or todo_write", clip(other, 40))),
+        other => Err(format!("unknown tool `{}`: execute, list_commands, inspect_scene, read_skill or todo_write", clip(other, 40))),
     }
 }

@@ -28,6 +28,40 @@ desktop (planned)  ────┘
 
 A test in `lamina-core` reads every manifest and fails if any crate but `assistant` depends on an HTTP client or `ring`.
 
+## The stack is Rust
+
+The engine, the slicer, the AI chat, the CLI and the planned desktop are Rust. The desktop will be egui with eframe and wgpu, the
+same stack as BIMCraft, so its camera and mesh pass can be lifted. There is no web view, no JavaScript and no Python in the app or
+its build.
+
+## Skills for the app's AI
+
+The in-app assistant is a model behind a provider API, so what it knows about modelling for a printer has to come from its prompt
+and its tools. Rather than one long system prompt, Lamina ships short skills: Markdown files in `crates/assistant/skills/`
+that the model reads on demand with the `read_skill` tool, the way Claude's own skills work. The list costs a few lines per
+request, a skill's text only when the model asks for it.
+
+| Skill | Teaches |
+|---|---|
+| `modelling-with-lamina` | the frame (mm, plate centre, z up), the commands, what is missing (no booleans), the look, make, check, report order |
+| `design-for-fdm` | wall thickness, overhangs, orientation, holes and fits, size limits, tied to what Lamina's slicer does and does not do |
+| `slicing-with-lamina` | every setting with sensible ranges, `slice_check`, how to read the result |
+| `work-from-a-picture` | blockout from a photo with honest limits |
+
+`slice_check` exists for the AI: it runs the whole slice and writes nothing, so the model can verify a part (fits the plate, how long,
+any warning) while the file-writing `slice` stays refused to it.
+
+### Where the ideas came from
+
+The skills are original text. These were read for workflow ideas only; none of their text or code is used, and several have no
+clear licence (see [RESEARCH.md](RESEARCH.md)).
+
+- **OmniSkill's `img2threejs`:** build in passes, blockout first, check against the picture, say what is guessed, quote the cost
+  before a long job. That became `work-from-a-picture`. Its Three.js, WebGPU and Python code is not usable in a Rust app.
+- **Community OpenSCAD and CadQuery skills:** infer and list the assumptions instead of interviewing, run arithmetic checks before
+  looking at a render (bounding box, wall thickness, fits the bed), say when a fit is a declared default and not a measurement,
+  prefer modifying an existing mesh to rebuilding it. These shaped the order in `modelling-with-lamina`.
+
 ## Slicing pipeline
 
 `slice::layers` cuts a closed mesh at the middle of each layer. Segments are chained by the vertex pair of the edge they cross, not

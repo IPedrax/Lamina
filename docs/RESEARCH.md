@@ -82,6 +82,23 @@ with this thesis exists (SlicerX, pre-alpha, README claims only).
 Licence flags among existing Rust slicers: mslicer (GPL-3.0), GladiusSlicer (LGPL-2.1), fable-slicer (AGPL-3.0). Spaghetti Slicer
 (Apache-2.0 or MIT) is the one to read for structure; its README calls it an early prototype never run on a printer.
 
+## Existing 3D skills for Claude (surveyed 2026-11-22)
+
+None is about slicing, and almost none is Rust, so they inform Lamina's own skills and are never dependencies.
+
+| Skill | What it is | Licence |
+|---|---|---|
+| OmniSkill `img2threejs`, `vgpu`, `anatomy`, `motion-ui` | routers to Three.js, WebGPU and Python toolkits for the web | MIT adapters over Apache-2.0 or MIT upstreams, not bundled |
+| `andreahaku/openscad_claude_skill` | OpenSCAD design, modify, reconstruct, export modes with FDM rules | none found on GitHub, so do not copy |
+| `flowful-ai/cad-skill` | CadQuery parametric printable parts with a render and fix loop | NOASSERTION |
+| `earthtojake/text-to-cad` | STEP, STL and 3MF generation, a design-for-additive check, G-code slicing | MIT |
+| `ahujasid/blender-mcp` | Blender driven over MCP, with Python execution in Blender | MIT |
+| ECC `blender-motion-state-inspection` | inspecting Blender rigs and poses | ECC plugin |
+
+Takeaways that carry over: infer and list assumptions rather than interviewing; run arithmetic checks before a visual one; say when
+a clearance is a default and not a measurement; modify an existing mesh instead of rebuilding it. Not yet possible in Lamina: a
+render the model can look at (see the roadmap).
+
 ## Risks
 
 1. **Real meshes.** Turning messy meshes (non-manifold, self-intersecting, tiny features) into valid layer polygons, then offsetting them

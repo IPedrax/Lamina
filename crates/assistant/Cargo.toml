@@ -22,3 +22,7 @@ ureq = { version = "3", default-features = false, features = ["rustls"] }
 tempfile = "3"
 # The saved key's encryption.
 ring = "0.17"
+
+[dev-dependencies]
+# The skills' test checks every command they name against the real catalog, the slicer's included.
+lamina-slicer = { workspace = true }

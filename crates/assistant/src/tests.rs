@@ -445,7 +445,7 @@ fn plain(schema: &Value) -> bool {
 #[test]
 fn the_tools_offered_are_these_and_their_schemas_are_plain_json_types() {
     let all = tools::all();
-    assert_eq!(all.iter().map(|t| t.name).collect::<Vec<_>>(), ["execute", "list_commands", "inspect_scene", "todo_write"]);
+    assert_eq!(all.iter().map(|t| t.name).collect::<Vec<_>>(), ["execute", "list_commands", "inspect_scene", "read_skill", "todo_write"]);
     for t in &all {
         assert!(plain(&t.schema), "{}: {}", t.name, t.schema);
     }
