@@ -1,0 +1,23 @@
+# Secrets: this repo is public, never commit these
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Dependencies and build output
+node_modules/
+.venv/
+__pycache__/
+dist/
+build/
+
+# Local tooling
+.claude/
