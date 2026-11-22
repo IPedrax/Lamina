@@ -72,7 +72,7 @@ with this thesis exists (SlicerX, pre-alpha, README claims only).
 | | clipper2-rust, boostvoronoi | **BSL-1.0** | permissive but its own text; boostvoronoi likely needed for variable-width walls |
 | Triangulation | spade 2.15, earcut 0.4 | MIT or Apache-2.0 | for caps and previews |
 | Mesh booleans | **manifold3d** 0.4.2 | MIT or Apache-2.0 | robust, but builds C++ with cmake; not tried in Lamina |
-| | **csgrs** 0.20.1 (in use) | MIT | pure Rust BSP. Measured in Lamina: right on boxes and upright cylinders, unreliable on curved-on-curved (see ARCHITECTURE.md). Needs a stand-in for the yanked `core2` |
+| | **csgrs** 0.20.1 (in use) | MIT | pure Rust BSP. Its raw output cracks where curved surfaces cross; with Lamina's repair and a geodesic sphere, 199 of 200 upright and 180 of 200 tilted random pairs come out clean (see ARCHITECTURE.md). Needs a stand-in for the yanked `core2` |
 | Math, BVH | glam, nalgebra, bvh, parry3d | permissive | not needed yet |
 | Formats | stl_io, tobj (OBJ), threemf 0.8 (0BSD), lib3mf 0.1.7 | permissive | no maintained AMF crate found |
 | G-code | gcode 0.7 | MIT or Apache-2.0 | parser only; writing is string formatting |

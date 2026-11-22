@@ -43,22 +43,27 @@ pub fn boolean(op: Op, a: &Mesh, b: &Mesh) -> Result<Mesh, String> {
     if total > MAX_INPUT_TRIANGLES {
         return Err(format!("{total} triangles is more than the {MAX_INPUT_TRIANGLES} one boolean takes: use fewer segments"));
     }
-    let (pa, pb) = (to_csg(a), to_csg(b));
-    let run = move || from_csg(&combine(op, &pa, &pb));
-    let result = std::thread::Builder::new()
-        .stack_size(STACK)
-        .spawn(run)
-        .map_err(|e| format!("could not start the boolean: {e}"))?
-        .join()
-        .map_err(|_| HARD.to_string())??;
+    let result = engine(op, a, b)?;
     sound(op, a, b, &result).map_err(|why| format!("the boolean did not give a clean solid ({why}). {HARD}"))?;
     Ok(result)
 }
 
+/// The BSP and the repair, with no judgement of the result.
+fn engine(op: Op, a: &Mesh, b: &Mesh) -> Result<Mesh, String> {
+    let (pa, pb) = (to_csg(a), to_csg(b));
+    let run = move || from_csg(&combine(op, &pa, &pb));
+    std::thread::Builder::new()
+        .stack_size(STACK)
+        .spawn(run)
+        .map_err(|e| format!("could not start the boolean: {e}"))?
+        .join()
+        .map_err(|_| HARD.to_string())?
+}
+
 /// What the error says to do, because the model or the user reading it has to act on it.
-const HARD: &str = "Curved shapes that cut through each other (spheres, crossing cylinders, tilted cylinders) are the hard cases for this engine; \
-                    boxes and upright cylinders work best. Change a size or a position by a hundredth of a millimetre, use fewer segments, or \
-                    use another shape, and try again";
+const HARD: &str = "Tilted cylinders that cut through each other or through a box are the hardest cases for this engine; upright shapes and \
+                    spheres work well. Change a size or a position by a hundredth of a millimetre, use fewer segments, or use another shape, \
+                    and try again";
 
 /// Whether `r` can be `op` of `a` and `b`: closed, with a volume between what inclusion and exclusion allow, and inside the box the
 /// operation allows. An empty result is the caller's to explain.
@@ -78,8 +83,8 @@ fn sound(op: Op, a: &Mesh, b: &Mesh, r: &Mesh) -> Result<(), String> {
     if !volume_ok {
         return Err(format!("its volume, {v:.1} mm3, is impossible for shapes of {va:.1} and {vb:.1} mm3"));
     }
-    // The welds move a vertex by a micron; a hundredth of a millimetre is a real difference.
-    let tol = 0.01;
+    // The repair may move a vertex by up to SNAP; more than that is a real difference.
+    let tol = SNAP + WELD;
     let inside = |lo: [f64; 3], hi: [f64; 3]| (0..3).all(|k| rlo[k] >= lo[k] - tol && rhi[k] <= hi[k] + tol);
     let bounds_ok = match op {
         Op::Union => (0..3).all(|k| (rlo[k] - alo[k].min(blo[k])).abs() <= tol && (rhi[k] - ahi[k].max(bhi[k])).abs() <= tol),
@@ -129,20 +134,115 @@ fn combine(op: Op, a: &[Polygon<()>], b: &[Polygon<()>]) -> Vec<Polygon<()>> {
     a.all_polygons()
 }
 
+/// The mesh as BSP polygons. Triangles that share an edge and a plane become one polygon when together they make an exactly flat,
+/// convex outline (a box's face, an upright cylinder's cap), because every extra edge inside a face is one more place for the BSP
+/// to split, and a cap fanned from its centre is a ring of slivers.
 fn to_csg(m: &Mesh) -> Vec<Polygon<()>> {
-    (0..m.triangles.len())
-        .filter_map(|i| m.tri(i))
-        .filter_map(|t| {
-            let u = Vector3::new(t[1][0] - t[0][0], t[1][1] - t[0][1], t[1][2] - t[0][2]);
-            let v = Vector3::new(t[2][0] - t[0][0], t[2][1] - t[0][1], t[2][2] - t[0][2]);
-            let n = u.cross(&v);
+    let normals: Vec<Option<Vector3<f64>>> = (0..m.triangles.len())
+        .map(|i| {
+            let t = m.tri(i)?;
+            let n = Vector3::new(t[1][0] - t[0][0], t[1][1] - t[0][1], t[1][2] - t[0][2]).cross(&Vector3::new(
+                t[2][0] - t[0][0],
+                t[2][1] - t[0][1],
+                t[2][2] - t[0][2],
+            ));
             // A flat triangle has no normal and no volume to give; leave it out.
-            (n.norm() > 1e-12).then(|| {
-                let n = n.normalize();
-                Polygon::new(t.iter().map(|p| Vertex::new(Point3::new(p[0], p[1], p[2]), n)).collect(), None)
-            })
+            (n.norm() > 1e-12).then(|| n.normalize())
         })
-        .collect()
+        .collect();
+    // Union-find over triangles that share an edge and lie in one plane.
+    let mut parent: Vec<usize> = (0..m.triangles.len()).collect();
+    fn root(parent: &mut [usize], mut i: usize) -> usize {
+        while parent[i] != i {
+            parent[i] = parent[parent[i]];
+            i = parent[i];
+        }
+        i
+    }
+    let mut by_edge: HashMap<(u32, u32), Vec<usize>> = HashMap::new();
+    for (i, t) in m.triangles.iter().enumerate() {
+        for k in 0..3 {
+            let (a, b) = (t[k], t[(k + 1) % 3]);
+            by_edge.entry((a.min(b), a.max(b))).or_default().push(i);
+        }
+    }
+    let mut pairs: Vec<(usize, usize)> = by_edge.values().filter(|v| v.len() == 2).map(|v| (v[0], v[1])).collect();
+    pairs.sort_unstable();
+    for (i, j) in pairs {
+        let (Some(ni), Some(nj)) = (normals[i], normals[j]) else { continue };
+        let pi = m.vertices[m.triangles[i][0] as usize].map(f64::from);
+        let pj = m.vertices[m.triangles[j][0] as usize].map(f64::from);
+        let off = ni.dot(&Vector3::new(pj[0] - pi[0], pj[1] - pi[1], pj[2] - pi[2]));
+        if ni.dot(&nj) > 1.0 - 1e-9 && off.abs() < WELD {
+            let (ri, rj) = (root(&mut parent, i), root(&mut parent, j));
+            parent[ri] = rj;
+        }
+    }
+    let mut groups: std::collections::BTreeMap<usize, Vec<usize>> = std::collections::BTreeMap::new();
+    for i in 0..m.triangles.len() {
+        let r = root(&mut parent, i);
+        groups.entry(r).or_default().push(i);
+    }
+    let point = |i: u32| {
+        let p = m.vertices[i as usize].map(f64::from);
+        Point3::new(p[0], p[1], p[2])
+    };
+    let mut out = Vec::new();
+    for tris in groups.values() {
+        let Some(n) = normals[tris[0]] else { continue };
+        if tris.len() > 1
+            && let Some(ring) = outline(m, tris).filter(|r| exactly_flat(m, r) && flat_and_convex(m, r))
+        {
+            out.push(Polygon::new(ring.iter().map(|&i| Vertex::new(point(i), n)).collect(), None));
+            continue;
+        }
+        for &i in tris {
+            if let Some(n) = normals[i] {
+                out.push(Polygon::new(m.triangles[i].iter().map(|&v| Vertex::new(point(v), n)).collect(), None));
+            }
+        }
+    }
+    out
+}
+
+/// Whether every corner has the very same coordinate on one axis. csgrs takes a polygon off its own plane by more than 1e-8 as
+/// spanning it, and splits it by that plane again and again until the stack overflows, which aborts the process: no error can be
+/// returned. A corner stored as f32 is only within a hundredth of a micron of a tilted plane, so only a patch on a plane square to an
+/// axis (a box's face, an upright cylinder's cap) is merged; triangles, flat by definition, carry everything else. (Moving tilted
+/// corners onto their plane was tried: it leaves them a few nanometres off their neighbours, and measured worse, 131 of 160 against 144.)
+fn exactly_flat(m: &Mesh, ring: &[u32]) -> bool {
+    (0..3).any(|k| {
+        let first = m.vertices[ring[0] as usize][k];
+        ring.iter().all(|&i| m.vertices[i as usize][k].to_bits() == first.to_bits())
+    })
+}
+
+/// The outline of a patch of triangles as one loop, in their winding, or none when it has holes or touches itself.
+fn outline(m: &Mesh, tris: &[usize]) -> Option<Vec<u32>> {
+    let mut directed: HashSet<(u32, u32)> = HashSet::new();
+    for &i in tris {
+        let t = m.triangles[i];
+        for k in 0..3 {
+            directed.insert((t[k], t[(k + 1) % 3]));
+        }
+    }
+    let mut next: HashMap<u32, u32> = HashMap::new();
+    for &(a, b) in &directed {
+        if !directed.contains(&(b, a)) && next.insert(a, b).is_some() {
+            return None; // two ways on from one corner: the outline touches itself
+        }
+    }
+    let &start = next.keys().min()?;
+    let (mut ring, mut at) = (vec![start], *next.get(&start)?);
+    while at != start {
+        if ring.len() > next.len() {
+            return None;
+        }
+        ring.push(at);
+        at = *next.get(&at)?;
+    }
+    // Every outline edge must be on this one loop, or the patch has a hole.
+    (ring.len() == next.len()).then_some(ring)
 }
 
 /// Vertices of a mesh being built, where a point within [`WELD`] of one already there is that one. A grid alone would split two
@@ -189,8 +289,8 @@ fn from_csg(polys: &[Polygon<()>]) -> Result<Mesh, String> {
     close(Mesh::new(weld.at.iter().map(|p| p.map(|c| c as f32)).collect(), triangles)?)
 }
 
-/// Repairs what the BSP leaves: triangles are split at the vertices that lie on their edges (T-junctions), thin fins on an edge three or
-/// more faces share are dropped, and small holes where the triangulator lost a triangle are filled. Each pass can expose the next, so it
+/// Repairs what the BSP leaves: triangles are split at the vertices that lie on their edges (T-junctions), skins of no thickness and thin
+/// fins are dropped, slivers along an open edge are snapped shut, and holes are filled where a fan is surely the lost face. Each pass can expose the next, so it
 /// repeats until the mesh is closed or a pass changes nothing.
 fn close(m: Mesh) -> Result<Mesh, String> {
     close_with(m, 4, 5.0 * WELD)
@@ -203,8 +303,13 @@ fn close_with(mut m: Mesh, passes: usize, tol: f64) -> Result<Mesh, String> {
         }
         let before = (m.triangles.len(), m.vertices.len());
         split_t_junctions(&mut m, tol);
+        drop_skins(&mut m);
         drop_fins(&mut m);
-        fill_small_holes(&mut m);
+        if !m.is_watertight() {
+            snap_open(&mut m);
+            drop_skins(&mut m);
+        }
+        fill_holes(&mut m);
         if (m.triangles.len(), m.vertices.len()) == before {
             break;
         }
@@ -224,12 +329,14 @@ fn undirected(m: &Mesh) -> HashMap<(u32, u32), u32> {
 }
 
 fn split_t_junctions(m: &mut Mesh, tol: f64) {
-    let open: Vec<(u32, u32)> = undirected(m).into_iter().filter(|&(_, n)| n == 1).map(|(e, _)| e).collect();
+    let mut open: Vec<(u32, u32)> = undirected(m).into_iter().filter(|&(_, n)| n == 1).map(|(e, _)| e).collect();
     if open.is_empty() {
         return;
     }
+    // Sorted, here and below, so a mesh is repaired the same way every time: hash maps iterate in a different order each run.
+    open.sort_unstable();
     // Only vertices on an open edge can be the T of a T-junction, which keeps the search small.
-    let touching: HashSet<u32> = open.iter().flat_map(|&(a, b)| [a, b]).collect();
+    let touching: std::collections::BTreeSet<u32> = open.iter().flat_map(|&(a, b)| [a, b]).collect();
     let pos: Vec<[f64; 3]> = m.vertices.iter().map(|v| v.map(f64::from)).collect();
     let at = |i: u32| pos[i as usize];
     let mut splits: HashMap<(u32, u32), Vec<u32>> = HashMap::new();
@@ -237,7 +344,7 @@ fn split_t_junctions(m: &mut Mesh, tol: f64) {
         let (pa, pb) = (at(a), at(b));
         let mut on: Vec<(f64, u32)> =
             touching.iter().filter(|&&p| p != a && p != b).filter_map(|&p| along(pa, pb, at(p), tol).map(|t| (t, p))).collect();
-        on.sort_by(|x, y| x.0.total_cmp(&y.0));
+        on.sort_by(|x, y| x.0.total_cmp(&y.0).then(x.1.cmp(&y.1)));
         if !on.is_empty() {
             splits.insert((a, b), on.into_iter().map(|(_, p)| p).collect());
         }
@@ -271,8 +378,38 @@ fn split_t_junctions(m: &mut Mesh, tol: f64) {
     m.triangles = out;
 }
 
-/// A triangle this small (mm2) on an edge that three or more faces share is a fin the BSP left, not a surface.
-const FIN: f64 = 1e-4;
+/// Removes triangles that share their three vertices with another. Two facing opposite ways are a skin of no thickness the BSP leaves
+/// where the shapes' surfaces coincide, so both go; two facing the same way are one face drawn twice, so one goes.
+fn drop_skins(m: &mut Mesh) {
+    let mut by_corners: HashMap<[u32; 3], Vec<(usize, bool)>> = HashMap::new();
+    for (i, t) in m.triangles.iter().enumerate() {
+        let mut k = *t;
+        k.sort_unstable();
+        let even = (0..3).any(|r| [t[r], t[(r + 1) % 3], t[(r + 2) % 3]] == k);
+        by_corners.entry(k).or_default().push((i, even));
+    }
+    let mut gone = vec![false; m.triangles.len()];
+    for list in by_corners.values().filter(|l| l.len() > 1) {
+        let (mut up, mut down): (Vec<usize>, Vec<usize>) = (Vec::new(), Vec::new());
+        for &(i, even) in list {
+            if even { up.push(i) } else { down.push(i) }
+        }
+        // Opposite pairs cancel; of what is left, one face stays.
+        let pairs = up.len().min(down.len());
+        for &i in up.iter().take(pairs).chain(down.iter().take(pairs)) {
+            gone[i] = true;
+        }
+        for &i in up.iter().skip(pairs).skip(1).chain(down.iter().skip(pairs).skip(1)) {
+            gone[i] = true;
+        }
+    }
+    let mut it = gone.into_iter();
+    m.triangles.retain(|_| !it.next().unwrap_or(false));
+}
+
+/// A triangle this small (mm2, a tenth of a millimetre square) on an edge that three or more faces share is a fin the BSP left, not a
+/// surface; dropping it leaves a small hole that `fill_holes` closes.
+const FIN: f64 = 1e-2;
 
 fn drop_fins(m: &mut Mesh) {
     let uses = undirected(m);
@@ -297,11 +434,13 @@ fn triangle_area(m: &Mesh, i: usize) -> f64 {
     0.5 * (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt()
 }
 
-/// The most edges of a hole that is filled. A bigger gap is a real one, and filling it would invent a surface.
+/// The most edges of a hole that is filled whatever its shape. A bigger gap is filled only if it is flat and convex, where a fan is
+/// exactly the face the BSP lost; otherwise it is a real gap, and filling it would invent a surface.
 const SMALL_HOLE: usize = 16;
+const BIG_HOLE: usize = 512;
 
-/// Fills each loop of open edges of at most [`SMALL_HOLE`] edges with a fan, wound against the faces around it.
-fn fill_small_holes(m: &mut Mesh) {
+/// Fills each loop of open edges that [`SMALL_HOLE`] and [`flat_and_convex`] allow with a fan, wound against the faces around it.
+fn fill_holes(m: &mut Mesh) {
     let mut directed: HashSet<(u32, u32)> = HashSet::new();
     for t in &m.triangles {
         for k in 0..3 {
@@ -317,14 +456,18 @@ fn fill_small_holes(m: &mut Mesh) {
     }
     let mut used: HashSet<(u32, u32)> = HashSet::new();
     let mut fill = Vec::new();
-    let starts: Vec<(u32, u32)> = next.iter().flat_map(|(&a, bs)| bs.iter().map(move |&b| (a, b))).collect();
+    let mut starts: Vec<(u32, u32)> = next.iter().flat_map(|(&a, bs)| bs.iter().map(move |&b| (a, b))).collect();
+    starts.sort_unstable();
+    for outs in next.values_mut() {
+        outs.sort_unstable();
+    }
     for (a, b) in starts {
         if used.contains(&(a, b)) {
             continue;
         }
         let (mut ring, mut at) = (vec![a], b);
         let closed = loop {
-            if ring.len() > SMALL_HOLE {
+            if ring.len() > BIG_HOLE {
                 break false;
             }
             if at == a {
@@ -339,13 +482,103 @@ fn fill_small_holes(m: &mut Mesh) {
         for k in 0..ring.len() {
             used.insert((ring[k], ring[(k + 1) % ring.len()]));
         }
-        if closed && ring.len() >= 3 {
+        if closed && ring.len() >= 3 && (ring.len() <= SMALL_HOLE || flat_and_convex(m, &ring)) {
             for k in 1..ring.len() - 1 {
                 fill.push([ring[0], ring[k + 1], ring[k]]);
             }
         }
     }
     m.triangles.extend(fill);
+}
+
+/// Whether the outline lies in one plane (within a few welds) and turns one way all round, so a fan from any corner covers it once.
+fn flat_and_convex(m: &Mesh, ring: &[u32]) -> bool {
+    let p: Vec<[f64; 3]> = ring.iter().map(|&i| m.vertices[i as usize].map(f64::from)).collect();
+    // Newell's normal: the outline's own, however many corners it has.
+    let mut n = [0.0; 3];
+    for k in 0..p.len() {
+        let (a, b) = (p[k], p[(k + 1) % p.len()]);
+        n[0] += (a[1] - b[1]) * (a[2] + b[2]);
+        n[1] += (a[2] - b[2]) * (a[0] + b[0]);
+        n[2] += (a[0] - b[0]) * (a[1] + b[1]);
+    }
+    let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+    if len < 1e-12 {
+        return false;
+    }
+    let n = n.map(|c| c / len);
+    let d0 = n[0] * p[0][0] + n[1] * p[0][1] + n[2] * p[0][2];
+    if p.iter().any(|q| (n[0] * q[0] + n[1] * q[1] + n[2] * q[2] - d0).abs() > 5.0 * WELD) {
+        return false;
+    }
+    let mut sign = 0.0f64;
+    for k in 0..p.len() {
+        let (a, b, c) = (p[k], p[(k + 1) % p.len()], p[(k + 2) % p.len()]);
+        let (u, v) = ([b[0] - a[0], b[1] - a[1], b[2] - a[2]], [c[0] - b[0], c[1] - b[1], c[2] - b[2]]);
+        let turn = n[0] * (u[1] * v[2] - u[2] * v[1]) + n[1] * (u[2] * v[0] - u[0] * v[2]) + n[2] * (u[0] * v[1] - u[1] * v[0]);
+        if turn.abs() < 1e-9 {
+            continue; // corners on a straight stretch
+        }
+        if sign == 0.0 {
+            sign = turn.signum();
+        } else if turn.signum() != sign {
+            return false;
+        }
+    }
+    true
+}
+
+/// Vertices on an open edge closer than this (mm) are snapped together: what the BSP splits along an intersection curve leaves slivers
+/// a few microns wide, and collapsing them closes the cracks around them. 20 microns is a tenth of a fine layer, invisible in a print.
+const SNAP: f64 = 0.05;
+
+/// Snaps each vertex of an open or crowded edge to the first such vertex within [`SNAP`], then drops the triangles that collapse.
+fn snap_open(m: &mut Mesh) {
+    let uses = undirected(m);
+    let loose: HashSet<u32> = uses.iter().filter(|&(_, &n)| n != 2).flat_map(|(&(a, b), _)| [a, b]).collect();
+    if loose.is_empty() {
+        return;
+    }
+    let mut ids: Vec<u32> = loose.into_iter().collect();
+    ids.sort_unstable(); // the same mesh snaps the same way every time
+    let pos = |i: u32| m.vertices[i as usize].map(f64::from);
+    let mut cells: HashMap<[i64; 3], Vec<u32>> = HashMap::new();
+    let mut to: HashMap<u32, u32> = HashMap::new();
+    for &i in &ids {
+        let p = pos(i);
+        let c = p.map(|x| (x / SNAP).floor() as i64);
+        let mut target = None;
+        'search: for dx in -1..=1 {
+            for dy in -1..=1 {
+                for dz in -1..=1 {
+                    for &j in cells.get(&[c[0] + dx, c[1] + dy, c[2] + dz]).into_iter().flatten() {
+                        let q = pos(j);
+                        if (q[0] - p[0]).powi(2) + (q[1] - p[1]).powi(2) + (q[2] - p[2]).powi(2) <= SNAP * SNAP {
+                            target = Some(j);
+                            break 'search;
+                        }
+                    }
+                }
+            }
+        }
+        match target {
+            Some(j) => {
+                to.insert(i, j);
+            }
+            None => cells.entry(c).or_default().push(i),
+        }
+    }
+    if to.is_empty() {
+        return;
+    }
+    for t in &mut m.triangles {
+        for v in t.iter_mut() {
+            if let Some(&j) = to.get(v) {
+                *v = j;
+            }
+        }
+    }
+    m.triangles.retain(|t| t[0] != t[1] && t[1] != t[2] && t[0] != t[2]);
 }
 
 /// How far along `a` to `b` the point `p` lies (0 to 1, exclusive) if it is on that segment within five times [`WELD`].
@@ -495,7 +728,7 @@ mod tests {
         at(m, r.pick(&[0.0, 2.0, 2.5, 5.0, x]), r.pick(&[0.0, 3.0, y]), r.pick(&[0.0, 4.0, z]))
     }
 
-    /// Measured: box with box and box with cylinder, 100 percent; cylinder with cylinder, 73 to 100. The floor is 90, and every result that
+    /// Measured: box with box, box with cylinder and cylinder with cylinder, 100 percent upright. The floor is 95, and every result that
     /// is returned has already passed `sound`, so what fails is refused, never wrong.
     #[test]
     fn boxes_and_upright_cylinders_almost_always_work() {
@@ -506,6 +739,32 @@ mod tests {
             let op = r.pick(&[Op::Union, Op::Difference, Op::Intersect]);
             if let Ok(m) = boolean(op, &a, &b) {
                 // An empty result (nothing shared, nothing left) is a result.
+                if !m.triangles.is_empty() {
+                    closed(&m);
+                }
+                worked += 1;
+            }
+        }
+        assert!(worked * 100 >= 95 * n, "only {worked} of {n} worked");
+    }
+
+    /// Upright curved pairs (spheres, cylinders, boxes): measured 199 of 200 clean after the repair, the geodesic sphere and flat-face
+    /// merging; the floor here is 90 percent, so a change that undoes one of those fails this test, not a user's print.
+    #[test]
+    fn upright_curved_shapes_almost_always_work() {
+        let mut r = Rng(0x5DEE_CE66_D1CE_4E5B);
+        let (mut worked, n) = (0, 40);
+        for i in 0..n {
+            let shape = |r: &mut Rng, k: u32| match k % 3 {
+                0 => Mesh::sphere(r.range(3.0, 9.0), r.pick(&[16, 24, 32])),
+                1 => Mesh::cylinder(r.range(2.0, 8.0), r.range(5.0, 25.0), r.pick(&[16, 24, 32])),
+                _ => Mesh::cuboid([r.range(5.0, 25.0), r.range(5.0, 25.0), r.range(5.0, 25.0)]),
+            };
+            let (a, b) = (shape(&mut r, i), shape(&mut r, i / 3 + 1));
+            let (x, y) = (r.range(-6.0, 6.0), r.range(-6.0, 6.0));
+            let b = at(b, r.pick(&[0.0, 2.5, x]), r.pick(&[0.0, 3.0, y]), r.pick(&[0.0, 4.0]));
+            let op = r.pick(&[Op::Union, Op::Difference, Op::Intersect]);
+            if let Ok(m) = boolean(op, &a, &b) {
                 if !m.triangles.is_empty() {
                     closed(&m);
                 }
@@ -556,6 +815,151 @@ mod measure {
         let (x, y, z) = (r.range(-8.0, 8.0), r.range(-8.0, 8.0), r.range(-4.0, 10.0));
         let t = [r.pick(&[0.0, 2.0, 2.5, 5.0, x]), r.pick(&[0.0, 3.0, y]), r.pick(&[0.0, 4.0, z])];
         (m.transformed(&Transform::translate(t)), k)
+    }
+
+    /// Curved pairs only (the weak cases), union and difference, upright and tilted: one number to compare a change by.
+    /// `cargo test -p lamina-csg --release -- --ignored curved_score --nocapture`
+    #[test]
+    #[ignore = "slow: run by hand when changing the engine or the repair"]
+    fn curved_score() {
+        let mut r = Rng(0xC0FF_EE00_D15E_A5E5);
+        let (mut n, mut ok) = (0, 0);
+        let mut why: BTreeMap<String, u32> = BTreeMap::new();
+        while n < 160 {
+            let rotate = n % 2 == 1;
+            let ((a, ka), (b, kb)) = (kind_shape(&mut r, rotate), kind_shape(&mut r, rotate));
+            if ka == 'B' && kb == 'B' {
+                continue;
+            }
+            if (ka == 'B' || kb == 'B') && ka != 'S' && kb != 'S' {
+                continue; // box with cylinder is already right
+            }
+            let op = r.pick(&[Op::Union, Op::Difference]);
+            n += 1;
+            match boolean(op, &a, &b) {
+                Ok(_) => ok += 1,
+                Err(e) => {
+                    let detail = engine(op, &a, &b).map(|m| shape_of_failure(&m)).unwrap_or_else(|e| e.chars().take(40).collect());
+                    let reason = e.split('(').nth(1).and_then(|x| x.split(')').next()).unwrap_or("other").to_string();
+                    *why.entry(format!("{reason}: {detail}")).or_default() += 1;
+                }
+            }
+        }
+        println!("curved score: {ok} of {n}");
+        for (k, c) in why.iter().rev().take(25) {
+            println!("  {c:3} x {k}");
+        }
+    }
+
+    /// A short label for what is wrong with a mesh the gate refused: open edges in loops of what size, and edges with three or more faces.
+    fn shape_of_failure(m: &Mesh) -> String {
+        let mut directed: std::collections::HashSet<(u32, u32)> = Default::default();
+        let mut uses: std::collections::HashMap<(u32, u32), u32> = Default::default();
+        for t in &m.triangles {
+            for k in 0..3 {
+                let (a, b) = (t[k], t[(k + 1) % 3]);
+                directed.insert((a, b));
+                *uses.entry((a.min(b), a.max(b))).or_default() += 1;
+            }
+        }
+        let open = uses.values().filter(|&&c| c == 1).count();
+        let fat = uses.values().filter(|&&c| c > 2).count();
+        let flipped = uses
+            .iter()
+            .filter(|&(&(a, b), &c)| c == 2 && directed.contains(&(a, b)) == directed.contains(&(b, a)) && !directed.contains(&(b, a)))
+            .count();
+        let bucket = |x: usize| match x {
+            0 => "0",
+            1..=4 => "1-4",
+            5..=16 => "5-16",
+            17..=64 => "17-64",
+            _ => "65+",
+        };
+        // Triangles on the same three vertices: the same way round (a doubled sheet) or opposite (a skin of no thickness).
+        let mut sets: std::collections::HashMap<[u32; 3], Vec<bool>> = Default::default();
+        for t in &m.triangles {
+            let mut k = *t;
+            k.sort_unstable();
+            let even = (0..3).any(|r| [t[r], t[(r + 1) % 3], t[(r + 2) % 3]] == k);
+            sets.entry(k).or_default().push(even);
+        }
+        let same = sets.values().filter(|v| v.len() > 1 && v.iter().all(|&e| e == v[0])).count();
+        let opposite = sets.values().filter(|v| v.len() > 1 && v.iter().any(|&e| e != v[0])).count();
+        let tiny_fat = uses
+            .iter()
+            .filter(|&(_, &c)| c > 2)
+            .filter(|&(&(a, b), _)| {
+                m.triangles.iter().enumerate().any(|(i, t)| t.contains(&a) && t.contains(&b) && triangle_area(m, i) < 0.01)
+            })
+            .count();
+        // The holes: loops of open edges, how many, the longest, whether an outline branches, and the area a fan over each would cover.
+        let mut next: std::collections::HashMap<u32, Vec<u32>> = Default::default();
+        for &(a, b) in &directed {
+            if !directed.contains(&(b, a)) {
+                next.entry(a).or_default().push(b);
+            }
+        }
+        let branching = next.values().filter(|v| v.len() > 1).count();
+        let (mut loops, mut longest, mut biggest_area, mut worst_flat, mut convex) = (0, 0, 0.0f64, 0.0f64, false);
+        let mut seen: std::collections::HashSet<(u32, u32)> = Default::default();
+        let p = |i: u32| m.vertices[i as usize].map(f64::from);
+        for (&a, bs) in &next {
+            for &b in bs {
+                if seen.contains(&(a, b)) {
+                    continue;
+                }
+                let (mut ring, mut at) = (vec![a], b);
+                seen.insert((a, b));
+                while at != a && ring.len() < 5000 {
+                    ring.push(at);
+                    let Some(&n) = next.get(&at).and_then(|v| v.first()) else { break };
+                    seen.insert((at, n));
+                    at = n;
+                }
+                loops += 1;
+                longest = longest.max(ring.len());
+                let o = p(ring[0]);
+                let mut area = [0.0; 3];
+                for k in 1..ring.len().saturating_sub(1) {
+                    let (u, v) = (p(ring[k]), p(ring[k + 1]));
+                    let (u, v) = ([u[0] - o[0], u[1] - o[1], u[2] - o[2]], [v[0] - o[0], v[1] - o[1], v[2] - o[2]]);
+                    area[0] += u[1] * v[2] - u[2] * v[1];
+                    area[1] += u[2] * v[0] - u[0] * v[2];
+                    area[2] += u[0] * v[1] - u[1] * v[0];
+                }
+                let a2 = 0.5 * (area[0] * area[0] + area[1] * area[1] + area[2] * area[2]).sqrt();
+                if a2 > biggest_area {
+                    biggest_area = a2;
+                    let n = area.map(|c| c / (2.0 * a2).max(1e-12));
+                    let d: Vec<f64> = ring
+                        .iter()
+                        .map(|&i| {
+                            let q = p(i);
+                            n[0] * q[0] + n[1] * q[1] + n[2] * q[2]
+                        })
+                        .collect();
+                    let mean = d.iter().sum::<f64>() / d.len() as f64;
+                    worst_flat = d.iter().map(|x| (x - mean).abs()).fold(0.0, f64::max);
+                    convex = flat_and_convex(m, &ring);
+                }
+            }
+        }
+        let holes = if loops == 0 {
+            String::new()
+        } else {
+            format!(
+                " holes {loops} longest {longest} branching {branching} biggest {biggest_area:.3}mm2 off-flat {worst_flat:.3}mm flat-convex {convex}"
+            )
+        };
+        format!(
+            "{holes} open {} fat {} (tiny face {}) dup-same {} dup-opposite {} wrong-way {}",
+            bucket(open),
+            bucket(fat),
+            bucket(tiny_fat),
+            bucket(same),
+            bucket(opposite),
+            bucket(flipped)
+        )
     }
 
     #[test]

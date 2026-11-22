@@ -66,33 +66,41 @@ clear licence (see [RESEARCH.md](RESEARCH.md)).
 ## Booleans
 
 `lamina-csg` is the only crate that names csgrs, so another engine can replace it behind `boolean(op, a, b)`. csgrs is a BSP library
-(Evan Wallace's csg.js algorithm in Rust). Three things in the way it is used matter:
+(Evan Wallace's csg.js algorithm in Rust). How it is used:
 
-1. **The whole shapes go through the BSP.** csgrs' own `union` and `difference` set aside faces whose boxes miss the other shape's box,
-   and a shape wholly inside the other then has nothing to be clipped against (a union of nested boxes kept both). `combine` uses its
-   public `Node` directly.
-2. **The result is cracked, and is repaired.** The BSP leaves T-junctions where one face's vertex sits on a neighbour's edge. `close`
-   welds vertices (a point within a micron of one already there is that one), splits triangles at the vertices on their edges, drops
-   thin fins on edges three faces share, and fills holes of 16 edges or fewer where the triangulator lost a triangle.
-3. **A result is gated.** `sound` accepts only a closed solid whose volume is possible for inclusion and exclusion and whose bounds are
-   inside what the operation allows. Anything else is an error that tells the user or the model what to try. A broken mesh in the scene
-   would slice into a broken print.
+1. **Flat faces go in whole.** Triangles that share an edge and lie exactly in one axis-square plane (a box's face, an upright
+   cylinder's cap) go to the BSP as one polygon, because every inner edge is a place to split and a cap fanned from its centre is a ring
+   of slivers. Only exactly flat patches: csgrs splits a polygon that is off its own plane by more than 1e-8 forever, until the stack
+   overflows, which aborts the process. (Moving tilted corners onto their plane was tried and measured worse.)
+2. **The whole shapes go through the BSP.** csgrs' own `union` and `difference` set aside faces whose boxes miss the other shape's
+   box, and a shape wholly inside the other then has nothing to be clipped against. `combine` uses its public `Node` directly.
+3. **The result is repaired**, in passes until it is closed or nothing changes: vertices are welded (a point within a micron of one
+   already there is that one); triangles are split at vertices lying on their edges (T-junctions); pairs of identical triangles facing
+   opposite ways, skins of no thickness where the shapes' surfaces coincide, are dropped; fins under 0.01 mm2 on edges three faces share
+   are dropped; vertices on open edges within 50 microns are snapped together, which closes the slivers along the intersection curve;
+   and holes are filled with a fan when they have 16 edges or fewer, or are flat and convex (a face the BSP lost). Every step iterates in
+   a fixed order, so the same input is repaired the same way every run.
+4. **A result is gated.** `sound` accepts only a closed solid whose volume is possible for inclusion and exclusion and whose bounds are
+   inside what the operation allows (within the 50 micron snap). Anything else is an error that tells the user or the model what to try.
 
-The measured success (clean solid out of random pairs with round-number offsets, 200 to 400 cases per cell) is the reason for the gate:
+The sphere primitive is geodesic (a subdivided icosahedron, poles on z): a UV sphere's thin fans at the poles were what failed most.
 
-| | Union | Difference | Intersect |
-|---|---|---|---|
-| box with box | 100% | 100% | 100% |
-| box with upright cylinder | 100% | 100% | 100% |
-| cylinder with cylinder | 73% | 89% | 100% |
-| box with sphere | 39% | 68% | 100% |
-| cylinder with sphere | 22% | 53% | 100% |
-| sphere with sphere | 21% | 36% | 100% |
+Measured on random pairs with round-number offsets (`success_matrix`, 200 cases each way; `curved_score` takes the curved pairs alone):
 
-Tilted cylinders and boxes rotated about an axis lower these (box with cylinder union 56%, difference 76%). `success_matrix` in
-`crates/csg/src/lib.rs` re-measures it, and is how a different engine would be compared. csgrs 0.20.1 also needs `core2`, every
-release of which is yanked, so `vendor/core2` stands in for it over `std::io` (the root `Cargo.toml` patches it in); remove it when
-csgrs stops asking.
+| | Before the repair work | Now |
+|---|---|---|
+| Upright shapes, all pairs and operations | 307 of 400 (77%) | 199 of 200 |
+| Tilted shapes | 276 of 400 (69%) | 180 of 200 (90%) |
+| Curved pairs only, union and difference | 66 of 160 | 144 of 160 (90%) |
+
+Upright, every cell is 100% but cylinder with sphere union (95%). The weak spot left is tilted cylinders: crossing each other (50%) or
+joined to a box (71%), because a tilted cap cannot be merged into one flat polygon. Those are refused with advice; nothing broken is
+returned. One risk remains: if csgrs ever recursed without end on some input, the stack overflow would abort the app rather than return
+an error. It has not happened in thousands of measured booleans since merging was limited to exactly flat faces, but only running
+booleans in a child process would make it impossible.
+
+csgrs 0.20.1 also needs `core2`, every release of which is yanked, so `vendor/core2` stands in for it over `std::io` (the root
+`Cargo.toml` patches it in); remove it when csgrs stops asking.
 
 ## Slicing pipeline
 

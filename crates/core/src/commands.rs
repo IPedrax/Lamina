@@ -26,7 +26,7 @@ pub static ALL: &[Command] = &[
     ),
     cmd(
         "add_primitive",
-        "{kind:\"box\"|\"cylinder\"|\"sphere\", name?, size?:[x,y,z] (box), radius? (cylinder, sphere), height? (cylinder), segments? (3..256, default 48)} a shape on the plate, mm. Returns {id}",
+        "{kind:\"box\"|\"cylinder\"|\"sphere\", name?, size?:[x,y,z] (box), radius? (cylinder, sphere), height? (cylinder), segments? (3..256, default 48; a sphere is geodesic and gets 320, 1280, 5120 or 20480 triangles from it)} a shape on the plate, mm. Returns {id}",
         add_primitive,
         true,
         Files::None,

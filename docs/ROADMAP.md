@@ -14,10 +14,10 @@ Ordered by what unblocks the next thing. Each step ends with a test that looks a
 
 ## Next
 
-0. **Make booleans reliable on curves.** `union`, `difference` and `intersect` work on csgrs and are exact on boxes and upright
-   cylinders, but a sphere in a union fails about four times in five, and tilted cylinders fail often. The gate refuses those with advice,
-   so nothing broken is made. Options: a better sphere (the poles are thin fans), more repair, or `manifold3d` behind the same
-   `boolean()` (robust, builds C++, so it would bend the Rust-only rule). Re-measure with `success_matrix`.
+0. **Tilted cylinders in booleans.** Upright shapes and spheres now give a clean solid in 199 of 200 random cases; tilted shapes in 180 of
+   200, failing mostly on tilted cylinders crossing each other or a box. A tilted cap could be merged if cylinders were built with an
+   exactly flat cap in their own frame and moved afterwards in f64; or run booleans in a child process so no input can crash the app.
+   Re-measure with `success_matrix` and `curved_score`.
 
 1. **Real prints.** Run G-code on two printers (one Marlin, one Klipper) before trusting any number. Nothing here has touched hardware.
 2. **Mesh repair and import.** Weld, fix winding, report non-manifold edges; 3MF and OBJ readers (lift `mesh_in.rs` from BIMCraft).

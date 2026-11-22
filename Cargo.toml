@@ -37,6 +37,8 @@ dbg_macro = "warn"
 opt-level = 2
 [profile.dev.package.lamina-core]
 opt-level = 2
+[profile.dev.package.lamina-csg]
+opt-level = 2
 # Dependencies (csgrs and the maths under it) are built optimised in debug builds too: a boolean in an unoptimised BSP takes minutes.
 [profile.dev.package."*"]
 opt-level = 2
