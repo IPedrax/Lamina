@@ -8,14 +8,16 @@ Ordered by what unblocks the next thing. Each step ends with a test that looks a
 - Meshes, primitives (box, cylinder, sphere), transforms, STL in and out.
 - Slicer: layers, walls, solid and sparse infill, skirt, retraction, flow, time and filament estimates, Marlin-style G-code.
 - CLI and MCP server. AI chat engine ported from BIMCraft (providers, sealed key, attachments, tool layer).
+- Booleans: `union`, `difference` and `intersect`, with crack repair and a gate that refuses broken results.
 - The AI's skills (`read_skill`: modelling, design for FDM, slicer settings, working from a picture) and `slice_check`, a slice that
   writes no file, so the model can verify a part while `slice` stays refused to it.
 
 ## Next
 
-0. **Booleans, first.** The AI can only place and scale primitives today: no holes, unions or fillets, and overlapping objects print
-   twice. Until `union`, `difference` and `intersect` exist, most requests cannot be modelled well, and the skills say so. This is
-   the decision between `manifold3d` (robust, builds C++) and `csgrs` (pure Rust, unproven).
+0. **Make booleans reliable on curves.** `union`, `difference` and `intersect` work on csgrs and are exact on boxes and upright
+   cylinders, but a sphere in a union fails about four times in five, and tilted cylinders fail often. The gate refuses those with advice,
+   so nothing broken is made. Options: a better sphere (the poles are thin fans), more repair, or `manifold3d` behind the same
+   `boolean()` (robust, builds C++, so it would bend the Rust-only rule). Re-measure with `success_matrix`.
 
 1. **Real prints.** Run G-code on two printers (one Marlin, one Klipper) before trusting any number. Nothing here has touched hardware.
 2. **Mesh repair and import.** Weld, fix winding, report non-manifold edges; 3MF and OBJ readers (lift `mesh_in.rs` from BIMCraft).
@@ -33,7 +35,7 @@ Ordered by what unblocks the next thing. Each step ends with a test that looks a
 ## Later
 
 Supports (normal, then tree), bridging, raft, adaptive layers, arc fitting, pressure advance per firmware, variable-width walls,
-per-object settings, sketch and extrude, hollow and cut, text and emboss, multi-material, PrusaLink, Duet and Bambu, STEP.
+per-object settings, sketch and extrude, fillets and chamfers, text and emboss, multi-material, PrusaLink, Duet and Bambu, STEP.
 
 ## Known limits today
 

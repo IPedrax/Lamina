@@ -34,7 +34,7 @@ a fit matters, say that the clearances are defaults and that the first print is 
 
 - Printed holes come out a little small. Make a screw hole about 0.2 to 0.4 mm wider than the screw.
 - For two parts that must fit, leave about 0.2 mm per side for a snug fit and 0.3 to 0.4 mm per side for a sliding fit.
-- Holes need booleans, which Lamina does not have yet. Say so rather than faking one with overlapping solids.
+- Cut holes with `difference`, using a cutting shape that sticks out past the faces it passes through.
 
 ## Size limits
 

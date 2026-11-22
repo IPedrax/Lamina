@@ -1,0 +1,23 @@
+[package]
+name = "lamina-csg"
+description = "Lamina's mesh booleans: union, difference and intersect of objects on the plate, on csgrs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+# One real-number type and one triangulator are required; the file, text and image features are not.
+csgrs = { version = "0.20.1", default-features = false, features = ["f64", "delaunay"] }
+lamina-core = { workspace = true }
+# The same 0.33 csgrs builds on, for the points and vectors it takes.
+nalgebra = "0.33"
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+# A union is sliced in a test, to show the result is a mesh the slicer can use.
+lamina-slicer = { workspace = true }

@@ -42,6 +42,9 @@ cargo test --workspace
 - `crates/slicer`: `slice.rs` (mesh to closed loops per layer), `geom.rs` (polygon booleans, offsets, line clipping on i_overlay),
   `print.rs` (walls, skins, infill, skirt, the G-code writer), `profile.rs` (settings, checks, `[name]` placeholders), `commands.rs`
   (`slice`, `slice_check`, `slicer_profile`; an app adds them with `session.register(lamina_slicer::COMMANDS)`).
+- `crates/csg`: `boolean(op, a, b)`, the only code that knows csgrs, and the `union`, `difference` and `intersect` commands. A result is
+  returned only if `sound` accepts it (closed, possible volume and bounds): refuse, never return a broken mesh. `vendor/core2` is a
+  stand-in for a yanked crate csgrs asks for (see the root `Cargo.toml`).
 - `crates/assistant`: the AI chat, ported from BIMCraft. `skills/*.md` are the notes the model reads with `read_skill`
   (modelling, designing for FDM, slicer settings, working from a picture), written for Lamina's own commands: a test checks that every
   command they name exists. A command a skill promises must exist, and a new command the model needs gets a line in the skill. Notes: [crates/assistant/CLAUDE.md](crates/assistant/CLAUDE.md). The only

@@ -4,7 +4,7 @@ A 3D slicer and modelling tool for 3D printing, in pure Rust, with an AI assista
 models it, and Lamina slices it to G-code for a real printer.
 
 **Status: early.** A CLI and an MCP server work today: build a plate from primitives or an STL, move, rotate and scale
-objects, and slice them to Marlin-style G-code (walls, solid and sparse infill, skirt, retraction, time and filament estimates). The
+objects, join and cut them (`union`, `difference`, `intersect`), and slice them to Marlin-style G-code (walls, solid and sparse infill, skirt, retraction, time and filament estimates). The
 AI chat engine is ported and tested, but no window shows it yet, and there is no desktop viewport. The plan is in
 [docs/ROADMAP.md](docs/ROADMAP.md).
 
@@ -28,6 +28,7 @@ command that fails, panics or leaves the scene invalid changes nothing, and each
 
 - `crates/core`: meshes, the scene, STL files, the command engine.
 - `crates/slicer`: layers, walls, infill, G-code, printer profiles.
+- `crates/csg`: `union`, `difference` and `intersect` of objects, on csgrs (pure Rust).
 - `crates/assistant`: the AI chat (Anthropic, OpenAI, Gemini; your own key). The only crate that touches the network.
 - `apps/lamina-cli`: the `lamina` command and its MCP server (`lamina mcp`, `--read-only` to let an agent look but not change).
 

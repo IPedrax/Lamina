@@ -26,6 +26,7 @@ const USAGE: &str = "USAGE:
 fn session() -> Session {
     let mut s = Session::new();
     s.register(lamina_slicer::COMMANDS);
+    s.register(lamina_csg::COMMANDS);
     s
 }
 

@@ -1,0 +1,13 @@
+[package]
+name = "core2"
+version = "0.4.0"
+edition = "2021"
+description = "A stand-in for the yanked core2 crate: csgrs asks for it only for std::io's Cursor, which std has"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[features]
+default = ["std"]
+std = []
+alloc = []
+nightly = []

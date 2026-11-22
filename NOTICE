@@ -1,0 +1,16 @@
+Lamina is MIT licensed (LICENSE). It uses and was shaped by the work of others.
+
+csgrs (https://github.com/timschmidt/csgrs), MIT
+  Copyright (c) 2025 Timothy Schmidt
+  Copyright (C) 2011 Evan Wallace (the BSP boolean algorithm of csg.js, which csgrs ports)
+  lamina-csg builds its booleans on csgrs' BSP trees and its triangulation.
+
+i_overlay (https://github.com/iShape-Rust/iOverlay), MIT
+  The slicer's polygon unions, differences, offsets and line clipping.
+
+BIMCraft (https://github.com/IPedrax/BIMCraft), MIT OR Apache-2.0, by the same author
+  The assistant crate (provider clients, sealed key storage, attachments, turn loop) and the design of the command engine and the MCP
+  server are ported from it.
+
+Every other dependency keeps its own licence; `cargo tree` lists them. Slicers whose behaviour Lamina follows (PrusaSlicer, OrcaSlicer,
+Bambu Studio, Cura) are AGPL or LGPL and none of their code is used.

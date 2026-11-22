@@ -24,5 +24,6 @@ tempfile = "3"
 ring = "0.17"
 
 [dev-dependencies]
-# The skills' test checks every command they name against the real catalog, the slicer's included.
+# The skills' test checks every command they name against the real catalog, the slicer's and the booleans' included.
 lamina-slicer = { workspace = true }
+lamina-csg = { workspace = true }

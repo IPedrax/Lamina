@@ -54,6 +54,19 @@ impl Scene {
         Ok(self.next_id)
     }
 
+    /// Adds a mesh that already stands where it should (the result of a boolean), keeping its coordinates, and returns its id.
+    pub fn add_placed(&mut self, name: &str, mesh: Mesh) -> Result<u32, String> {
+        if self.objects.len() >= MAX_OBJECTS {
+            return Err(format!("the plate holds at most {MAX_OBJECTS} objects"));
+        }
+        if mesh.bounds().is_none() {
+            return Err("the mesh is empty".into());
+        }
+        self.next_id += 1;
+        self.objects.push(Object { id: self.next_id, name: name.to_string(), mesh: Arc::new(mesh), xf: Transform::IDENTITY });
+        Ok(self.next_id)
+    }
+
     /// What every command must leave true: a transform that stays finite and an object that stays within reach.
     pub fn check(&self) -> Result<(), String> {
         for o in &self.objects {

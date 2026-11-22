@@ -16,4 +16,5 @@ workspace = true
 [dependencies]
 lamina-core = { workspace = true }
 lamina-slicer = { workspace = true }
+lamina-csg = { workspace = true }
 serde_json = { workspace = true }

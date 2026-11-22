@@ -70,6 +70,7 @@ mod tests {
     fn every_command_a_skill_names_exists() {
         let mut session = Session::new();
         session.register(lamina_slicer::COMMANDS);
+        session.register(lamina_csg::COMMANDS);
         let tools = ["execute", "list_commands", "inspect_scene", "todo_write", "read_skill"];
         let mut seen = 0;
         for s in all() {

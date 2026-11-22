@@ -23,6 +23,7 @@ desktop (planned)  ────┘
 |---|---|---|
 | `lamina-core` | `Mesh`, `Transform`, STL read/write, `Scene`, `Session`, `bridge`, built-in commands | serde |
 | `lamina-slicer` | `slice` (mesh to loops), `geom` (polygon booleans and offsets on `i_overlay`), `print` (walls, infill, G-code), `profile`, the `slice` and `slicer_profile` commands | core, i_overlay |
+| `lamina-csg` | `boolean` over csgrs' BSP trees, crack repair, the soundness gate, the `union`, `difference` and `intersect` commands | core, csgrs |
 | `lamina-assistant` | provider clients, sealed key storage, tool layer, turn loop | core, ureq, ring |
 | `lamina-cli` | `lamina` binary, MCP server | core, slicer |
 
@@ -61,6 +62,37 @@ clear licence (see [RESEARCH.md](RESEARCH.md)).
 - **Community OpenSCAD and CadQuery skills:** infer and list the assumptions instead of interviewing, run arithmetic checks before
   looking at a render (bounding box, wall thickness, fits the bed), say when a fit is a declared default and not a measurement,
   prefer modifying an existing mesh to rebuilding it. These shaped the order in `modelling-with-lamina`.
+
+## Booleans
+
+`lamina-csg` is the only crate that names csgrs, so another engine can replace it behind `boolean(op, a, b)`. csgrs is a BSP library
+(Evan Wallace's csg.js algorithm in Rust). Three things in the way it is used matter:
+
+1. **The whole shapes go through the BSP.** csgrs' own `union` and `difference` set aside faces whose boxes miss the other shape's box,
+   and a shape wholly inside the other then has nothing to be clipped against (a union of nested boxes kept both). `combine` uses its
+   public `Node` directly.
+2. **The result is cracked, and is repaired.** The BSP leaves T-junctions where one face's vertex sits on a neighbour's edge. `close`
+   welds vertices (a point within a micron of one already there is that one), splits triangles at the vertices on their edges, drops
+   thin fins on edges three faces share, and fills holes of 16 edges or fewer where the triangulator lost a triangle.
+3. **A result is gated.** `sound` accepts only a closed solid whose volume is possible for inclusion and exclusion and whose bounds are
+   inside what the operation allows. Anything else is an error that tells the user or the model what to try. A broken mesh in the scene
+   would slice into a broken print.
+
+The measured success (clean solid out of random pairs with round-number offsets, 200 to 400 cases per cell) is the reason for the gate:
+
+| | Union | Difference | Intersect |
+|---|---|---|---|
+| box with box | 100% | 100% | 100% |
+| box with upright cylinder | 100% | 100% | 100% |
+| cylinder with cylinder | 73% | 89% | 100% |
+| box with sphere | 39% | 68% | 100% |
+| cylinder with sphere | 22% | 53% | 100% |
+| sphere with sphere | 21% | 36% | 100% |
+
+Tilted cylinders and boxes rotated about an axis lower these (box with cylinder union 56%, difference 76%). `success_matrix` in
+`crates/csg/src/lib.rs` re-measures it, and is how a different engine would be compared. csgrs 0.20.1 also needs `core2`, every
+release of which is yanked, so `vendor/core2` stands in for it over `std::io` (the root `Cargo.toml` patches it in); remove it when
+csgrs stops asking.
 
 ## Slicing pipeline
 
