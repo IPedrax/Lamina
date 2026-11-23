@@ -46,6 +46,10 @@ presets live in the app's settings panel, not in these commands.
   time and a rougher underside.
 - Vase mode: `vase: true` prints the bottom layers, then one outer wall that climbs without stopping, with no infill and no top:
   for vases, cups and lamp shades, one object at a time. The wall is one line thick, so it is fragile.
+- Surfaces: `ironing: true` passes over each top surface again with close lines (`ironing_spacing` 0.1 mm) and a trickle of
+  plastic (`ironing_flow` 0.1) at `ironing_speed` (15): smooth tops for lids and nameplates, at the cost of time. `fuzzy_skin:
+  true` roughens the outer wall (`fuzzy_thickness` 0.3, `fuzzy_spacing` 0.8 mm) for a grip that hides layer lines. Both may be set
+  for one object alone.
 - Seams: `seam` is where each wall loop starts and ends, which leaves a small mark: `"aligned"` (the default, one tidy line up the
   part), `"rear"` (at the back, out of sight), `"sharpest"` (hidden in an inside corner) or `"nearest"` (least travel, marks
   scattered).

@@ -142,6 +142,8 @@ pub const PER_OBJECT_FIELDS: &[&str] = &[
     "support_z_gap",
     "support_xy_gap",
     "support_interface_layers",
+    "ironing",
+    "fuzzy_skin",
 ];
 
 /// Each object's own profile, its settings laid over the plate's, or none where it has none.

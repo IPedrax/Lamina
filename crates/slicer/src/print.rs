@@ -65,10 +65,11 @@ pub enum Feature {
     Raft,
     Bridge,
     GapFill,
+    Ironing,
 }
 
 impl Feature {
-    pub const ALL: [Feature; 11] = [
+    pub const ALL: [Feature; 12] = [
         Feature::OuterWall,
         Feature::InnerWall,
         Feature::SolidInfill,
@@ -80,6 +81,7 @@ impl Feature {
         Feature::Raft,
         Feature::Bridge,
         Feature::GapFill,
+        Feature::Ironing,
     ];
 
     /// The name after `;TYPE:`.
@@ -96,6 +98,7 @@ impl Feature {
             Feature::Raft => "raft",
             Feature::Bridge => "bridge",
             Feature::GapFill => "gap-fill",
+            Feature::Ironing => "ironing",
         }
     }
 
@@ -453,9 +456,11 @@ fn plan(mesh: &Mesh, p: &Profile, w: f64, tops: Option<&[f64]>) -> Result<Object
         }
         for i in (0..p.perimeters).rev() {
             let kind = if i == 0 { Feature::OuterWall } else { Feature::InnerWall };
+            // Fuzzy skin roughens the outer wall above the first layer, which must stay flat on the plate.
+            let fuzzy = p.fuzzy_skin && i == 0 && k > 0;
             for shape in geom::inset(&regions[k], w / 2.0 + f64::from(i) * w) {
                 strokes.extend(shape.into_iter().map(|pts| Stroke {
-                    pts,
+                    pts: if fuzzy { fuzz(&pts, p.fuzzy_thickness, p.fuzzy_spacing, k) } else { pts },
                     closed: true,
                     speed: speed(p.perimeter_speed),
                     kind,
@@ -526,9 +531,58 @@ fn plan(mesh: &Mesh, p: &Profile, w: f64, tops: Option<&[f64]>) -> Result<Object
                 spiral: false,
             }));
         }
+        // Ironing, last on the layer: over each top surface (what no layer above covers), a second pass of close lines with a trickle of plastic, at
+        // right angles to the top skin, which melts its ridges flat.
+        if p.ironing && k > 0 {
+            let above = regions.get(k + 1).cloned().unwrap_or_default();
+            let top = geom::inset(&geom::difference(&inner[k], &above), w / 2.0);
+            if !geom::is_empty(&top) {
+                strokes.extend(fill_lines(&top, p.ironing_spacing, angle + 90.0).into_iter().map(|pts| Stroke {
+                    pts,
+                    closed: false,
+                    speed: p.ironing_speed,
+                    kind: Feature::Ironing,
+                    flow: p.ironing_flow,
+                    spiral: false,
+                }));
+            }
+        }
         out.push((layer.z, layer.height, strokes, regions[k].clone()));
     }
     Ok((regions.into_iter().next().unwrap_or_default(), out))
+}
+
+/// A closed wall `pts` made fuzzy: points every `spacing` mm along it, each moved across the wall by up to `thickness` mm either way.
+/// The offsets come from a small generator seeded by the layer, so a slice is the same each time it is made.
+fn fuzz(pts: &[P2], thickness: f64, spacing: f64, layer: usize) -> Vec<P2> {
+    let mut seed = (layer as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0x0005_DEEC_E66D;
+    let mut next = || {
+        // xorshift64*: enough for a texture, no crate needed.
+        seed ^= seed >> 12;
+        seed ^= seed << 25;
+        seed ^= seed >> 27;
+        (seed.wrapping_mul(0x2545_F491_4F6C_DD1D) >> 11) as f64 / (1u64 << 53) as f64
+    };
+    let n = pts.len();
+    if n < 3 || !(thickness > 0.0 && spacing > 0.0) {
+        return pts.to_vec();
+    }
+    let mut out = Vec::new();
+    for i in 0..n {
+        let (a, b) = (pts[i], pts[(i + 1) % n]);
+        let len = dist(a, b);
+        if len < 1e-9 {
+            continue;
+        }
+        let normal = [-(b[1] - a[1]) / len, (b[0] - a[0]) / len];
+        let steps = (len / spacing).ceil().max(1.0) as usize;
+        for s in 0..steps {
+            let t = s as f64 / steps as f64;
+            let off = (next() * 2.0 - 1.0) * thickness;
+            out.push([a[0] + t * (b[0] - a[0]) + normal[0] * off, a[1] + t * (b[1] - a[1]) + normal[1] * off]);
+        }
+    }
+    if out.len() < 3 { pts.to_vec() } else { out }
 }
 
 /// The part of the solid infill `solid` that lies over air (beyond the layer below), without slivers narrower than a line.
@@ -1025,6 +1079,37 @@ mod tests {
         // The smallest may not pass the largest.
         let bad = Profile { min_layer_height: 0.3, ..p };
         assert!(gcode(&[(1, ball)], &bad).unwrap_err().contains("min_layer_height"));
+    }
+
+    #[test]
+    fn ironing_passes_over_the_top_only_with_a_trickle_of_plastic() {
+        let p = Profile { ironing: true, ..Profile::default() };
+        let out = gcode(&cube(20.0), &p).unwrap();
+        let ironed: Vec<usize> =
+            out.gcode.split(";LAYER:").enumerate().filter(|(_, l)| l.contains(";TYPE:ironing")).map(|(i, _)| i).collect();
+        assert_eq!(ironed, vec![out.layers], "only the last layer is a top surface: {ironed:?}");
+        let plain = gcode(&cube(20.0), &Profile::default()).unwrap();
+        let extra = out.filament_mm - plain.filament_mm;
+        assert!(extra > 0.0 && extra < 0.3 * plain.filament_mm / 100.0 * 20.0, "a trickle: {extra} mm more");
+        assert!(out.seconds > plain.seconds, "and it takes time");
+    }
+
+    #[test]
+    fn fuzzy_skin_roughens_the_outer_wall_above_the_first_layer() {
+        let wall = vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]];
+        let fuzzy = fuzz(&wall, 0.3, 0.8, 5);
+        assert!(fuzzy.len() >= 48, "points every 0.8 mm: {}", fuzzy.len());
+        // Each point within 0.3 mm of the square's edge, and some of them well off it.
+        let off = |p: &P2| p[0].abs().min((p[0] - 10.0).abs()).min(p[1].abs()).min((p[1] - 10.0).abs());
+        assert!(fuzzy.iter().all(|p| off(p) <= 0.3 + 1e-9));
+        assert!(fuzzy.iter().filter(|p| off(p) > 0.1).count() > fuzzy.len() / 4);
+        assert_eq!(fuzz(&wall, 0.3, 0.8, 5), fuzzy, "the same each time");
+        let p = Profile { fuzzy_skin: true, ..Profile::default() };
+        let out = gcode(&cube(10.0), &p).unwrap();
+        let plain = gcode(&cube(10.0), &Profile::default()).unwrap();
+        let first = |g: &str| g.split(";LAYER:1\n").next().unwrap().lines().count();
+        assert_eq!(first(&out.gcode), first(&plain.gcode), "the first layer is untouched");
+        assert!(out.gcode.lines().count() > plain.gcode.lines().count() + 1000, "the walls above have many more points");
     }
 
     #[test]

@@ -134,6 +134,13 @@ The same text is the tooltip in the window. The names are the ones a profile fil
 | `first_layer_height` | The height of the first layer, mm: a thicker one sticks better to an uneven plate. | 0.02 to 1.6 | 0.2 |
 | `adaptive_layers` | Thin layers where a surface is nearly flat, so its steps hardly show, and thick ones on walls, to save time. |  | false |
 | `min_layer_height` | The thinnest an adaptive layer may be, mm; the thickest is the layer height. | 0.02 to 1.6 | 0.08 |
+| `ironing` | A second pass over each top surface with a trickle of plastic, which melts its ridges flat; slower, smoother tops. |  | false |
+| `ironing_flow` | How much plastic ironing lays, as a share of a full line: 0.1 is usual. | 0.01 to 0.5 | 0.1 |
+| `ironing_spacing` | How far apart the ironing lines are, mm: much closer than the line width. | 0.05 to 1 | 0.1 |
+| `ironing_speed` | How fast ironing moves, mm/s. | 1 to 300 | 15.0 |
+| `fuzzy_skin` | Roughen the outer wall with small random bumps, for a textured grip that hides layer lines. |  | false |
+| `fuzzy_thickness` | How far a fuzzy skin's bumps stand in or out, mm. | 0.05 to 2 | 0.3 |
+| `fuzzy_spacing` | How far apart a fuzzy skin's bumps are along the wall, mm. | 0.1 to 5 | 0.8 |
 | `perimeters` | Walls round each layer: more is stronger and slower. | 0 to 10 | 2 |
 | `vase` | Vase mode: above the bottom, one wall that climbs without stopping, with no infill and an open top. |  | false |
 | `top_layers` | Solid layers that close the top of the part. | 0 to 50 | 4 |

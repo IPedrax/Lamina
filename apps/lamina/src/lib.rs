@@ -1267,6 +1267,17 @@ impl App {
             field(ui, "Fan on bridges", "bridge_fan", &mut p.bridge_fan, 1.0);
             field(ui, "Bridge flow", "bridge_flow", &mut p.bridge_flow, 0.01);
         });
+        group(ui, "Surface", &mut |ui| {
+            ui.checkbox(&mut p.ironing, "Iron the top surfaces").on_hover_text(hint("ironing"));
+            ui.end_row();
+            field(ui, "Ironing flow", "ironing_flow", &mut p.ironing_flow, 0.01);
+            field(ui, "Ironing spacing, mm", "ironing_spacing", &mut p.ironing_spacing, 0.01);
+            field(ui, "Ironing speed, mm/s", "ironing_speed", &mut p.ironing_speed, 1.0);
+            ui.checkbox(&mut p.fuzzy_skin, "Fuzzy skin on the outer wall").on_hover_text(hint("fuzzy_skin"));
+            ui.end_row();
+            field(ui, "Fuzzy thickness, mm", "fuzzy_thickness", &mut p.fuzzy_thickness, 0.01);
+            field(ui, "Fuzzy spacing, mm", "fuzzy_spacing", &mut p.fuzzy_spacing, 0.05);
+        });
         group(ui, "Support details", &mut |ui| {
             field(ui, "Density", "support_density", &mut p.support_density, 0.01);
             field(ui, "Gap above, mm", "support_z_gap", &mut p.support_z_gap, 0.05);

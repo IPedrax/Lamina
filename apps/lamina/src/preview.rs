@@ -36,6 +36,7 @@ pub fn colour(kind: u8) -> (Color32, &'static str) {
         Some(Feature::Raft) => (Color32::from_rgb(160, 160, 160), "raft"),
         Some(Feature::Bridge) => (Color32::from_rgb(70, 125, 235), "bridge"),
         Some(Feature::GapFill) => (Color32::from_rgb(240, 240, 240), "gap fill"),
+        Some(Feature::Ironing) => (Color32::from_rgb(150, 230, 120), "ironing"),
         None => (EXTRUDE, "extrusion"),
     }
 }
