@@ -42,7 +42,8 @@ CI (`.github/workflows/ci.yml`) runs the same three on Linux, Windows and macOS 
 - `crates/core`: `mesh.rs` (triangle mesh, primitives, `Transform`), `stl.rs` (read and write), `scene.rs` (objects on the plate),
   `engine.rs` (`Session`: execute, undo, transactions, script, catalog, the project's print settings), `commands.rs` (the built-in commands),
   `project.rs` (`.lamina` files: `save`, `open`, `new`), `repair.rs` (mesh repair shared by import and the booleans, and the
-  problems `info` reports), `threemf.rs` and `zip.rs` (3MF in and out), `mesh_in.rs` (OBJ and glTF in, lifted from BIMCraft), `sketch.rs` (outlines extruded into solids), `base64.rs`, `fuzz.rs` (the seeded generator every crate's fuzz tests use).
+  problems `info` reports), `threemf.rs` and `zip.rs` (3MF in and out), `mesh_in.rs` (OBJ and glTF in, lifted from BIMCraft), `sketch.rs` (outlines extruded into solids), `render.rs` (the orbit camera and CPU rasterizer
+  the 3D view, the thumbnails and the assistant's picture share, and a PNG writer), `base64.rs`, `fuzz.rs` (the seeded generator every crate's fuzz tests use).
   `bridge.rs` (what an agent may ask: execute, script, catalog; read-only access; `REPLACES`, the commands that replace the plate).
 - `crates/slicer`: `slice.rs` (mesh to closed loops per layer), `geom.rs` (polygon booleans, offsets, line clipping on i_overlay),
   `print.rs` (walls, skins, infill, skirt, the G-code writer), `infill.rs` (sparse infill patterns), `support.rs` (overhangs,
@@ -64,8 +65,8 @@ CI (`.github/workflows/ci.yml`) runs the same three on Linux, Windows and macOS 
   fake printer for tests (`testing`, a feature). With the assistant, the only crate that may use `ureq`.
 - `apps/lamina`: the desktop app (`lamina`): `lib.rs` (the window: toolbar, plate panel, settings, tabs), `files.rs` (the File menu,
   recent projects, dropped files, the question before unsaved changes are lost), `autosave.rs` (the plate written every two minutes
-  and offered back after an unclean exit), `view3d.rs` (orbit camera,
-  a CPU rasterizer that keeps an object id per pixel for picking, and the move gizmo), `preview.rs` (layers read back from the G-code, one drawn at a
+  and offered back after an unclean exit), `view3d.rs` (the 3D view on
+  `lamina_core::render`, picking, the gizmo and the tools), `preview.rs` (layers read back from the G-code, one drawn at a
   time), `chat.rs` (the assistant panel, with Remember and a passphrase for the key), `printer.rs` (the printer connection and the Send
 buttons), `settings.rs` (the settings file: print settings,
   presets, sealed keys; read hostilely, written whole and owner-only). Thin: it changes the scene only through `Session::execute`. UI behaviour is tested with

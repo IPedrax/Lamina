@@ -9,6 +9,7 @@ pub mod fuzz;
 pub mod mesh;
 pub mod mesh_in;
 pub mod project;
+pub mod render;
 pub mod repair;
 pub mod scene;
 pub mod sketch;

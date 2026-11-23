@@ -82,7 +82,8 @@ its build.
 `apps/lamina` is egui 0.36 on eframe (wgpu), the same stack as BIMCraft. The window is thin: it reads `session.scene` and changes it
 only through `Session::execute`, so the assistant, a button and a script do the same thing the same way.
 
-- **3D view (`view3d.rs`).** An orbit camera (drag to orbit, right or middle drag to pan, wheel to zoom) and a small CPU
+- **3D view (`view3d.rs`).** The camera and rasterizer are `lamina_core::render`, shared with the G-code thumbnails and the
+  assistant's picture. An orbit camera (drag to orbit, right or middle drag to pan, wheel to zoom) and a small CPU
   rasterizer that draws the plate, its 10 mm grid and the objects into an egui texture, redrawn only when the scene, the selection,
   the camera or the size changes. Each pixel keeps the id of the object drawn there, which is the click-to-pick. BIMCraft draws on
   the GPU (`crates/ui-egui/src/gpu.rs`, rendering into a texture egui shows); that is the upgrade for meshes past a few hundred
