@@ -11,6 +11,7 @@ pub mod icon;
 pub mod preview;
 pub mod printer;
 pub mod settings;
+pub mod startup;
 pub mod view3d;
 pub mod work;
 
@@ -173,6 +174,9 @@ pub struct App {
     /// The theme chosen, and the one last set on the window.
     pub look: comfort::Look,
     applied_look: Option<comfort::Look>,
+    /// The log beside the settings file, where each error the status bar shows is written once.
+    pub log: Option<PathBuf>,
+    logged: String,
 }
 
 impl App {
@@ -223,6 +227,8 @@ impl App {
             preview: preview::Preview3d::default(),
             look: comfort::Look::default(),
             applied_look: None,
+            log: None,
+            logged: String::new(),
         }
         .ready()
     }
@@ -257,6 +263,7 @@ impl App {
         let a = autosave::Autosave::beside(&path);
         app.recovery = a.path.exists().then(|| a.path.clone());
         app.autosave = Some(a);
+        app.log = Some(startup::Files::beside(&path).log);
         app.settings_path = Some(path);
         app.mark_saved();
         app
@@ -617,6 +624,17 @@ impl App {
             self.title = title;
         }
         self.persist(&ctx);
+        self.log_error();
+    }
+
+    /// Writes the error on the status bar to the log, once.
+    fn log_error(&mut self) {
+        if self.failed && !self.status.is_empty() && self.status != self.logged {
+            if let Some(log) = &self.log {
+                startup::note(log, &format!("error: {}", self.status));
+            }
+            self.logged = self.status.clone();
+        }
     }
 
     fn keys(&mut self, ctx: &egui::Context) {
@@ -1694,6 +1712,19 @@ mod tests {
         assert_eq!(h.state().selected, vec![1]);
         press(&mut h, "Duplicate");
         assert_eq!(h.state().session.scene.objects.len(), 2, "{}", h.state().status);
+    }
+
+    #[test]
+    fn an_error_on_the_status_bar_goes_to_the_log_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = App::with_settings(session(), Arc::new(lamina_assistant::testing::Fake::default()), dir.path().join("settings.json"));
+        let mut h = Harness::builder().with_size([1400.0, 860.0]).build_ui_state(|ui, app: &mut App| app.show(ui), app);
+        h.state_mut().run("move", json!({"id": 99, "by": [1, 0, 0]}));
+        h.run();
+        h.run();
+        let log = std::fs::read_to_string(dir.path().join("lamina.log")).unwrap();
+        assert_eq!(log.matches("error: ").count(), 1, "{log}");
+        assert!(log.contains("99"), "{log}");
     }
 
     #[test]

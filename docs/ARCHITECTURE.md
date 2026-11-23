@@ -91,6 +91,11 @@ only through `Session::execute`, so the assistant, a button and a script do the 
   whose History lists the undo and redo steps (`Session::history`); a View menu with the theme (dark, light or the system's, kept in
   the settings file) and the list of shortcuts. Every setting's tooltip is its sentence in `profile::ABOUT` and its range from
   `profile::LIMITS`, so the window and the checks cannot disagree.
+- **Start and log (`startup.rs`, lifted from BIMCraft's).** `lamina.log` beside the settings file gets each start (version,
+  system, graphics), the adapter the window got, a panic with its backtrace, a start that failed, and each error the status bar
+  shows. On Windows a start that fails says so in a message box, as a release build has no console. A start that dies without a
+  word leaves `graphics.json` marked unfinished, and on Windows the next start tries DirectX 12, then Vulkan, then OpenGL; the
+  one that stays up 15 s is kept. `WGPU_BACKEND` overrides it all.
 - **Long work (`work.rs`).** Slicing, the booleans and the cut, writing G-code and sending it run on a thread, as the chat's requests
   do, so the window keeps drawing; the status bar shows a spinner, the time so far and Cancel. A job runs on a sibling session that
   shares the scene, so it still goes through `Session::execute`, and its new scene comes back with `Session::adopt` as one undo
@@ -240,6 +245,7 @@ BIMCraft is `/mnt/ai/RevCraft` (github.com/IPedrax/BIMCraft), same author, MIT O
 | `apps/bimcraft-cli/src/mcp.rs` | `apps/lamina-cli/src/mcp.rs` | ported, own session only |
 | `crates/core/src/mesh_in.rs` (OBJ and glTF readers, "knows no element") | `core/mesh_in.rs` | lifted with its reader tests; `import_mesh` makes objects of what it reads |
 | `crates/core/src/autosave.rs` | `apps/lamina/src/autosave.rs` | simpler: one window, one file |
+| `apps/bimcraft/src/startup.rs` (log, graphics fallback) | `apps/lamina/src/startup.rs` | lifted; no translations, no old-mark reading |
 | `crates/dwg` (`in_child`, `child_main`, `run_child`) | `crates/csg/src/child.rs` | the same pattern, for booleans |
 | `packaging/` (env, Linux, Windows WiX, macOS), `.github/workflows/release.yml` | the same paths | AppImage, tarball, MSI and DMG only: no deb, rpm, Flatpak, Arch, riscv64, APT, Discord or updater; the icon is drawn in Rust (`apps/lamina/src/icon.rs`) |
 | `crates/ui-egui/src/orbit.rs`, `camera.rs`, `gpu.rs`, `gpu.wgsl`, `retained.rs` (wgpu 3D view, orbit/pan/zoom, picking) | `apps/lamina/src/view3d.rs`, own and smaller | the same interaction, drawn on the CPU; the GPU pass is the upgrade |

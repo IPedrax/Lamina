@@ -186,6 +186,10 @@ Priorities:
   published with SHA256SUMS. Builds take `LAMINA_KEY_SECRET` from a repository secret and fail without it. The icon is drawn in
   Rust (`apps/lamina/src/icon.rs`) and written to `assets/app-icon/` as PNG, ICO and ICNS; the window uses it too. `lamina
   --version` lets the packages check the program starts. The updater is 7.9.
+- **7.8 Logging and crash safety.** `apps/lamina/src/startup.rs`, lifted from BIMCraft's: `lamina.log` beside the settings file
+  (each start, the graphics adapter, panics with a backtrace, a failed start, and each error the status bar shows), a message box
+  on Windows when the window cannot open, and after a start that died, the next tries another graphics backend (DirectX 12,
+  Vulkan, OpenGL on Windows), keeping the one that stays up.
 
 ## Order of work
 
@@ -273,9 +277,6 @@ through it.
 
 **7.9 Updater (P2).** How: lift BIMCraft's `crates/update`, which checks the releases and installs the MSI, the AppImage or the
 DMG, each checked against the SHA-256 digest GitHub gives the asset. The release names in `release.yml` are what it would look for.
-
-**7.8 Logging and crash safety (P1).** How: a log file in the settings folder, and a fallback when the graphics adapter fails at
-start. BIMCraft's `apps/bimcraft/src/startup.rs` has both.
 
 ## 8. Quality and infrastructure
 
