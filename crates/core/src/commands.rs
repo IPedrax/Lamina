@@ -19,14 +19,14 @@ const fn cmd(id: &'static str, params: &'static str, run: crate::engine::Run, un
 pub static ALL: &[Command] = &[
     cmd(
         "import_mesh",
-        "{path, name?} an STL file (binary or ASCII) put on the plate, centred, its lowest point on the plate. Returns {id, triangles, watertight, size}",
+        "{path, name?, at?:[x,y]} an STL file (binary or ASCII) put on the plate, centred on `at` (default the middle of the plate), its lowest point on the plate. Returns {id, triangles, watertight, size}",
         import_mesh,
         true,
         Files::Read,
     ),
     cmd(
         "add_primitive",
-        "{kind:\"box\"|\"cylinder\"|\"sphere\", name?, size?:[x,y,z] (box), radius? (cylinder, sphere), height? (cylinder), segments? (3..256, default 48; a sphere is geodesic and gets 320, 1280, 5120 or 20480 triangles from it)} a shape on the plate, mm. Returns {id}",
+        "{kind:\"box\"|\"cylinder\"|\"sphere\", name?, at?:[x,y] (where its centre stands, default the middle of the plate), size?:[x,y,z] (box), radius? (cylinder, sphere), height? (cylinder), segments? (3..256, default 48; a sphere is geodesic and gets 320, 1280, 5120 or 20480 triangles from it)} a shape on the plate, mm. Returns {id}",
         add_primitive,
         true,
         Files::None,
@@ -103,6 +103,7 @@ fn settle(o: &mut Object) -> Result<(), String> {
 struct Import {
     path: String,
     name: Option<String>,
+    at: Option<[f64; 2]>,
 }
 
 fn import_mesh(s: &mut Session, p: &Value) -> Result<Value, String> {
@@ -117,7 +118,7 @@ fn import_mesh(s: &mut Session, p: &Value) -> Result<Value, String> {
     }
     let mesh = stl::read(&std::fs::read(path).map_err(|e| format!("{}: {e}", a.path))?)?;
     let name = a.name.unwrap_or_else(|| path.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "mesh".into()));
-    added(s, &name, mesh)
+    added(s, &name, mesh, a.at)
 }
 
 #[derive(Deserialize)]
@@ -125,6 +126,7 @@ fn import_mesh(s: &mut Session, p: &Value) -> Result<Value, String> {
 struct Primitive {
     kind: String,
     name: Option<String>,
+    at: Option<[f64; 2]>,
     size: Option<P3>,
     radius: Option<f64>,
     height: Option<f64>,
@@ -148,12 +150,15 @@ fn add_primitive(s: &mut Session, p: &Value) -> Result<Value, String> {
         "sphere" => Mesh::sphere(need(a.radius, "radius")?, segments),
         other => return Err(format!("unknown kind `{other}`: box, cylinder or sphere")),
     };
-    added(s, a.name.as_deref().unwrap_or(&a.kind), mesh)
+    added(s, a.name.as_deref().unwrap_or(&a.kind), mesh, a.at)
 }
 
-fn added(s: &mut Session, name: &str, mesh: Mesh) -> Result<Value, String> {
+fn added(s: &mut Session, name: &str, mesh: Mesh, at: Option<[f64; 2]>) -> Result<Value, String> {
     let (triangles, watertight) = (mesh.triangles.len(), mesh.is_watertight());
+    let at = finite3("at", at.map_or([0.0; 3], |[x, y]| [x, y, 0.0]))?;
     let id = s.scene_mut().add(name, mesh)?;
+    let o = s.scene_mut().get_mut(id)?;
+    o.xf = o.xf.then(&Transform::translate(at));
     let (lo, hi) = size_of(s.scene.get(id)?)?;
     Ok(json!({"id": id, "triangles": triangles, "watertight": watertight, "size": [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]]}))
 }
@@ -302,6 +307,18 @@ mod tests {
         assert_eq!(v["watertight"], true);
         let o = s.scene.get(1).unwrap();
         assert_eq!(o.bounds(), Some(([-10.0, -5.0, 0.0], [10.0, 5.0, 5.0])));
+    }
+
+    #[test]
+    fn a_shape_can_be_put_where_it_should_stand() {
+        let mut s = Session::new();
+        run(&mut s, "add_primitive", json!({"kind": "cylinder", "radius": 5, "height": 8, "at": [30, -10]})).unwrap();
+        assert_eq!(
+            s.scene.get(1).unwrap().bounds().map(|(lo, hi)| [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, lo[2]]),
+            Some([30.0, -10.0, 0.0])
+        );
+        assert!(run(&mut s, "add_primitive", json!({"kind": "box", "size": [1, 1, 1], "at": [1e300, 0]})).is_err());
+        assert_eq!(s.scene.objects.len(), 1);
     }
 
     #[test]

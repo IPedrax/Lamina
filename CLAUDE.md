@@ -49,6 +49,10 @@ cargo test --workspace
   (modelling, designing for FDM, slicer settings, working from a picture), written for Lamina's own commands: a test checks that every
   command they name exists. A command a skill promises must exist, and a new command the model needs gets a line in the skill. Notes: [crates/assistant/CLAUDE.md](crates/assistant/CLAUDE.md). The only
   crate that may use `ureq` or `ring` (a test in `lamina-core` checks every manifest).
-- `apps/lamina-cli`: the `lamina` binary and `mcp.rs`, the MCP server.
+- `apps/lamina`: the desktop app (`lamina`): `lib.rs` (the window: toolbar, plate panel, settings, tabs), `view3d.rs` (orbit camera
+  and a CPU rasterizer that keeps an object id per pixel for picking), `preview.rs` (layers read back from the G-code, one drawn at a
+  time), `chat.rs` (the assistant panel). Thin: it changes the scene only through `Session::execute`. UI behaviour is tested with
+  egui_kittest; `picture_of_the_window` (ignored, needs a GPU) renders it to a PNG to look at.
+- `apps/lamina-cli`: the `lamina-cli` binary and `mcp.rs`, the MCP server.
 - `docs/`: `ARCHITECTURE.md` (what is ported from BIMCraft and what is not), `RESEARCH.md` (slicers, editors, crates, licence flags),
   `ROADMAP.md` (the order of work and the known limits).

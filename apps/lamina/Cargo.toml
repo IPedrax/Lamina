@@ -1,0 +1,35 @@
+[package]
+name = "lamina"
+description = "Lamina desktop app: model, slice and talk to the assistant in one window"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+# egui 0.36 needs Rust 1.95; the libraries and the CLI still build with 1.90.
+rust-version = "1.95"
+publish = false
+
+[lib]
+name = "lamina_desktop"
+path = "src/lib.rs"
+
+[[bin]]
+name = "lamina"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+lamina-core = { workspace = true }
+lamina-slicer = { workspace = true }
+lamina-csg = { workspace = true }
+lamina-assistant = { path = "../../crates/assistant" }
+serde_json = { workspace = true }
+eframe = "0.36"
+egui = "0.36"
+rfd = "0.17"
+
+[dev-dependencies]
+lamina-assistant = { path = "../../crates/assistant", features = ["testing"] }
+# `wgpu` lets a test render the whole window to a picture, to look at it.
+egui_kittest = { version = "0.36", features = ["wgpu"] }

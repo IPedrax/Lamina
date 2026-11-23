@@ -14,7 +14,7 @@ changes the scene or its history. Parameters are strict (`deny_unknown_fields`),
 ```
 lamina-cli (CLI, MCP) ─┐
 lamina-assistant (chat) ─┼─> bridge::run ─> Session::execute ─> commands (core + slicer) ─> Scene
-desktop (planned)  ────┘
+desktop (lamina) ──────┘
 ```
 
 ## Crates
@@ -25,7 +25,8 @@ desktop (planned)  ────┘
 | `lamina-slicer` | `slice` (mesh to loops), `geom` (polygon booleans and offsets on `i_overlay`), `print` (walls, infill, G-code), `profile`, the `slice` and `slicer_profile` commands | core, i_overlay |
 | `lamina-csg` | `boolean` over csgrs' BSP trees, crack repair, the soundness gate, the `union`, `difference` and `intersect` commands | core, csgrs |
 | `lamina-assistant` | provider clients, sealed key storage, tool layer, turn loop | core, ureq, ring |
-| `lamina-cli` | `lamina` binary, MCP server | core, slicer |
+| `lamina` (apps/lamina) | the desktop window: 3D view, objects panel, settings, layer preview, assistant panel | core, slicer, csg, assistant, eframe, rfd |
+| `lamina-cli` | `lamina-cli` binary, MCP server | core, slicer, csg |
 
 A test in `lamina-core` reads every manifest and fails if any crate but `assistant` depends on an HTTP client or `ring`.
 
@@ -121,8 +122,8 @@ BIMCraft is `/mnt/ai/RevCraft` (github.com/IPedrax/BIMCraft), same author, MIT O
 | `crates/assistant` (3 providers, sealed key, attachments, turn loop) | `crates/assistant` | ported, 53 tests. Dropped Co-Work and saved chats |
 | `apps/bimcraft-cli/src/mcp.rs` | `apps/lamina-cli/src/mcp.rs` | ported, own session only |
 | `crates/core/src/mesh_in.rs` (OBJ and glTF readers, "knows no element") | not yet | next: lift as `core/obj.rs`, `core/gltf.rs` |
-| `crates/ui-egui/src/orbit.rs`, `camera.rs`, `gpu.rs`, `gpu.wgsl`, `retained.rs` (wgpu 3D view, orbit/pan/zoom, picking) | not yet | next: the desktop viewport. These are welded to BIMCraft's `Scene` and `Model`, so lift the camera and the mesh pass, not the files |
-| `crates/ui-egui` panels, `assistant.rs` (chat palette) | not yet | the chat window is the small piece to lift first |
+| `crates/ui-egui/src/orbit.rs`, `camera.rs`, `gpu.rs`, `gpu.wgsl`, `retained.rs` (wgpu 3D view, orbit/pan/zoom, picking) | `apps/lamina/src/view3d.rs`, own and smaller | the same interaction, drawn on the CPU; the GPU pass is the upgrade |
+| `crates/ui-egui` panels, `assistant.rs` (chat palette) | `apps/lamina/src/chat.rs` | rewritten small on the same chat; no saved key, no Co-Work |
 | `crates/core/src/view3d.rs`, `view3d/gpu.rs` | not reused | BIM-specific (levels, elements, section boxes) |
 
 The assistant's only coupling to the core was `Session`, `bridge::run`, `Access` and `find`, which is why porting it took a

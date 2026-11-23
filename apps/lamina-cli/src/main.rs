@@ -1,4 +1,4 @@
-//! `lamina`: Lamina from the command line. Scripts, conversion and an MCP server for agents, all through the same commands.
+//! `lamina-cli`: Lamina from the command line (the desktop app is `lamina`). Scripts, conversion and an MCP server for agents, all through the same commands.
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 mod mcp;
@@ -11,16 +11,16 @@ use lamina_core::bridge::Access;
 use serde_json::{Value, json};
 
 const USAGE: &str = "USAGE:
-  lamina run [FILE.stl] [--cmd 'ID {json}']... [--script FILE]...
+  lamina-cli run [FILE.stl] [--cmd 'ID {json}']... [--script FILE]...
       Put FILE on the plate (or start empty), then run the commands and scripts in the order given (a script is one `ID {json}` per
       line). Each result is printed as a line of JSON. `export_mesh {\"path\": \"out.stl\"}` writes the plate.
-  lamina slice FILE.stl OUT.gcode [PROFILE.json]
+  lamina-cli slice FILE.stl OUT.gcode [PROFILE.json]
                                  slice the mesh to G-code. PROFILE.json holds only the settings that differ from the defaults
-                                 (`lamina run --cmd slicer_profile` prints them all)
-  lamina info FILE.stl           the mesh at a glance: size, volume, triangles, whether it is closed
-  lamina commands                every command and its parameters
-  lamina mcp [--read-only]       an MCP server on stdio, for agents; with --read-only the agent may look at the scene, never change it
-  lamina --version";
+                                 (`lamina-cli run --cmd slicer_profile` prints them all)
+  lamina-cli info FILE.stl           the mesh at a glance: size, volume, triangles, whether it is closed
+  lamina-cli commands                every command and its parameters
+  lamina-cli mcp [--read-only]       an MCP server on stdio, for agents; with --read-only the agent may look at the scene, never change it
+  lamina-cli --version";
 
 /// A session with every command registered: the built-in ones, and each crate's.
 fn session() -> Session {
@@ -92,7 +92,7 @@ fn main() -> ExitCode {
     match main_with(&args, &mut std::io::stdout().lock()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("lamina: {e}");
+            eprintln!("lamina-cli: {e}");
             ExitCode::FAILURE
         }
     }

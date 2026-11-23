@@ -3,22 +3,25 @@
 A 3D slicer and modelling tool for 3D printing, in pure Rust, with an AI assistant built in. You describe a part, the assistant
 models it, and Lamina slices it to G-code for a real printer.
 
-**Status: early.** A CLI and an MCP server work today: build a plate from primitives or an STL, move, rotate and scale
-objects, join and cut them (`union`, `difference`, `intersect`), and slice them to Marlin-style G-code (walls, solid and sparse infill, skirt, retraction, time and filament estimates). The
-AI chat engine is ported and tested, but no window shows it yet, and there is no desktop viewport. The plan is in
-[docs/ROADMAP.md](docs/ROADMAP.md).
+**Status: early.** The desktop app, a CLI and an MCP server work today: build a plate from primitives or an STL, move, rotate
+and scale objects, join and cut them (`union`, `difference`, `intersect`), slice them to Marlin-style G-code (walls, solid and
+sparse infill, skirt, retraction, time and filament estimates), look through the layers, and ask the built-in assistant to do any
+of it. Nothing has been printed on real hardware yet. The plan is in [docs/ROADMAP.md](docs/ROADMAP.md).
+
+![The Lamina window: objects on the plate in 3D, their tools and the print settings on the left, the assistant on the right](docs/lamina-window.png)
 
 ## Try it
 
 ```sh
 cargo build --release
-# Model a part and slice it
-target/release/lamina run --cmd 'add_primitive {"kind":"cylinder","radius":15,"height":12}' \
+target/release/lamina                                      # the desktop app (optionally: lamina part.stl)
+# Or from the command line: model a part and slice it
+target/release/lamina-cli run --cmd 'add_primitive {"kind":"cylinder","radius":15,"height":12}' \
                           --cmd 'export_mesh {"path":"part.stl"}'
-target/release/lamina slice part.stl part.gcode            # defaults: 0.4 nozzle, 0.2 layers, 220 mm plate
-target/release/lamina slice part.stl part.gcode my.json    # my.json holds only the settings that differ
-target/release/lamina run --cmd slicer_profile             # every setting and its default
-target/release/lamina commands                             # every command and its parameters
+target/release/lamina-cli slice part.stl part.gcode        # defaults: 0.4 nozzle, 0.2 layers, 220 mm plate
+target/release/lamina-cli slice part.stl part.gcode my.json # my.json holds only the settings that differ
+target/release/lamina-cli run --cmd slicer_profile         # every setting and its default
+target/release/lamina-cli commands                         # every command and its parameters
 ```
 
 ## How it is built
@@ -30,9 +33,12 @@ command that fails, panics or leaves the scene invalid changes nothing, and each
 - `crates/slicer`: layers, walls, infill, G-code, printer profiles.
 - `crates/csg`: `union`, `difference` and `intersect` of objects, on csgrs (pure Rust).
 - `crates/assistant`: the AI chat (Anthropic, OpenAI, Gemini; your own key). The only crate that touches the network.
-- `apps/lamina-cli`: the `lamina` command and its MCP server (`lamina mcp`, `--read-only` to let an agent look but not change).
+- `apps/lamina`: the desktop app, `lamina`: a 3D view of the plate, the objects' tools, print settings, a layer preview and the assistant.
+- `apps/lamina-cli`: `lamina-cli` and its MCP server (`lamina-cli mcp`, `--read-only` to let an agent look but not change).
 
-To let an agent model for you, point your MCP client at `lamina mcp`.
+To let an agent outside the app model for you, point your MCP client at `lamina-cli mcp`. The assistant inside the app needs an
+Anthropic, OpenAI or Gemini key, typed in its panel or set in the provider's usual environment variable (`ANTHROPIC_API_KEY`,
+`OPENAI_API_KEY`, `GEMINI_API_KEY`); the key is kept for the session only.
 
 ## Design notes
 
