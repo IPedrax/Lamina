@@ -158,9 +158,9 @@ mod tests {
             "--cmd",
             r#"add_primitive {"kind":"box","size":[10,10,4]}"#,
             "--cmd",
-            &format!(r#"slice {{"path":"{gcode}"}}"#),
+            &format!("slice {}", json!({"path": gcode})),
             "--cmd",
-            &format!(r#"send_to_printer {{"path":"{gcode}","printer":"moonraker","address":"{address}"}}"#),
+            &format!("send_to_printer {}", json!({"path": gcode, "printer": "moonraker", "address": address})),
         ])
         .unwrap();
         std::fs::remove_file(&gcode).unwrap();
@@ -178,7 +178,7 @@ mod tests {
             "--cmd",
             r#"add_primitive {"kind":"cylinder","radius":3,"height":8}"#,
             "--cmd",
-            &format!(r#"export_mesh {{"path":"{path}"}}"#),
+            &format!("export_mesh {}", json!({"path": path})),
         ])
         .unwrap();
         let r = lines(&["info", &path]).unwrap();
@@ -188,7 +188,7 @@ mod tests {
         assert_eq!(r[0]["layers"], 40);
         // A project made by one run is opened by the next, with its print settings, and sliced with them.
         let project = std::env::temp_dir().join(format!("lamina-cli-{}.lamina", std::process::id())).to_string_lossy().into_owned();
-        lines(&["run", &path, "--cmd", &format!(r#"save {{"path":"{project}"}}"#)]).unwrap();
+        lines(&["run", &path, "--cmd", &format!("save {}", json!({"path": project}))]).unwrap();
         let mut text: Value = serde_json::from_str(&std::fs::read_to_string(&project).unwrap()).unwrap();
         text["print"] = json!({"profile": {"layer_height": 0.4, "first_layer_height": 0.2, "nozzle": 0.6}});
         std::fs::write(&project, text.to_string()).unwrap();
