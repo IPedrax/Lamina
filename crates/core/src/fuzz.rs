@@ -163,6 +163,18 @@ mod tests {
     }
 
     #[test]
+    fn obj_and_gltf_never_panic() {
+        let obj = b"o a\nv 0 0 0\nv 1 0 0\nv 0 1 0\nv 0 0 1\nf 1 3 2\nf 1 2 4\nf 1 4 3\nf 2 3 4\nusemtl x\nf -1 -2 -3\n";
+        let gltf = br#"{"asset":{"version":"2.0"},"scenes":[{"nodes":[0]}],"nodes":[{"mesh":0,"matrix":[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]}],"meshes":[{"primitives":[{"attributes":{"POSITION":0}}]}],"accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}],"bufferViews":[{"buffer":0,"byteLength":36}],"buffers":[{"byteLength":36,"uri":"data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA"}]}"#;
+        let mut r = Rng::new(0x0b1);
+        for _ in 0..ROUNDS {
+            let bytes = r.input(&[obj, gltf]);
+            let _ = crate::mesh_in::obj(&String::from_utf8_lossy(&bytes), 1.0, r.below(2) == 1, |_| None);
+            let _ = crate::mesh_in::gltf(&bytes, |_| None);
+        }
+    }
+
+    #[test]
     fn base64_never_panics() {
         let good = base64::encode(b"any bytes at all \x00\xff");
         let mut r = Rng::new(0xb64);

@@ -50,6 +50,11 @@ Priorities:
 - **1.2 Autosave.** Every two minutes while the plate has unsaved changes, the window writes the project to `autosave.lamina`
   beside the settings file, on a thread. A clean exit or a save removes it; at the next start a file still there is offered back
   (Bring it back, as an unsaved project, or Discard it). `apps/lamina/src/autosave.rs`, a simpler cousin of BIMCraft's.
+- **1.3 OBJ and glTF import.** `crates/core/src/mesh_in.rs`, lifted from BIMCraft with its tests: OBJ (with `units` and `up`,
+  millimetres and z up by default) and glTF 2.0 (`.gltf` and `.glb`, metres and y up as the specification says), each object of the
+  file a Lamina object, laid out as in the file and centred on the plate, repaired on the way in. A material library or buffer is
+  read only from the file's folder or below. What the reader leaves out is listed in `left_out`. A sheet is no longer closed into a
+  solid of no volume by the repair.
 - **1.4 3MF import and export.** `crates/core/src/zip.rs` (stored and deflated entries over `miniz_oxide`, every offset checked,
   inflated up to a limit, CRC checked) and `threemf.rs` (the model part read with `quick-xml`: meshes, components, units, the
   Production Extension's `path` for objects in other parts, build items with their transforms). `import_mesh` reads a `.3mf` with
@@ -107,10 +112,6 @@ Print each on one Marlin and one Klipper printer. Measure with calipers. Write t
 what is wrong before adding features.
 
 ## 1. Files and projects
-
-**1.3 OBJ and glTF import (P1).** How: lift `crates/core/src/mesh_in.rs` from BIMCraft (same author, MIT OR Apache-2.0). It already
-reads OBJ and glTF from their public specifications, in millimetres with z up, with caps, and "knows no element". Dispatch on the file
-extension in `import_mesh`. Test with small files written in the test, as BIMCraft's tests do.
 
 **1.5 OBJ export (P2).** How: write each object's world mesh as plain text. (3MF export came with 1.4.)
 
@@ -327,7 +328,7 @@ project files and can return after 1.1.
 
 - Walls are constant width, so thin features vanish instead of getting gap fill. Supports are straight columns, not trees. No bridging.
 - The skirt is an outline of the first layer, not a hull. Time is distance over speed, without acceleration.
-- A mesh whose holes are too big to fill without guessing stays open, and prints with parts missing, with a warning. STL and 3MF only (OBJ and glTF are 1.3).
+- A mesh whose holes are too big to fill without guessing stays open, and prints with parts missing, with a warning. STL, 3MF, OBJ and glTF in; STL and 3MF out.
 - Booleans refuse about 1 in 100 random pairs (the rest of a sphere-with-sphere union mostly), and a boolean of a boolean's result
   works on its world mesh, so its tilted faces are flat only to f32.
 - Nothing has been printed on real hardware.

@@ -68,7 +68,13 @@ pub fn repair(m: &Mesh) -> Result<(Mesh, Report), String> {
     }
     r.dropped += drop_skins(&mut m);
     r.flipped += orient(&mut m);
+    let before_closing = m.clone();
     let (mut m, closed) = close_with(m, 4, TOLERANCE)?;
+    // A sheet capped by its own outline encloses nothing: that is no solid, so leave it open and say so.
+    if closed.holes_filled > 0 && m.volume().abs() < 1e-3 {
+        r.closed = false;
+        return Ok((before_closing, r));
+    }
     r.dropped += closed.dropped;
     r.holes_filled += closed.holes_filled;
     // A filled hole is wound against its border, but a pass may have exposed a face that disagrees.
@@ -586,6 +592,14 @@ mod tests {
         let (same, r) = repair(&hollow).unwrap();
         assert!(!r.changed());
         assert!((same.volume() - 936.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_sheet_is_not_closed_into_a_solid_of_no_volume() {
+        let sheet =
+            Mesh::new(vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [0.0, 1.0, 0.0]], vec![[0, 1, 2], [0, 2, 3]]).unwrap();
+        let (same, r) = repair(&sheet).unwrap();
+        assert_eq!((same.triangles.len(), r.closed, r.holes_filled), (2, false, 0));
     }
 
     #[test]

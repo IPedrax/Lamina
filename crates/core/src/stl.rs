@@ -15,6 +15,12 @@ pub fn read(bytes: &[u8]) -> Result<Mesh, String> {
         bytes.len() as u64 == 84 + 50 * n
     };
     let corners = if binary { binary_corners(bytes)? } else { ascii_corners(bytes)? };
+    weld(&corners)
+}
+
+/// A mesh from triangle corners (three per triangle), each corner welded to the same point met before. Degenerate triangles (two
+/// corners welded together) are dropped. STL and every file that lists triangles as corners come in through here.
+pub fn weld(corners: &[[f32; 3]]) -> Result<Mesh, String> {
     if corners.len() / 3 > MAX_TRIANGLES {
         return Err(format!("{} triangles is more than the {MAX_TRIANGLES} a mesh may hold", corners.len() / 3));
     }

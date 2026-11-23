@@ -51,7 +51,7 @@ desktop (lamina) ──────┘
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `lamina-core` | `Mesh`, `Transform`, STL and 3MF read/write, `.lamina` projects, mesh repair, `Scene`, `Session`, `bridge`, built-in commands | serde, miniz_oxide, quick-xml |
+| `lamina-core` | `Mesh`, `Transform`, STL and 3MF read/write, OBJ and glTF read, `.lamina` projects, mesh repair, `Scene`, `Session`, `bridge`, built-in commands | serde, miniz_oxide, quick-xml |
 | `lamina-slicer` | `slice` (mesh to loops), `geom` (polygon booleans and offsets on `i_overlay`), `print` (walls, infill, G-code), `profile`, the `slice` and `slicer_profile` commands | core, i_overlay |
 | `lamina-csg` | `boolean` over csgrs' BSP trees, crack repair, the soundness gate, the `union`, `difference` and `intersect` commands | core, csgrs |
 | `lamina-assistant` | provider clients, sealed key storage, tool layer, turn loop | core, ureq, ring |
@@ -215,7 +215,9 @@ BIMCraft is `/mnt/ai/RevCraft` (github.com/IPedrax/BIMCraft), same author, MIT O
 | `crates/core/src/bridge.rs` (read-only agents) | `core/bridge.rs` | trimmed to Hello, Execute, Script, Catalog |
 | `crates/assistant` (3 providers, sealed key, attachments, turn loop) | `crates/assistant` | ported, 53 tests. Dropped Co-Work and saved chats |
 | `apps/bimcraft-cli/src/mcp.rs` | `apps/lamina-cli/src/mcp.rs` | ported, own session only |
-| `crates/core/src/mesh_in.rs` (OBJ and glTF readers, "knows no element") | not yet | next: lift as `core/obj.rs`, `core/gltf.rs` |
+| `crates/core/src/mesh_in.rs` (OBJ and glTF readers, "knows no element") | `core/mesh_in.rs` | lifted with its reader tests; `import_mesh` makes objects of what it reads |
+| `crates/core/src/autosave.rs` | `apps/lamina/src/autosave.rs` | simpler: one window, one file |
+| `crates/dwg` (`in_child`, `child_main`, `run_child`) | `crates/csg/src/child.rs` | the same pattern, for booleans |
 | `crates/ui-egui/src/orbit.rs`, `camera.rs`, `gpu.rs`, `gpu.wgsl`, `retained.rs` (wgpu 3D view, orbit/pan/zoom, picking) | `apps/lamina/src/view3d.rs`, own and smaller | the same interaction, drawn on the CPU; the GPU pass is the upgrade |
 | `crates/ui-egui` panels, `assistant.rs` (chat palette) | `apps/lamina/src/chat.rs` | rewritten small on the same chat, with the same Remember and passphrase; no Co-Work |
 | `crates/core/src/view3d.rs`, `view3d/gpu.rs` | not reused | BIM-specific (levels, elements, section boxes) |

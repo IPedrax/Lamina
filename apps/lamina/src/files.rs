@@ -16,7 +16,7 @@ use crate::App;
 pub const MAX_RECENT: usize = 8;
 
 /// The meshes the window imports (the extension, lower case).
-pub const MESHES: &[&str] = &["stl", "3mf"];
+pub const MESHES: &[&str] = &["stl", "3mf", "obj", "gltf", "glb"];
 
 const NEW: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::N);
 const OPEN: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::O);
@@ -190,7 +190,7 @@ impl App {
             self.import(path);
         } else {
             (self.failed, self.status) =
-                (true, format!("{}: Lamina opens .lamina projects and imports .stl and .3mf meshes", path.display()));
+                (true, format!("{}: Lamina opens .lamina projects and imports .stl, .3mf, .obj, .gltf and .glb meshes", path.display()));
         }
     }
 

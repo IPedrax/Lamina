@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use crate::engine::{Command, Files, Session};
 use crate::mesh::{Mesh, P3, Transform};
 use crate::scene::Object;
-use crate::{project, repair, stl, threemf};
+use crate::{mesh_in, project, repair, stl, threemf};
 
 const fn cmd(id: &'static str, params: &'static str, run: crate::engine::Run, undoable: bool, files: Files) -> Command {
     Command { id, params, run, undoable, files }
@@ -19,7 +19,7 @@ const fn cmd(id: &'static str, params: &'static str, run: crate::engine::Run, un
 pub static ALL: &[Command] = &[
     cmd(
         "import_mesh",
-        "{path, name?, at?:[x,y]} a mesh file put on the plate, centred on `at` (default the middle of the plate), its lowest point on the plate: an STL (binary or ASCII) as one object, or a 3MF with each of its build items as an object, kept where they stand to each other. Meshes are repaired on the way in (doubled faces dropped, flipped faces turned, small holes filled). Returns {id (the first), ids, triangles, watertight, size, repaired?: {dropped, flipped, holes_filled}}",
+        "{path, name?, at?:[x,y], units?, up?} a mesh file put on the plate, centred on `at` (default the middle of the plate), its lowest point on the plate: an STL (binary or ASCII) as one object; a 3MF with each build item an object, or an OBJ or glTF (.gltf, .glb) with each of its objects an object, kept where they stand to each other. An OBJ is read in `units` (mm, cm, m, in or ft; default mm) with `up` \"z\" (default) or \"y\"; a glTF is in metres with y up, as its specification says. Meshes are repaired on the way in (doubled faces dropped, flipped faces turned, small holes filled). Returns {id (the first), ids, triangles, watertight, size, repaired?: {dropped, flipped, holes_filled}}",
         import_mesh,
         true,
         Files::Read,
@@ -126,6 +126,8 @@ struct Import {
     path: String,
     name: Option<String>,
     at: Option<[f64; 2]>,
+    units: Option<String>,
+    up: Option<String>,
 }
 
 fn extension(path: &Path) -> String {
@@ -136,8 +138,11 @@ fn import_mesh(s: &mut Session, p: &Value) -> Result<Value, String> {
     let a: Import = parse(p)?;
     let path = Path::new(&a.path);
     let kind = extension(path);
-    if !matches!(kind.as_str(), "stl" | "3mf") {
-        return Err("a mesh is read from an .stl or a .3mf file".into());
+    if !matches!(kind.as_str(), "stl" | "3mf" | "obj" | "gltf" | "glb") {
+        return Err("a mesh is read from an .stl, .3mf, .obj, .gltf or .glb file".into());
+    }
+    if kind != "obj" && (a.units.is_some() || a.up.is_some()) {
+        return Err("`units` and `up` are for an OBJ: an STL and a 3MF say their own, and a glTF is in metres with y up".into());
     }
     let len = std::fs::metadata(path).map_err(|e| format!("{}: {e}", a.path))?.len();
     if len > stl::MAX_FILE {
@@ -147,6 +152,51 @@ fn import_mesh(s: &mut Session, p: &Value) -> Result<Value, String> {
     let stem = path.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "mesh".into());
     if kind == "3mf" {
         return import_parts(s, threemf::read(&bytes).map_err(|e| format!("{}: {e}", a.path))?, a.name.as_deref(), a.at);
+    }
+    if matches!(kind.as_str(), "obj" | "gltf" | "glb") {
+        // A file the model names beside it (an OBJ's material library, a glTF's buffer): only in its folder or below it.
+        let beside = |rel: &str| -> Option<Vec<u8>> {
+            let rel = Path::new(rel);
+            let ok = rel.components().all(|c| matches!(c, std::path::Component::Normal(_) | std::path::Component::CurDir));
+            let f = path.parent()?.join(rel);
+            (ok && std::fs::metadata(&f).ok()?.len() <= mesh_in::MAX_BYTES as u64).then(|| std::fs::read(f).ok()).flatten()
+        };
+        let read = if kind == "obj" {
+            let mm = match a.units.as_deref().unwrap_or("mm") {
+                "mm" => 1.0,
+                "cm" => 10.0,
+                "m" => 1000.0,
+                "in" => 25.4,
+                "ft" => 304.8,
+                other => return Err(format!("`units` is one of mm, cm, m, in or ft, not {other}")),
+            };
+            let up_is_y = match a.up.as_deref().unwrap_or("z") {
+                "z" => false,
+                "y" => true,
+                other => return Err(format!("`up` is z or y, not {other}")),
+            };
+            mesh_in::obj(&String::from_utf8_lossy(&bytes), mm, up_is_y, |lib| beside(lib).map(|b| String::from_utf8_lossy(&b).into_owned()))
+        } else {
+            mesh_in::gltf(&bytes, beside)
+        }
+        .map_err(|e| format!("{}: {e}", a.path))?;
+        let parts: Vec<threemf::Part> = read
+            .objects
+            .into_iter()
+            .filter_map(|o| {
+                let soup: Vec<[f32; 3]> = o.parts.iter().flat_map(|p| p.tris.iter()).flatten().map(|v| v.map(|c| c as f32)).collect();
+                let mesh = stl::weld(&soup).ok()?;
+                Some(threemf::Part { name: o.name, mesh, xf: Transform::IDENTITY })
+            })
+            .collect();
+        if parts.is_empty() {
+            return Err(format!("{}: it holds no triangles to print", a.path));
+        }
+        let mut v = import_parts(s, parts, a.name.as_deref(), a.at)?;
+        if !read.left_out.is_empty() {
+            v["left_out"] = json!(read.left_out);
+        }
+        return Ok(v);
     }
     let mesh = stl::read(&bytes)?;
     let name = a.name.unwrap_or(stem);
@@ -641,10 +691,79 @@ mod tests {
         }
         assert!(t.scene.objects.iter().all(|o| o.world().is_watertight()));
         let bad = std::env::temp_dir().join(format!("lamina-bad-{}.3mf", std::process::id()));
+        assert!(run(&mut t, "import_mesh", json!({"path": bad, "up": "y"})).unwrap_err().contains("for an OBJ"));
         std::fs::write(&bad, "not a zip").unwrap();
         assert!(run(&mut t, "import_mesh", json!({"path": bad})).unwrap_err().contains("not a 3MF"));
         std::fs::remove_file(&bad).unwrap();
         assert_eq!(t.scene.objects.len(), 2);
+    }
+
+    #[test]
+    fn obj_and_gltf_files_come_in_object_by_object() {
+        let dir = std::env::temp_dir().join(format!("lamina-obj-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // A 10 mm cube and, beside it, a second one, as two OBJ objects; z up in millimetres.
+        let cube = |o: &str, x: f64, base: usize| {
+            let v: String = [
+                [0.0, 0.0, 0.0],
+                [10.0, 0.0, 0.0],
+                [10.0, 10.0, 0.0],
+                [0.0, 10.0, 0.0],
+                [0.0, 0.0, 10.0],
+                [10.0, 0.0, 10.0],
+                [10.0, 10.0, 10.0],
+                [0.0, 10.0, 10.0],
+            ]
+            .iter()
+            .map(|p: &[f64; 3]| format!("v {} {} {}\n", p[0] + x, p[1], p[2]))
+            .collect();
+            let f: String = [
+                [1, 3, 2],
+                [1, 4, 3],
+                [5, 6, 7],
+                [5, 7, 8],
+                [1, 2, 6],
+                [1, 6, 5],
+                [2, 3, 7],
+                [2, 7, 6],
+                [3, 4, 8],
+                [3, 8, 7],
+                [4, 1, 5],
+                [4, 5, 8],
+            ]
+            .iter()
+            .map(|t: &[usize; 3]| format!("f {} {} {}\n", t[0] + base, t[1] + base, t[2] + base))
+            .collect();
+            format!("o {o}\n{v}{f}")
+        };
+        let obj = dir.join("pair.obj");
+        std::fs::write(&obj, format!("{}{}", cube("left", 0.0, 0), cube("right", 20.0, 8))).unwrap();
+        let mut s = Session::new();
+        let r = run(&mut s, "import_mesh", json!({"path": obj})).unwrap();
+        assert_eq!(r["ids"], json!([1, 2]));
+        assert_eq!((s.scene.get(1).unwrap().name.as_str(), s.scene.get(2).unwrap().name.as_str()), ("left", "right"));
+        let (lo, hi) = (s.scene.get(1).unwrap().bounds().unwrap(), s.scene.get(2).unwrap().bounds().unwrap());
+        assert_eq!((lo.0[0], hi.1[0], lo.0[2]), (-15.0, 15.0, 0.0), "the pair centred on the plate, 10 mm apart");
+        assert!(s.scene.objects.iter().all(|o| o.world().is_watertight() && (o.world().volume() - 1000.0).abs() < 1e-3));
+        // In centimetres and y up: ten times the size, standing the other way.
+        let r = run(&mut s, "import_mesh", json!({"path": obj, "units": "cm", "up": "y"})).unwrap();
+        assert_eq!(r["size"][0], 300.0);
+        assert!(run(&mut s, "import_mesh", json!({"path": obj, "units": "furlong"})).is_err());
+        // A glTF: one triangle is no solid, but it comes in and is said to be open.
+        let gltf = dir.join("tri.gltf");
+        let bin: Vec<u8> = [0.0f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0].iter().flat_map(|f| f.to_le_bytes()).collect();
+        let doc = json!({
+            "asset": {"version": "2.0"}, "scenes": [{"nodes": [0]}], "nodes": [{"mesh": 0, "name": "tri"}],
+            "meshes": [{"primitives": [{"attributes": {"POSITION": 0}}]}],
+            "accessors": [{"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [0, 0, 0], "max": [1, 1, 0]}],
+            "bufferViews": [{"buffer": 0, "byteLength": 36}],
+            "buffers": [{"byteLength": 36, "uri": format!("data:application/octet-stream;base64,{}", crate::base64::encode(&bin))}],
+        });
+        std::fs::write(&gltf, doc.to_string()).unwrap();
+        let r = run(&mut s, "import_mesh", json!({"path": gltf})).unwrap();
+        assert_eq!((r["triangles"].as_u64(), r["watertight"].as_bool()), (Some(1), Some(false)));
+        assert!((r["size"][2].as_f64().unwrap() - 1000.0).abs() < 1e-3, "a metre tall, y up turned to z up: {}", r["size"]);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

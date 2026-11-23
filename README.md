@@ -3,7 +3,7 @@
 A 3D slicer and modelling tool for 3D printing, in pure Rust, with an AI assistant built in. You describe a part, the assistant
 models it, and Lamina slices it to G-code for a real printer.
 
-**Status: early.** The desktop app, a CLI and an MCP server work today: build a plate from primitives, STL or 3MF files, move objects by dragging them in 3D, rotate
+**Status: early.** The desktop app, a CLI and an MCP server work today: build a plate from primitives, STL, 3MF, OBJ or glTF files, move objects by dragging them in 3D, rotate
 and scale them, join and cut them (`union`, `difference`, `intersect`), slice them to Marlin-style G-code (walls, solid and
 sparse infill, skirt, retraction, time and filament estimates), look through the layers, and ask the built-in assistant to do any
 of it, and send the result to a Moonraker or OctoPrint printer. A plate and its print settings are saved as a `.lamina` project. Nothing has been printed on real hardware yet. The plan is in [docs/ROADMAP.md](docs/ROADMAP.md).
@@ -29,7 +29,7 @@ target/release/lamina-cli commands                         # every command and i
 Everything is a command. The CLI, scripts, the MCP server and the AI chat all go through one engine, `Session::execute`, so a
 command that fails, panics or leaves the scene invalid changes nothing, and each command's parameters are documented for agents.
 
-- `crates/core`: meshes, the scene, STL and 3MF files, mesh repair, `.lamina` projects, the command engine.
+- `crates/core`: meshes, the scene, STL, 3MF, OBJ and glTF files, mesh repair, `.lamina` projects, the command engine.
 - `crates/slicer`: layers, walls, infill, G-code, printer profiles.
 - `crates/csg`: `union`, `difference` and `intersect` of objects, on csgrs (pure Rust).
 - `crates/assistant`: the AI chat (Anthropic, OpenAI, Gemini; your own key). With `crates/printer`, the only code that touches the network.
