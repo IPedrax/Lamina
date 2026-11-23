@@ -47,6 +47,7 @@ enum Kind {
 #[serde(deny_unknown_fields)]
 struct Connectors {
     kind: Option<String>,
+    shape: Option<String>,
     count: Option<u32>,
     diameter: Option<f64>,
     depth: Option<f64>,
@@ -58,6 +59,8 @@ struct Connectors {
 struct Ask {
     kind: Option<Kind>,
     said: bool,
+    /// Square connectors asked for; otherwise round, and a lone one square anyway, so the pieces still cannot turn.
+    square: bool,
     count: Option<usize>,
     diameter: Option<f64>,
     depth: Option<f64>,
@@ -74,6 +77,11 @@ fn ask(c: Option<Connectors>) -> Result<Ask, String> {
         Some("none") => (None, true),
         Some(other) => return Err(format!("`connectors.kind` is dowel, pin or none, not {other}")),
     };
+    let square = match c.shape.as_deref() {
+        None | Some("round") => false,
+        Some("square") => true,
+        Some(other) => return Err(format!("`connectors.shape` is round or square, not {other}")),
+    };
     let within = |what: &str, x: Option<f64>, lo: f64, hi: f64| match x {
         Some(v) if !(v.is_finite() && (lo..=hi).contains(&v)) => Err(format!("`connectors.{what}` is from {lo} to {hi} mm, not {v}")),
         _ => Ok(x),
@@ -88,7 +96,7 @@ fn ask(c: Option<Connectors>) -> Result<Ask, String> {
     if diameter.is_some_and(|d| d - 2.0 * clearance < 1.0) {
         return Err("`connectors.diameter` must be at least 1 mm more than twice the clearance".into());
     }
-    Ok(Ask { kind, said, count, diameter, depth: within("depth", c.depth, MIN_DEPTH, 50.0)?, clearance })
+    Ok(Ask { kind, said, square, count, diameter, depth: within("depth", c.depth, MIN_DEPTH, 50.0)?, clearance })
 }
 
 /// The plane square to axis `k` (0 x, 1 y, 2 z) at `at` mm. Its own frame is (u, v, w): u and v the next two axes in turn (y and z
@@ -261,7 +269,8 @@ fn place(world: &Mesh, plane: Plane, ask: &Ask, avoid: &[(usize, f64)]) -> Resul
         }
         let free = geom::inset(&core, hole + WALL);
         let found = spread(&free, want, 2.0 * hole + WALL, avoid, hole + WALL);
-        let plan = |centres: Vec<[f64; 2]>| Plan { kind, square: centres.len() == 1, centres, diameter: d, depth, clearance: c };
+        let plan =
+            |centres: Vec<[f64; 2]>| Plan { kind, square: ask.square || centres.len() == 1, centres, diameter: d, depth, clearance: c };
         most = most.max(found.len());
         if found.len() >= want {
             return Ok(Some(plan(found)));
@@ -772,6 +781,24 @@ mod tests {
         assert!(pegs.is_watertight() && sockets.is_watertight());
         assert!(pegs.volume() > 48_000.0 && sockets.volume() < 48_000.0, "{} {}", pegs.volume(), sockets.volume());
         assert!(pegs.bounds().unwrap().1[2] > 30.0, "the pegs stand above the cut");
+    }
+
+    /// What the user chose is what is made: the kind, the shape, how many and how big.
+    #[test]
+    fn the_connectors_are_what_was_chosen() {
+        let mut s = session();
+        s.execute("add_primitive", &json!({"kind": "box", "size": [60, 60, 40]})).unwrap();
+        let ask = json!({"kind": "dowel", "shape": "square", "count": 3, "diameter": 6});
+        let r = s.execute("cut", &json!({"id": 1, "z": 20, "connectors": ask})).unwrap();
+        let c = &r["connectors"];
+        assert_eq!(
+            (c["kind"].as_str(), c["shape"].as_str(), c["count"].as_u64(), c["hole_diameter"].as_f64()),
+            (Some("dowel"), Some("square"), Some(3), Some(6.0)),
+            "{r}"
+        );
+        assert_eq!(ids(&r["dowels"]).len(), 3);
+        assert!(ids(&r["ids"]).iter().chain(ids(&r["dowels"]).iter()).all(|&id| world(&s, id).is_watertight()));
+        assert!(s.execute("cut", &json!({"id": 2, "z": 10, "connectors": {"shape": "star"}})).unwrap_err().contains("round or square"));
     }
 
     #[test]

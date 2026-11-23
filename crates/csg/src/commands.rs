@@ -28,7 +28,7 @@ pub static COMMANDS: &[Command] = &[
     Command {
         id: "cut",
         params: "{id, axis?:\"x\"|\"y\"|\"z\" (default z), at (mm along `axis`, between the object's least and greatest), keep?:\"both\"|\
-                 \"lower\"|\"upper\" (default both; lower is the side toward minus the axis), connectors?:{kind?:\"pin\"|\"dowel\"|\"none\", \
+                 \"lower\"|\"upper\" (default both; lower is the side toward minus the axis), connectors?:{kind?:\"pin\"|\"dowel\"|\"none\", shape?:\"round\"|\"square\" (default round; a lone one is square), \
                  count? (1..8, default 2), diameter? (mm, default from the face, 3 to 8), depth? (mm into each piece, default 1.5 x the \
                  diameter, at most 15), clearance? (mm a side, default 0.2)}, lay_out? (default false), name?} cuts an object in two with the \
                  plane square to `axis` at `at` (`{id, z}` still cuts level at height z). Each piece is closed and named with \" 1\" or \" 2\". \

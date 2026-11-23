@@ -129,10 +129,15 @@ pub struct App {
     pub status: String,
     pub failed: bool,
     nudge: [f64; 3],
-    /// The Cut tools: the axis (0 x, 1 y, 2 z), where along it, and the connectors ("dowel", "pin" or "none").
+    /// The Cut tools: the axis (0 x, 1 y, 2 z), where along it, and the connectors the user chose: the kind ("pin", "dowel" or
+    /// "none"), the shape ("round" or "square"), how many and how big (none: chosen from the cut face), and the fit, mm a side.
     cut_axis: usize,
     cut_at: f64,
     connector: &'static str,
+    connector_shape: &'static str,
+    connector_count: Option<u32>,
+    connector_size: Option<f64>,
+    connector_fit: f64,
     /// The picked object's position and size as the fields show them while they are edited: the object and the scene they were
     /// read from, so they are read again when either changes.
     fields: Option<Fields>,
@@ -218,6 +223,10 @@ impl App {
             cut_axis: 2,
             cut_at: f64::NAN,
             connector: "pin",
+            connector_shape: "round",
+            connector_count: None,
+            connector_size: None,
+            connector_fit: 0.2,
             fields: None,
             keep_proportions: true,
             axis: 2,
@@ -1105,13 +1114,7 @@ impl App {
             p[kv] = if dv < 0.0 { lo[kv] + dv } else { hi[kv] + dv };
             p
         }));
-        ui.horizontal(|ui| {
-            ui.selectable_value(&mut self.connector, "pin", "Pins")
-                .on_hover_text("Pegs on one piece, sockets in the other; left out, and said, where the face is too small");
-            ui.selectable_value(&mut self.connector, "dowel", "Dowels").on_hover_text("Holes in both pieces and loose pins to print");
-            ui.selectable_value(&mut self.connector, "none", "None");
-        });
-        let connectors = if self.connector == "pin" { json!({}) } else { json!({ "kind": self.connector }) };
+        let connectors = self.connectors_ui(ui);
         ui.horizontal(|ui| {
             if ui.button("Cut").on_hover_text("Cut here; each piece is turned to print and the plate laid out").clicked() {
                 let axis = ["x", "y", "z"][k];
@@ -1125,6 +1128,73 @@ impl App {
                 self.boolean("split_to_fit", json!({ "id": id, "connectors": connectors }));
             }
         });
+    }
+
+    /// The connectors' choices, and what they ask the command for. What is left on Auto is chosen from the cut face; the default
+    /// (pins, round, Auto, 0.2 mm) asks for nothing by name, so a face too small for them is cut without, and said, not refused.
+    fn connectors_ui(&mut self, ui: &mut Ui) -> Value {
+        ui.horizontal(|ui| {
+            ui.label("Connectors");
+            ui.selectable_value(&mut self.connector, "pin", "Pins")
+                .on_hover_text("Pegs on one piece and sockets in the other: nothing loose");
+            ui.selectable_value(&mut self.connector, "dowel", "Dowels")
+                .on_hover_text("Holes in both pieces and a loose pin for each pair: both pieces lie on their cut faces");
+            ui.selectable_value(&mut self.connector, "none", "None").on_hover_text("No connectors: for parts you glue");
+        });
+        if self.connector == "none" {
+            return json!({ "kind": "none" });
+        }
+        egui::Grid::new("connector-options").num_columns(2).show(ui, |ui| {
+            ui.label("Shape");
+            ui.horizontal(|ui| {
+                ui.selectable_value(&mut self.connector_shape, "round", "Round");
+                ui.selectable_value(&mut self.connector_shape, "square", "Square")
+                    .on_hover_text("A square peg or hole cannot turn in its socket");
+            });
+            ui.end_row();
+            ui.label("How many");
+            egui::ComboBox::from_id_salt("connector-count")
+                .selected_text(self.connector_count.map_or("Auto".to_string(), |n| n.to_string()))
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.connector_count, None, "Auto");
+                    for n in 1..=8 {
+                        ui.selectable_value(&mut self.connector_count, Some(n), n.to_string());
+                    }
+                });
+            ui.end_row();
+            ui.label("Size");
+            ui.horizontal(|ui| {
+                let mut auto = self.connector_size.is_none();
+                if ui.checkbox(&mut auto, "Auto").on_hover_text("Sized from the cut face, 3 to 8 mm across").changed() {
+                    self.connector_size = if auto { None } else { Some(5.0) };
+                }
+                if let Some(d) = &mut self.connector_size {
+                    ui.add(egui::DragValue::new(d).speed(0.1).range(2.0..=30.0).suffix(" mm"));
+                }
+            });
+            ui.end_row();
+            ui.label("Fit");
+            ui.add(egui::DragValue::new(&mut self.connector_fit).speed(0.01).range(0.0..=1.0).suffix(" mm a side"))
+                .on_hover_text("The gap between a peg or pin and its hole: more is looser. 0.2 mm suits most printers");
+            ui.end_row();
+        });
+        let mut c = serde_json::Map::new();
+        if self.connector != "pin" {
+            c.insert("kind".into(), json!(self.connector));
+        }
+        if self.connector_shape != "round" {
+            c.insert("shape".into(), json!(self.connector_shape));
+        }
+        if let Some(n) = self.connector_count {
+            c.insert("count".into(), json!(n));
+        }
+        if let Some(d) = self.connector_size {
+            c.insert("diameter".into(), json!(d));
+        }
+        if (self.connector_fit - 0.2).abs() > 1e-9 {
+            c.insert("clearance".into(), json!(self.connector_fit));
+        }
+        Value::Object(c)
     }
 
     /// The picked object's position and size, as fields: a value typed (or dragged and let go) moves or scales it to that.
@@ -1718,6 +1788,18 @@ mod tests {
         press(&mut h, "Dowels");
         press(&mut h, "Cut");
         assert_eq!(h.state().session.scene.objects.len(), 4, "{}", h.state().status);
+        // What the user chooses is what is made: three square dowels.
+        press(&mut h, "Undo");
+        h.state_mut().selected = vec![1];
+        h.run();
+        press(&mut h, "Square");
+        h.state_mut().connector_count = Some(3);
+        h.run();
+        press(&mut h, "Cut");
+        let app = h.state();
+        assert!(!app.failed, "{}", app.status);
+        let dowels: Vec<_> = app.session.scene.objects.iter().filter(|o| o.name.ends_with("dowel")).collect();
+        assert_eq!(dowels.len(), 3, "{}", app.status);
         // A part too tall for the printer is split into pieces that each fit.
         press(&mut h, "Undo");
         h.state_mut().run("add_primitive", json!({"kind": "cylinder", "radius": 25, "height": 300, "at": [80, 0]}));

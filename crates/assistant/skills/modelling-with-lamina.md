@@ -57,7 +57,11 @@ the result stands, as one undo step. The result keeps the first object's name un
 - One cut where you choose: `cut {id, axis: "x", at: 10}` (mm along the axis; `{id, z}` cuts level). Cut where the faces are
   wide and flat, away from thin walls and details, and where the seam shows least. `lay_out: true` turns the pieces to print and
   arranges the plate; without it they stay put together, which is how to check them.
-- Connectors, `connectors: {kind}`: left out, pins go where the face has room, else none and a `note` says so. Pins (`"pin"`)
+- The connectors are the user's choice. Unless they already said which, ask before you cut: pins (pegs on one piece, sockets in
+  the other, nothing loose), dowels (holes in both pieces and loose pins, both pieces flat on their cut faces, a bought dowel can
+  take the load) or none (they glue it). Ask about shape, number, size or fit only if they care; Auto is chosen from the face.
+- Connectors, `connectors: {kind, shape?, count?, diameter?, clearance?}`: left out, pins go where the face has room, else none and a
+  `note` says so. `shape: "square"` makes square pegs or holes that cannot turn. Pins (`"pin"`)
   are pegs on piece 1 and sockets in piece 2: one piece carries the connectors, the other the holes, nothing loose; the peg piece
   prints pegs up. Dowels (`"dowel"`) are holes in both pieces and loose pins added as objects: use them when both pieces must lie
   on their cut faces, or for a joint that takes load, where a bought steel or wooden dowel of the same diameter can replace a printed one. `"none"` for parts to glue. Two or more are spread over the face so the pieces

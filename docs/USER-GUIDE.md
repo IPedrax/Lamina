@@ -84,6 +84,9 @@ axis the plane crosses (x, y or z) and move the slider: the plane shows in the 3
 | Dowels | holes in both pieces at the same places, and a loose pin for each pair, 0.2 mm a side smaller than its holes | both pieces can lie on their cut faces; a steel or wooden dowel of the hole's size can replace a printed pin |
 | None | nothing: for parts you glue | |
 
+Under the connector type, Shape (round or square), How many, Size and Fit (the gap between a peg or pin and its hole, 0.2 mm a side
+by default; more is looser) are yours to set, each on Auto (chosen from the cut face) until you change it.
+
 Two or more connectors are spread across the cut face, so the pieces cannot turn on them; where only one fits it is a square key.
 Their size comes from the face (3 to 8 mm across, the holes about one and a half times as deep, never through a wall or the far
 end). A face with no room for one is cut without and the status bar says so. Cut turns each piece to print and lays the plate out.
