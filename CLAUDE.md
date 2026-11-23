@@ -37,8 +37,9 @@ cargo test --workspace
 ## Module map
 
 - `crates/core`: `mesh.rs` (triangle mesh, primitives, `Transform`), `stl.rs` (read and write), `scene.rs` (objects on the plate),
-  `engine.rs` (`Session`: execute, undo, script, catalog), `commands.rs` (the built-in commands).
-  `bridge.rs` (what an agent may ask: execute, script, catalog; read-only access).
+  `engine.rs` (`Session`: execute, undo, script, catalog, the project's print settings), `commands.rs` (the built-in commands),
+  `project.rs` (`.lamina` files: `save`, `open`, `new`), `base64.rs`.
+  `bridge.rs` (what an agent may ask: execute, script, catalog; read-only access; `REPLACES`, the commands that replace the plate).
 - `crates/slicer`: `slice.rs` (mesh to closed loops per layer), `geom.rs` (polygon booleans, offsets, line clipping on i_overlay),
   `print.rs` (walls, skins, infill, skirt, the G-code writer), `profile.rs` (settings, checks, `[name]` placeholders), `presets.rs`
   (built-in printers and filaments, each setting only its own fields; `apply` and `capture`), `commands.rs`
@@ -50,7 +51,8 @@ cargo test --workspace
   (modelling, designing for FDM, slicer settings, working from a picture), written for Lamina's own commands: a test checks that every
   command they name exists. A command a skill promises must exist, and a new command the model needs gets a line in the skill. Notes: [crates/assistant/CLAUDE.md](crates/assistant/CLAUDE.md). The only
   crate that may use `ureq` or `ring` (a test in `lamina-core` checks every manifest).
-- `apps/lamina`: the desktop app (`lamina`): `lib.rs` (the window: toolbar, plate panel, settings, tabs), `view3d.rs` (orbit camera,
+- `apps/lamina`: the desktop app (`lamina`): `lib.rs` (the window: toolbar, plate panel, settings, tabs), `files.rs` (the File menu,
+  recent projects, dropped files, the question before unsaved changes are lost), `view3d.rs` (orbit camera,
   a CPU rasterizer that keeps an object id per pixel for picking, and the move gizmo), `preview.rs` (layers read back from the G-code, one drawn at a
   time), `chat.rs` (the assistant panel, with Remember and a passphrase for the key), `settings.rs` (the settings file: print settings,
   presets, sealed keys; read hostilely, written whole and owner-only). Thin: it changes the scene only through `Session::execute`. UI behaviour is tested with

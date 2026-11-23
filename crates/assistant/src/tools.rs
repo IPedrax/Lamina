@@ -138,6 +138,12 @@ pub fn run(session: &mut Session, call: &Call, access: Access) -> Result<Value, 
                     c.id
                 ));
             }
+            if let Some(c) = session.find(command).filter(|c| bridge::REPLACES.contains(&c.id)) {
+                return Err(format!(
+                    "`{}` would replace the user's whole plate and its undo history, which the assistant never does: the user starts or opens a project from the app",
+                    c.id
+                ));
+            }
             exec(session, command, params, access)
         }
         "list_commands" => {

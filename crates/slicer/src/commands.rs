@@ -15,7 +15,7 @@ pub static COMMANDS: &[Command] = &[
     Command {
         id: "slice",
         params: "{path, ids?, printer?, filament?, profile?, profile_path?} slices the objects on the plate (all, or `ids`) to G-code at `path`. \
-                 Settings are laid over the defaults in this order: `profile_path`'s JSON file, the `printer` and `filament` presets by name (see \
+                 Settings are laid over the defaults in this order: the project's print settings (from `open`, or the window's), `profile_path`'s JSON file, the `printer` and `filament` presets by name (see \
                  `slicer_presets`), then `profile`, an object of the fields that differ (see `slicer_profile`). \
                  Returns {path, layers, filament_mm, print_seconds, warnings}. It refuses an object that is off the plate, below it or too tall, and says which",
         run: slice,
@@ -74,9 +74,9 @@ struct Settings<'a> {
     over: Option<Value>,
 }
 
-/// Slices the objects named (or all) with the settings: the defaults, then the file's, the presets', and the fields given.
+/// Slices the objects named (or all) with the settings: the defaults, the project's, then the file's, the presets', and the fields given.
 fn run(s: &Session, ids: Option<&[u32]>, settings: Settings) -> Result<print::Output, String> {
-    let mut merged = match settings.file {
+    let merged = match settings.file {
         Some(file) => {
             if std::fs::metadata(file).map_err(|e| format!("{file}: {e}"))?.len() > MAX_PROFILE_FILE {
                 return Err(format!("{file} is larger than {MAX_PROFILE_FILE} bytes"));
@@ -86,7 +86,14 @@ fn run(s: &Session, ids: Option<&[u32]>, settings: Settings) -> Result<print::Ou
         }
         None => json!({}),
     };
-    let Value::Object(base) = &mut merged else { return Err("a profile file holds one JSON object".into()) };
+    let Value::Object(file) = merged else { return Err("a profile file holds one JSON object".into()) };
+    // Under everything, the print settings of the project (what `open` read, or what the window shows).
+    let mut merged = match s.print.get("profile") {
+        Some(Value::Object(project)) => Value::Object(project.clone()),
+        _ => json!({}),
+    };
+    let Value::Object(base) = &mut merged else { return Err("internal: the base profile is an object".into()) };
+    base.extend(file);
     for (name, list) in [(settings.printer, PRINTERS), (settings.filament, FILAMENTS)] {
         if let Some(name) = name {
             base.extend(presets::find(list, name)?.fields());
@@ -202,6 +209,20 @@ mod tests {
         assert!(s.execute("slice_check", &json!({"filament": "wood"})).unwrap_err().contains("there are: PLA"));
         let listed = s.execute("slicer_presets", &json!({})).unwrap();
         assert!(listed["filaments"].as_array().unwrap().iter().any(|f| f["name"] == "ABS" && f["fields"]["fan_speed"] == 0));
+    }
+
+    #[test]
+    fn a_slice_starts_from_the_print_settings_of_the_project() {
+        let mut s = session();
+        s.execute("add_primitive", &json!({"kind": "box", "size": [10, 10, 6]})).unwrap();
+        assert_eq!(s.execute("slice_check", &json!({})).unwrap()["layers"], 30);
+        s.print = json!({"profile": {"layer_height": 0.3, "first_layer_height": 0.3}});
+        assert_eq!(s.execute("slice_check", &json!({})).unwrap()["layers"], 20);
+        // What a slice is given still wins.
+        let r = s.execute("slice_check", &json!({"profile": {"layer_height": 0.2, "first_layer_height": 0.2}})).unwrap();
+        assert_eq!(r["layers"], 30);
+        s.print = json!({"profile": {"nozzle": -1}});
+        assert!(s.execute("slice_check", &json!({})).is_err(), "bad project settings are an error, not a silent default");
     }
 
     #[test]

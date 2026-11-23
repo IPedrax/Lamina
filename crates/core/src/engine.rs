@@ -36,6 +36,9 @@ pub struct Command {
 #[derive(Default)]
 pub struct Session {
     pub scene: Arc<Scene>,
+    /// The front end's print settings and preset labels (`{"profile": {...}, "printer", "filament"}`), kept in the project file. The
+    /// core does not read them; the slicer lays `profile` under the settings a slice is given. Not part of the undo history.
+    pub print: Value,
     undo: Vec<(String, Arc<Scene>)>,
     redo: Vec<(String, Arc<Scene>)>,
     /// Command sets other crates add (the slicer's), beside [`commands::ALL`].
@@ -96,6 +99,23 @@ impl Session {
                 Ok(v)
             }
         }
+    }
+
+    /// Puts another project in this one's place (`open`, `new`): its scene and print settings, and a history that starts here.
+    pub fn replace(&mut self, scene: Scene, print: Value) {
+        self.scene = Arc::new(scene);
+        self.print = print;
+        self.undo.clear();
+        self.redo.clear();
+    }
+
+    /// Whether there is a step to undo, and one to redo.
+    pub fn can_undo(&self) -> bool {
+        !self.undo.is_empty()
+    }
+
+    pub fn can_redo(&self) -> bool {
+        !self.redo.is_empty()
     }
 
     /// Steps back; says what it took back.

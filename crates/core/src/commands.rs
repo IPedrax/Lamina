@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use crate::engine::{Command, Files, Session};
 use crate::mesh::{Mesh, P3, Transform};
 use crate::scene::Object;
-use crate::stl;
+use crate::{project, stl};
 
 const fn cmd(id: &'static str, params: &'static str, run: crate::engine::Run, undoable: bool, files: Files) -> Command {
     Command { id, params, run, undoable, files }
@@ -62,6 +62,21 @@ pub static ALL: &[Command] = &[
         false,
         Files::Write,
     ),
+    cmd(
+        "save",
+        "{path} writes the project (every object, where it stands, and the print settings) to a .lamina file, which `open` reads back",
+        save,
+        false,
+        Files::Write,
+    ),
+    cmd(
+        "open",
+        "{path} replaces the plate and the print settings with a .lamina project's, and starts a new undo history. Returns {objects, ignored}: `ignored` lists what this version left out",
+        open,
+        false,
+        Files::Read,
+    ),
+    cmd("new", "{} empties the plate and starts a new undo history; the print settings stay", new, false, Files::None),
     cmd("undo", "{} takes back the last change", undo, false, Files::None),
     cmd("redo", "{} puts back what undo took back", redo, false, Files::None),
 ];
@@ -284,6 +299,47 @@ fn export_mesh(s: &mut Session, p: &Value) -> Result<Value, String> {
     Ok(json!({"path": a.path, "triangles": merged.triangles.len()}))
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PathOnly {
+    path: String,
+}
+
+fn save(s: &mut Session, p: &Value) -> Result<Value, String> {
+    let a: PathOnly = parse(p)?;
+    let text = project::write(&s.scene, &s.print);
+    // To a file beside it first, then over the old one, so a save cut short never leaves half a project.
+    let path = Path::new(&a.path);
+    let tmp = path.with_extension("lamina.tmp");
+    std::fs::write(&tmp, text).map_err(|e| format!("{}: {e}", tmp.display()))?;
+    std::fs::rename(&tmp, path).map_err(|e| format!("{}: {e}", a.path))?;
+    Ok(json!({"path": a.path, "objects": s.scene.objects.len()}))
+}
+
+fn open(s: &mut Session, p: &Value) -> Result<Value, String> {
+    let a: PathOnly = parse(p)?;
+    let len = std::fs::metadata(&a.path).map_err(|e| format!("{}: {e}", a.path))?.len();
+    if len > project::MAX_FILE {
+        return Err(format!("{} is {len} bytes, more than the {} a project may hold", a.path, project::MAX_FILE));
+    }
+    let text = std::fs::read_to_string(&a.path).map_err(|e| format!("{}: {e}", a.path))?;
+    let loaded = project::read(&text).map_err(|e| format!("{}: {e}", a.path))?;
+    let objects = loaded.scene.objects.len();
+    s.replace(loaded.scene, loaded.print);
+    Ok(json!({"objects": objects, "ignored": loaded.ignored}))
+}
+
+fn new(s: &mut Session, p: &Value) -> Result<Value, String> {
+    let _: Empty = parse(p)?;
+    let print = std::mem::take(&mut s.print);
+    s.replace(crate::scene::Scene::default(), print);
+    Ok(json!({}))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Empty {}
+
 fn undo(s: &mut Session, _: &Value) -> Result<Value, String> {
     s.undo().map(|what| json!({"undid": what}))
 }
@@ -380,6 +436,38 @@ mod tests {
             assert!(s.execute(id, &p).is_err(), "{id} {p}");
         }
         assert_eq!(s.scene.objects.len(), 1);
+    }
+
+    #[test]
+    fn a_project_is_saved_and_opened_with_its_settings_and_a_fresh_history() {
+        let dir = std::env::temp_dir().join(format!("lamina-project-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("plate.lamina").to_string_lossy().into_owned();
+        let mut s = Session::new();
+        run(&mut s, "add_primitive", json!({"kind": "box", "size": [20, 10, 5]})).unwrap();
+        run(&mut s, "add_primitive", json!({"kind": "cylinder", "radius": 3, "height": 9, "at": [20, 20]})).unwrap();
+        s.print = json!({"profile": {"infill_density": 0.3}, "filament": "PETG"});
+        run(&mut s, "save", json!({"path": path})).unwrap();
+        let before = s.scene.clone();
+        run(&mut s, "new", json!({})).unwrap();
+        assert!(s.scene.objects.is_empty() && !s.can_undo(), "new empties the plate and the history");
+        assert_eq!(s.print["filament"], "PETG", "new keeps the print settings");
+        s.print = serde_json::Value::Null;
+        let r = run(&mut s, "open", json!({"path": path})).unwrap();
+        assert_eq!(r["objects"], 2);
+        assert_eq!(s.print["profile"]["infill_density"], 0.3);
+        assert!(!s.can_undo());
+        for (a, b) in before.objects.iter().zip(&s.scene.objects) {
+            assert_eq!((a.id, &a.name, a.xf, &*a.mesh), (b.id, &b.name, b.xf, &*b.mesh));
+        }
+        // A file that is not a project changes nothing.
+        std::fs::write(dir.join("bad.lamina"), "{\"format\": 99}").unwrap();
+        let err = run(&mut s, "open", json!({"path": dir.join("bad.lamina")})).unwrap_err();
+        assert!(err.contains("newer Lamina"), "{err}");
+        assert_eq!(s.scene.objects.len(), 2);
+        assert!(run(&mut s, "open", json!({"path": "/nonexistent.lamina"})).is_err());
+        assert!(run(&mut s, "new", json!({"keep": true})).is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

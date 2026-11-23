@@ -17,7 +17,8 @@ What comes from the network is hostile, and what goes out is the user's:
 - The tools run on the window's session through `bridge::run`, as a connected agent's do, and refuse every command whose catalog
   entry has `files != Files::None`: an object's name must not steer the model into the user's disk. The refusal reads the catalog,
   not a list of names, so a command another crate registers (the slicer's `slice`) is covered by what it declares. The model has no
-  file tool; the user opens, saves and exports from the app.
+  file tool; the user opens, saves and exports from the app. The commands in `bridge::REPLACES` (`new`, `open`) are refused too:
+  they would replace the user's plate and its undo history.
 - The saved key (`seal.rs`) has two levels. `lm1`, the default, is sealed with AES-256-GCM under a key made from `LAMINA_KEY_SECRET`, which
   a release build gets from a CI secret (a public development secret otherwise): it is no secret from anyone who has the program, and the
   docs and the page must say so. `lm2`, which the user may add, is under a passphrase alone (600,000 rounds of PBKDF2), so it opens in any
@@ -45,6 +46,6 @@ What comes from the network is hostile, and what goes out is the user's:
 - `todo_write` (`tools::TODO`) is answered by `tools::run` but its list is kept by the chat (`Chat::todos`), not logged as a call.
 - Look at `tools::all()`'s schemas when adding a tool: plain types only (Gemini takes a subset of OpenAPI; `gemini::schema` writes a
   free-form object as text that the tool reads back). A test checks it.
-- Not here, on purpose: saved chats (Lamina has no project file yet) and a chat shared between windows. Add them with their own tests.
+- Not here, on purpose: saved chats (roadmap 9.5, now that projects exist) and a chat shared between windows. Add them with their own tests.
 - `cargo test -p lamina-assistant` is slow in a debug build unless the root `Cargo.toml` builds `ring` optimised
   (`[profile.dev.package.ring] opt-level = 3`): the passphrase tests make 600,000 rounds of PBKDF2 each.

@@ -9,7 +9,15 @@
 3. A successful change that is `undoable` becomes an undo step (200 kept; a step is an `Arc` of the old scene, so it costs a pointer).
 
 `bridge::run` sits on top for agents (the MCP server and the AI chat). It adds `Access::Read`, which refuses any command that
-changes the scene or its history. Parameters are strict (`deny_unknown_fields`), and every number is range-checked.
+changes the scene or its history, and the ones in `bridge::REPLACES` (`new`, `open`), which put another plate in the user's place.
+
+## Projects
+
+`project.rs` writes and reads `.lamina` files: JSON with `format: 1`, each object's id, name, transform and local mesh (base64 of
+little-endian `f32` vertices and `u32` triangles, lossless and compact), and `print`, the front end's settings, which the core keeps
+without reading (`Session::print`). The slicer's commands lay `print.profile` under the settings a slice is given, so `open` then
+`slice` prints a project as it was set up. A newer `format` is refused; a key this version does not know is left out and listed in
+what `open` returns. `open` and `new` start a new undo history, as BIMCraft's do. Parameters are strict (`deny_unknown_fields`), and every number is range-checked.
 
 ```
 lamina-cli (CLI, MCP) ─┐
@@ -21,7 +29,7 @@ desktop (lamina) ──────┘
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `lamina-core` | `Mesh`, `Transform`, STL read/write, `Scene`, `Session`, `bridge`, built-in commands | serde |
+| `lamina-core` | `Mesh`, `Transform`, STL read/write, `.lamina` projects, `Scene`, `Session`, `bridge`, built-in commands | serde |
 | `lamina-slicer` | `slice` (mesh to loops), `geom` (polygon booleans and offsets on `i_overlay`), `print` (walls, infill, G-code), `profile`, the `slice` and `slicer_profile` commands | core, i_overlay |
 | `lamina-csg` | `boolean` over csgrs' BSP trees, crack repair, the soundness gate, the `union`, `difference` and `intersect` commands | core, csgrs |
 | `lamina-assistant` | provider clients, sealed key storage, tool layer, turn loop | core, ureq, ring |
@@ -60,9 +68,14 @@ only through `Session::execute`, so the assistant, a button and a script do the 
   `lamina_assistant::seal`: by default under a secret built into the program, which the panel says plainly is scrambling and not
   protection from anyone who has Lamina; with a passphrase, AES-256-GCM under PBKDF2 (600,000 rounds), typed once a session and
   stored nowhere. This is BIMCraft's design, ported with the crate.
+- **Projects (`files.rs`).** The File menu runs `new`, `open` and `save`. The window keeps the project's path, and the scene and
+  print settings as they were when it was opened or saved: the plate has changed when the scene is another `Arc` (so undoing back to
+  the saved plate is no change), the settings when their JSON differs. New, Open and the close button ask before losing changes.
+  The window copies its print settings into `Session::print` each frame, so a saved project and the assistant's `slice_check` use the
+  settings shown. Files dropped on the window are opened or imported by extension.
 - **Settings (`settings.rs`).** One `settings.json` in the user's settings folder (`%APPDATA%\Lamina`,
   `~/Library/Application Support/Lamina`, or `~/.config/lamina`; `LAMINA_SETTINGS` overrides): the print settings, the presets last
-  chosen, the user's own presets and the sealed keys. Read hostilely, a part that does not read is left out and said; written whole,
+  chosen, the user's own presets, the recent projects and the sealed keys. Read hostilely, a part that does not read is left out and said; written whole,
   to a file only its owner can read, then moved over the old one, and only when something changed and nothing is being dragged.
 - **Presets.** Built in, in `lamina-slicer` (`presets.rs`), so the CLI, the MCP server and the assistant name them too (`slice
   {printer, filament}`, `slicer_presets`): printers by plate and firmware (Marlin, Klipper with `PRINT_START`, a centred delta) and

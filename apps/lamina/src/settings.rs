@@ -33,6 +33,9 @@ pub struct Settings {
     /// Sealed keys by provider (`Provider::key`).
     #[serde(default)]
     pub keys: BTreeMap<String, String>,
+    /// Recent projects, newest first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recent: Vec<String>,
 }
 
 /// Where the settings file is: `LAMINA_SETTINGS` when set, else `settings.json` in the user's settings folder (found as BIMCraft
@@ -93,6 +96,16 @@ impl Settings {
                 }
             }
         }
+        s.recent = all
+            .get("recent")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .filter(|p| !p.is_empty() && p.len() <= 4096)
+            .take(crate::files::MAX_RECENT)
+            .map(str::to_string)
+            .collect();
         for (provider, sealed) in all.get("keys").and_then(Value::as_object).into_iter().flatten() {
             match sealed.as_str().filter(|t| Provider::from_key(provider).is_some() && seal::well_formed(t)) {
                 Some(t) => {
@@ -135,6 +148,7 @@ mod tests {
         let mut s = Settings {
             profile: Some(Profile { infill_density: 0.35, ..Profile::default() }),
             printer: Some("Generic 300 mm, Klipper".into()),
+            recent: vec!["/home/me/plate.lamina".into()],
             ..Settings::default()
         };
         s.filaments

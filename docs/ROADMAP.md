@@ -20,12 +20,20 @@ Priorities:
 - The AI chat, with three providers, skills, `slice_check`, and a key that can be remembered sealed.
 - The desktop app: a 3D view with orbit, picking and a move gizmo; the objects' tools; print settings and presets; slicing with a layer
   preview; G-code export; the assistant panel; a settings file.
+- **1.1 Project files.** `crates/core/src/project.rs`: `.lamina` JSON with `format: 1`, each object's id, name, transform and local
+  mesh (base64 little-endian arrays), and the print settings and preset labels (`Session::print`, which the slicer lays under what a
+  slice is given). `save`, `open` and `new` commands; `open` and `new` start a new history, are in `bridge::REPLACES` (refused to a
+  read-only agent) and are refused to the window's assistant. Unknown keys are left out and listed, a newer format is refused. The
+  CLI opens a `.lamina` given to `run`, `info` or `slice`.
+- **7.1 File menu and drag and drop.** New, Open, Open recent, Save, Save as (with Ctrl shortcuts), Import mesh, Export G-code and
+  Quit; the title shows the project and a star for unsaved changes; New, Open and closing ask first when something would be lost;
+  files dropped on the window are opened (`.lamina`) or imported (meshes). `apps/lamina/src/files.rs`.
 
 ## Order of work
 
 The P0 items, in the order that unblocks the most:
 
-1. Project files (1.1). Today the plate is lost when the window closes.
+1. Project files (1.1). Done.
 2. Golden G-code tests and real test prints (0.1, 0.2). Nothing here has touched a printer.
 3. Mesh repair on import, and 3MF import (2.2, 2.3). Most models people download are imperfect STLs or 3MF files.
 4. Supports and brim (4.1, 4.2). Without them, most real parts fail on the plate.
@@ -69,13 +77,6 @@ that feeds a few thousand random and mutated inputs from a seeded generator and 
 crate's tests already have a small RNG to reuse.
 
 ## 1. Files and projects
-
-**1.1 Project files (P0).** How: add `crates/core/src/project.rs` with a `.lamina` format. It is JSON with `format: 1` and the objects:
-name, local mesh (vertex and index arrays, or base64 binary STL for size) and transform. It also holds the print settings and the
-preset labels. Add `save {path}` and `open {path}` commands (`Files::Write`, `Files::Read`). Add `open` and `new` to a `REPLACES`
-list in `bridge.rs`, so an agent with read-only access cannot replace the user's plate. BIMCraft's bridge has the same list. Read
-kindly: unknown keys are left out and listed, and a newer `format` is refused. Desktop: File menu with New, Open, Save, Save As and
-recent files, and a prompt before closing with unsaved changes. Test: save, open, and the scene and settings are equal.
 
 **1.2 Autosave (P1).** How: every few minutes, when the scene changed, write the project to the settings folder. Offer it at the next
 start if the app did not close cleanly. BIMCraft's `autosave.rs` has the pattern.
@@ -280,9 +281,6 @@ limited by Bambu's own authorization), and USB serial with line numbers and rese
 
 ## 7. Desktop
 
-**7.1 File menu and drag and drop (P0 with 1.1).** How: New, Open, Save, Save As and recent files in `apps/lamina/src/lib.rs`. Files
-dropped on the window arrive in egui's input as `dropped_files`: import STL, 3MF and OBJ, and open `.lamina`.
-
 **7.2 Status of the window's work (P1).** How: slicing and booleans can take seconds. Run them on a thread, as the chat already runs
 its requests, with a spinner and Cancel. The UI stays responsive.
 
@@ -351,5 +349,4 @@ project files and can return after 1.1.
 - Infill lines are separate strokes. The skirt is an outline of the first layer, not a hull. Time is distance over speed, without acceleration.
 - A mesh that is not closed prints with parts missing, with a warning. STL only.
 - Booleans refuse about half of tilted cylinder pairs.
-- The plate is not saved: closing the window loses it.
 - Nothing has been printed on real hardware.

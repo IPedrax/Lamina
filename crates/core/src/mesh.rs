@@ -235,6 +235,13 @@ impl Transform {
     pub fn is_finite(&self) -> bool {
         self.m.iter().flatten().chain(self.t.iter()).all(|c| c.is_finite())
     }
+
+    /// The determinant of the matrix: how much it scales volume, negative when it mirrors.
+    pub fn det(&self) -> f64 {
+        let m = &self.m;
+        m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+            + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
+    }
 }
 
 fn cross(a: P3, b: P3) -> P3 {

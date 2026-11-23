@@ -67,6 +67,20 @@ impl Scene {
         Ok(self.next_id)
     }
 
+    /// A scene of objects read from a project, keeping their ids: each must be unique, and the next new object gets one above them all.
+    pub fn restore(objects: Vec<Object>) -> Result<Scene, String> {
+        if objects.len() > MAX_OBJECTS {
+            return Err(format!("the plate holds at most {MAX_OBJECTS} objects"));
+        }
+        let mut ids: Vec<u32> = objects.iter().map(|o| o.id).collect();
+        ids.sort_unstable();
+        if let Some(w) = ids.windows(2).find(|w| w[0] == w[1]) {
+            return Err(format!("two objects have the id {}", w[0]));
+        }
+        let next_id = ids.last().copied().unwrap_or(0);
+        Ok(Scene { objects, next_id })
+    }
+
     /// What every command must leave true: a transform that stays finite and an object that stays within reach.
     pub fn check(&self) -> Result<(), String> {
         for o in &self.objects {

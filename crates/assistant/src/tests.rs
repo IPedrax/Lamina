@@ -415,6 +415,10 @@ fn what_would_touch_a_file_is_refused_by_what_the_catalog_says_not_by_a_list_of_
     assert_eq!(listed[0]["files"], "write");
     assert!(run(&mut s, "execute", json!({"command": "info"})).is_ok());
     assert_eq!(objects(&mut s), 1, "the scene is still the user's");
+    // `new` touches no file, but it would empty the plate and its history: refused too.
+    let e = run(&mut s, "execute", json!({"command": "NEW"})).unwrap_err();
+    assert!(e.contains("replace the user's whole plate"), "{e}");
+    assert_eq!(objects(&mut s), 1);
 }
 
 #[test]

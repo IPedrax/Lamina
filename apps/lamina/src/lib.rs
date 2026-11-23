@@ -4,6 +4,7 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 pub mod chat;
+pub mod files;
 pub mod preview;
 pub mod settings;
 pub mod view3d;
@@ -13,7 +14,7 @@ use std::sync::Arc;
 
 use egui::{Color32, Key, Panel, RichText, ScrollArea, Ui};
 use lamina_assistant::net::Net;
-use lamina_core::{Mesh, Session};
+use lamina_core::{Mesh, Scene, Session};
 use lamina_slicer::presets::{self, FILAMENT_FIELDS, FILAMENTS, PRINTER_FIELDS, PRINTERS};
 use lamina_slicer::profile::Profile;
 use serde_json::{Value, json};
@@ -98,6 +99,17 @@ pub struct App {
     /// Where the settings are kept between runs, and what was last written there; none in a test that does not ask for it.
     pub settings_path: Option<PathBuf>,
     saved: Option<Settings>,
+    /// The project file open, if it has one; the plate and the print settings as it was last opened or saved.
+    pub project: Option<PathBuf>,
+    saved_scene: Arc<Scene>,
+    saved_print: Value,
+    /// Recent projects, newest first.
+    pub recent: Vec<String>,
+    /// What waits for an answer to "save the changes?", and whether the window may now close.
+    pub ask: Option<files::Pending>,
+    may_close: bool,
+    closing: bool,
+    title: String,
 }
 
 impl App {
@@ -126,7 +138,22 @@ impl App {
             preset_name: String::new(),
             settings_path: None,
             saved: None,
+            project: None,
+            saved_scene: Arc::new(Scene::default()),
+            saved_print: Value::Null,
+            recent: Vec::new(),
+            ask: None,
+            may_close: false,
+            closing: false,
+            title: String::new(),
         }
+        .ready()
+    }
+
+    /// The window as it starts: what it shows is what is saved.
+    fn ready(mut self) -> App {
+        self.mark_saved();
+        self
     }
 
     /// A window that keeps its settings in the file at `path`: what is there now is taken (the print settings, the presets, a
@@ -139,12 +166,14 @@ impl App {
         }
         (app.printer, app.filament, app.my_printers, app.my_filaments) =
             (s.printer.clone(), s.filament.clone(), s.printers.clone(), s.filaments.clone());
+        app.recent = s.recent.clone();
         notes.extend(app.chat.restore(s.keys.clone()));
         if !notes.is_empty() {
             (app.failed, app.status) = (true, notes.join(" "));
         }
         app.saved = Some(app.settings());
         app.settings_path = Some(path);
+        app.mark_saved();
         app
     }
 
@@ -157,6 +186,7 @@ impl App {
             printers: self.my_printers.clone(),
             filaments: self.my_filaments.clone(),
             keys: self.chat.saved.clone(),
+            recent: self.recent.clone(),
         }
     }
 
@@ -300,12 +330,9 @@ impl App {
         self.selected.retain(|id| alive.contains(id));
     }
 
-    /// Puts an STL file on the plate and selects it.
+    /// Opens a project or imports a mesh, by its extension (the file named on the command line).
     pub fn open(&mut self, path: &str) {
-        if let Some(id) = self.run("import_mesh", json!({ "path": path })).and_then(|v| v["id"].as_u64()) {
-            self.selected = vec![id as u32];
-            self.frame_all();
-        }
+        self.open_file(std::path::Path::new(path));
     }
 
     /// Adds a shape `width` mm wide to the right of what is on the plate, so it does not land inside another, and selects it.
@@ -362,11 +389,21 @@ impl App {
     /// The whole window, one frame of it.
     pub fn show(&mut self, ui: &mut Ui) {
         let ctx = ui.ctx().clone();
+        // The window's print settings are the session's, so the assistant's `slice_check` and a saved project use what is shown.
+        let print = self.print_json();
+        if self.session.print != print {
+            self.session.print = print;
+        }
         if self.chat.poll(&ctx, &mut self.session) {
             self.prune();
         }
+        self.dropped(&ctx);
+        self.file_keys(&ctx);
         self.keys(&ctx);
-        Panel::top("toolbar").show(ui, |ui| self.toolbar(ui));
+        Panel::top("toolbar").show(ui, |ui| {
+            egui::MenuBar::new().ui(ui, |ui| self.file_menu(ui));
+            self.toolbar(ui);
+        });
         Panel::bottom("status").show(ui, |ui| {
             let color = if self.failed { Color32::from_rgb(230, 110, 100) } else { Color32::GRAY };
             ui.label(RichText::new(if self.status.is_empty() { "Ready" } else { &self.status }).color(color));
@@ -379,6 +416,12 @@ impl App {
             Tab::Prepare => self.prepare(ui),
             Tab::Preview => self.preview(ui),
         });
+        self.closing(&ctx);
+        let title = self.title();
+        if title != self.title {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
+            self.title = title;
+        }
         self.persist(&ctx);
     }
 
@@ -418,10 +461,10 @@ impl App {
             if ui.button("Add sphere").clicked() {
                 self.add(json!({"kind": "sphere", "radius": 10}), 20.0);
             }
-            if ui.button("Import STL...").clicked()
-                && let Some(p) = rfd::FileDialog::new().add_filter("STL", &["stl"]).pick_file()
+            if ui.button("Import mesh...").clicked()
+                && let Some(p) = rfd::FileDialog::new().add_filter("Mesh", files::MESHES).pick_file()
             {
-                self.open(&p.to_string_lossy());
+                self.import(&p);
             }
             ui.separator();
             if ui.button("Undo").clicked() {
@@ -472,7 +515,9 @@ impl App {
             })
             .collect();
         if rows.is_empty() {
-            ui.label(RichText::new("Nothing on the plate yet: add a shape, import an STL, or ask the assistant.").weak());
+            ui.label(
+                RichText::new("Nothing on the plate yet: add a shape, import or drop a mesh, open a project, or ask the assistant.").weak(),
+            );
         }
         for (id, text) in rows {
             if ui.selectable_label(self.selected.contains(&id), text).clicked() {
@@ -839,6 +884,103 @@ mod tests {
         assert_eq!(again.printer.as_deref(), Some("Generic 250 x 210 mm, Marlin"));
         assert!(again.my_filaments.contains_key("Mine"));
         assert_eq!(again.chat.saved.len(), 1);
+    }
+
+    #[test]
+    fn a_project_keeps_the_plate_and_the_print_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut h = window();
+        press(&mut h, "Add box");
+        press(&mut h, "Add cylinder");
+        let app = h.state_mut();
+        app.apply_preset(Kind::Printer, "Generic 300 mm, Klipper");
+        app.profile.infill_density = 0.33;
+        assert!(app.dirty() && app.title().starts_with("Untitled *"), "{}", app.title());
+        assert!(app.save_project(&dir.path().join("bracket")), "{}", app.status);
+        let path = dir.path().join("bracket.lamina");
+        assert!(path.exists() && !app.dirty(), "saved with the extension added");
+        assert_eq!(app.title(), "bracket - Lamina");
+        let before: Vec<_> = app.session.scene.objects.iter().map(|o| (o.id, o.name.clone(), o.xf, o.mesh.clone())).collect();
+
+        let mut other = App::new(session(), Arc::new(lamina_assistant::testing::Fake::default()));
+        other.open_project(&path);
+        assert!(!other.failed, "{}", other.status);
+        let after: Vec<_> = other.session.scene.objects.iter().map(|o| (o.id, o.name.clone(), o.xf, o.mesh.clone())).collect();
+        assert_eq!(before, after);
+        assert_eq!((other.profile.infill_density, other.profile.bed), (0.33, [300.0, 300.0]));
+        assert_eq!(other.printer.as_deref(), Some("Generic 300 mm, Klipper"));
+        assert_eq!(other.project.as_deref(), Some(path.as_path()));
+        assert_eq!(other.recent, [path.to_string_lossy().into_owned()]);
+        assert!(!other.dirty());
+        other.run("delete", json!({"id": 1}));
+        assert!(other.dirty());
+        other.run("undo", json!({}));
+        assert!(!other.dirty(), "undoing back to what was saved is not a change");
+    }
+
+    #[test]
+    fn unsaved_changes_are_asked_about_before_they_are_lost() {
+        let mut h = window();
+        assert!(!h.state().dirty(), "an empty window has nothing to lose");
+        h.state_mut().request(files::Pending::New);
+        assert_eq!(h.state().ask, None);
+        press(&mut h, "Add box");
+        h.state_mut().request(files::Pending::New);
+        h.run();
+        h.get_by_label("Save the changes?");
+        press(&mut h, "Cancel");
+        assert_eq!((h.state().ask.clone(), h.state().session.scene.objects.len()), (None, 1), "cancel keeps everything");
+        h.state_mut().request(files::Pending::New);
+        h.run();
+        press(&mut h, "Don't save");
+        assert!(h.state().session.scene.objects.is_empty() && !h.state().dirty());
+        press(&mut h, "Add sphere");
+        h.state_mut().request(files::Pending::Close);
+        h.run();
+        press(&mut h, "Don't save");
+        assert!(h.state().may_close, "the window may close once the user said so");
+    }
+
+    /// A file as the system drops it on the window.
+    #[derive(Debug)]
+    struct Dropped(std::path::PathBuf);
+
+    impl egui::DroppedFile for Dropped {
+        fn path(&self) -> &std::path::Path {
+            &self.0
+        }
+
+        fn bytes(&self) -> Result<Vec<u8>, String> {
+            std::fs::read(&self.0).map_err(|e| e.to_string())
+        }
+    }
+
+    fn drop_file(h: &mut Harness<App>, path: std::path::PathBuf) {
+        h.input_mut().dropped_files.push(Arc::new(Dropped(path)));
+        h.run();
+    }
+
+    #[test]
+    fn files_dropped_on_the_window_are_imported_or_opened() {
+        let dir = tempfile::tempdir().unwrap();
+        let stl = dir.path().join("part.stl");
+        std::fs::write(&stl, lamina_core::stl::write(&Mesh::cuboid([10.0, 10.0, 10.0]))).unwrap();
+        let mut h = window();
+        drop_file(&mut h, stl.clone());
+        assert_eq!(h.state().session.scene.objects.len(), 1, "{}", h.state().status);
+        assert_eq!(h.state().session.scene.objects[0].name, "part");
+        let project = dir.path().join("two.lamina");
+        let mut s = session();
+        s.execute("import_mesh", &json!({"path": stl})).unwrap();
+        s.execute("import_mesh", &json!({"path": stl, "at": [30, 0]})).unwrap();
+        s.execute("save", &json!({"path": project})).unwrap();
+        drop_file(&mut h, project.clone());
+        h.run();
+        press(&mut h, "Don't save");
+        assert_eq!(h.state().session.scene.objects.len(), 2, "{}", h.state().status);
+        assert_eq!(h.state().project.as_deref(), Some(project.as_path()));
+        drop_file(&mut h, dir.path().join("notes.txt"));
+        assert!(h.state().failed && h.state().status.contains(".lamina"), "{}", h.state().status);
     }
 
     /// The whole window as a picture, for looking at: `cargo test -p lamina -- --ignored picture_of_the_window`.

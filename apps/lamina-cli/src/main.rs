@@ -11,13 +11,14 @@ use lamina_core::bridge::Access;
 use serde_json::{Value, json};
 
 const USAGE: &str = "USAGE:
-  lamina-cli run [FILE.stl] [--cmd 'ID {json}']... [--script FILE]...
-      Put FILE on the plate (or start empty), then run the commands and scripts in the order given (a script is one `ID {json}` per
-      line). Each result is printed as a line of JSON. `export_mesh {\"path\": \"out.stl\"}` writes the plate.
-  lamina-cli slice FILE.stl OUT.gcode [PROFILE.json]
-                                 slice the mesh to G-code. PROFILE.json holds only the settings that differ from the defaults
-                                 (`lamina-cli run --cmd slicer_profile` prints them all)
-  lamina-cli info FILE.stl           the mesh at a glance: size, volume, triangles, whether it is closed
+  lamina-cli run [FILE] [--cmd 'ID {json}']... [--script FILE]...
+      Open FILE (a .lamina project, or a mesh put on the plate) or start empty, then run the commands and scripts in the order
+      given (a script is one `ID {json}` per line). Each result is printed as a line of JSON. `export_mesh {\"path\": \"out.stl\"}`
+      writes the plate, `save {\"path\": \"plate.lamina\"}` the project.
+  lamina-cli slice FILE OUT.gcode [PROFILE.json]
+                                 slice a mesh, or a project with its own print settings, to G-code. PROFILE.json holds only the
+                                 settings that differ (`lamina-cli run --cmd slicer_profile` prints them all)
+  lamina-cli info FILE               the plate at a glance: size, volume, triangles, whether each object is closed
   lamina-cli commands                every command and its parameters
   lamina-cli mcp [--read-only]       an MCP server on stdio, for agents; with --read-only the agent may look at the scene, never change it
   lamina-cli --version";
@@ -30,6 +31,15 @@ fn session() -> Session {
     s
 }
 
+/// Puts `file` in the session: a project is opened, a mesh is put on the plate.
+fn load(s: &mut Session, file: &str) -> Result<Value, String> {
+    let project = std::path::Path::new(file)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case(lamina_core::project::EXTENSION));
+    s.execute(if project { "open" } else { "import_mesh" }, &json!({"path": file}))
+}
+
 fn print(out: &mut impl Write, v: &Value) -> Result<(), String> {
     writeln!(out, "{v}").map_err(|e| format!("stdout: {e}"))
 }
@@ -39,7 +49,7 @@ fn run(args: &[String], out: &mut impl Write) -> Result<(), String> {
     let mut it = args.iter().peekable();
     // A leading bare argument is a file to put on the plate.
     if let Some(file) = it.next_if(|a| !a.starts_with("--")) {
-        print(out, &s.execute("import_mesh", &json!({"path": file}))?)?;
+        print(out, &load(&mut s, file)?)?;
     }
     while let Some(flag) = it.next() {
         let value = it.next().ok_or_else(|| format!("`{flag}` needs a value"))?;
@@ -67,14 +77,14 @@ fn main_with(args: &[String], out: &mut impl Write) -> Result<(), String> {
         Some("info") => {
             let file = args.get(1).ok_or("`info` needs a file")?;
             let mut s = session();
-            s.execute("import_mesh", &json!({"path": file}))?;
+            load(&mut s, file)?;
             print(out, &s.execute("info", &json!({}))?)
         }
         Some("slice") => {
             let (file, to) =
                 (args.get(1).ok_or("`slice` needs a file and an output path")?, args.get(2).ok_or("`slice` needs an output path")?);
             let mut s = session();
-            s.execute("import_mesh", &json!({"path": file}))?;
+            load(&mut s, file)?;
             print(out, &s.execute("slice", &json!({"path": to, "profile_path": args.get(3)}))?)
         }
         Some("commands") => print(out, &session().catalog()),
@@ -132,7 +142,16 @@ mod tests {
         let gcode = std::env::temp_dir().join(format!("lamina-cli-{}.gcode", std::process::id())).to_string_lossy().into_owned();
         let r = lines(&["slice", &path, &gcode]).unwrap();
         assert_eq!(r[0]["layers"], 40);
+        // A project made by one run is opened by the next, with its print settings, and sliced with them.
+        let project = std::env::temp_dir().join(format!("lamina-cli-{}.lamina", std::process::id())).to_string_lossy().into_owned();
+        lines(&["run", &path, "--cmd", &format!(r#"save {{"path":"{project}"}}"#)]).unwrap();
+        let mut text: Value = serde_json::from_str(&std::fs::read_to_string(&project).unwrap()).unwrap();
+        text["print"] = json!({"profile": {"layer_height": 0.4, "first_layer_height": 0.2, "nozzle": 0.6}});
+        std::fs::write(&project, text.to_string()).unwrap();
+        assert_eq!(lines(&["info", &project]).unwrap()[0]["objects"].as_array().unwrap().len(), 1);
+        assert_eq!(lines(&["slice", &project, &gcode]).unwrap()[0]["layers"], 21);
         std::fs::remove_file(&gcode).unwrap();
+        std::fs::remove_file(&project).unwrap();
         std::fs::remove_file(&path).unwrap();
         assert!(lines(&["run", "--cmd", "nope"]).is_err());
         assert!(lines(&["run", "--wat", "x"]).is_err());

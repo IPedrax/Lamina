@@ -12,6 +12,10 @@ pub enum Access {
     Read,
 }
 
+/// The commands that put another plate in the user's place (and start a new history): an agent that may only read never runs
+/// them, and neither does the window's assistant. BIMCraft's bridge keeps the same list.
+pub const REPLACES: &[&str] = &["new", "open"];
+
 /// What a refusal says when the agent may only read.
 pub const READ_ONLY: &str =
     "this agent may only read the scene: the user lets it edit in the app's settings, or starts the MCP server without --read-only";
@@ -56,7 +60,7 @@ pub fn run(session: &mut Session, request: &Request, access: Access) -> Result<V
 /// Refuses a command that would change the scene or its history when the agent may only read.
 fn may_run(session: &Session, command: &str, access: Access) -> Result<(), String> {
     let Some(c) = session.find(command) else { return Ok(()) }; // `execute` says it is unknown
-    if access == Access::Read && (c.undoable || matches!(c.id, "undo" | "redo")) {
+    if access == Access::Read && (c.undoable || REPLACES.contains(&c.id) || matches!(c.id, "undo" | "redo")) {
         return Err(format!("`{}` would change the scene, and {READ_ONLY}", c.id));
     }
     Ok(())
@@ -75,7 +79,13 @@ mod tests {
         let mut s = Session::new();
         run(&mut s, &execute("add_primitive", json!({"kind": "box", "size": [1, 1, 1]})), Access::Edit).unwrap();
         assert!(run(&mut s, &execute("info", json!({})), Access::Read).is_ok());
-        for (c, p) in [("add_primitive", json!({"kind": "box", "size": [1, 1, 1]})), ("delete", json!({"id": 1})), ("undo", json!({}))] {
+        for (c, p) in [
+            ("add_primitive", json!({"kind": "box", "size": [1, 1, 1]})),
+            ("delete", json!({"id": 1})),
+            ("undo", json!({})),
+            ("new", json!({})),
+            ("open", json!({"path": "/nonexistent.lamina"})),
+        ] {
             assert!(run(&mut s, &execute(c, p), Access::Read).unwrap_err().contains("only read"), "{c}");
         }
         let script = Request::Script { text: "info\ndelete {\"id\":1}\n".into() };
