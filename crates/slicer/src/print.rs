@@ -439,8 +439,22 @@ fn plan(mesh: &Mesh, p: &Profile, w: f64, tops: Option<&[f64]>) -> Result<Object
         // Supports: sparse lines all run one way, so the layers stack into thin walls; the interface crosses them, denser, to carry
         // the overhang. The writer prints a layer's loops (the walls) before its lines.
         let s = &supports[k];
+        // A tree's branches are walled, a loop round each, and filled inside as columns are.
+        let sparse = if p.support_style == support::SupportStyle::Tree {
+            strokes.extend(geom::inset(&s.sparse, w / 2.0).into_iter().flatten().map(|pts| Stroke {
+                pts,
+                closed: true,
+                speed: speed(p.infill_speed),
+                kind: Feature::Support,
+                flow: 1.0,
+                spiral: false,
+            }));
+            geom::inset(&s.sparse, w)
+        } else {
+            s.sparse.clone()
+        };
         for (area, spacing, angle, kind) in [
-            (&s.sparse, w / p.support_density, 0.0, Feature::Support),
+            (&sparse, w / p.support_density, 0.0, Feature::Support),
             (&s.interface, w / SUPPORT_INTERFACE_DENSITY, 90.0, Feature::SupportInterface),
         ] {
             if !geom::is_empty(area) {

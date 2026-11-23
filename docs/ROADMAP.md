@@ -115,6 +115,15 @@ Priorities:
   air is held up; overhangs are carried down to the model or the plate (`support`: `off`, `everywhere`, `from_plate`), keep
   `support_xy_gap` from the walls and stop `support_z_gap` below the model, with `support_interface_layers` of denser lines on top.
   Sparse lines run one way so layers stack; the interface crosses them. A golden T is sliced with supports.
+- **4.1b Tree supports.** `support_style: "tree"` (`columns`, the default, is 4.1). The columns' interface stays; under the bottom
+  of each column's top go tips `tree_tip_spacing` apart (one per cell of a grid, fewer on a slope, whose bottom is a strip on each
+  layer), walked down a layer at a time. Each leans at most `tree_branch_angle` toward the nearest branch it can still meet, and
+  keeps out of the region from which the plate cannot be reached (the model grown by the xy gap, and its shadow shrunk by the lean
+  for each layer up). Branches that meet go on as one, as thick as the square root of their tips times a line width (plus about a
+  degree's growth on the way down), up to `tree_max_radius`, printed as a loop with lines inside. A branch that cannot reach the
+  plate stands on the model, or with `from_plate` is dropped with its tips. Under a T 20 mm tall with arms 12 mm out the tree
+  takes 71 mm of filament against the columns' 244 (the interface, 16 mm, alike); a ball on a stalk 142 against 175; a ball on
+  the plate about the same. Settings in the window and the skills. Not yet printed.
 - **4.2 Brim and raft.** `brim_width`: loops outward from the outer walls of everything on the first layer, touching it, merged
   where objects are close; the skirt moves out past it. `raft_layers`: a coarse base, crossing middle layers and a solid top, 2 mm
   beyond the footprint, with the objects lifted 0.15 mm above it. Golden cases for both.
@@ -313,8 +322,6 @@ what is wrong before adding features.
 
 ## 4. Slicer
 
-**4.1b Tree supports (P2).** Branches that grow from the plate toward each overhang, using less plastic than the straight columns of 4.1.
-
 **4.17 Multi-material and sequential printing (P2).** These need tool changes, a purge tower, an extruder per object, and for
 sequential printing a check of the print head's clearance.
 
@@ -343,7 +350,9 @@ DMG, each checked against the SHA-256 digest GitHub gives the asset. The release
 
 ## Known limits today
 
-- Walls are constant width; a thin feature gets one gap-fill line, not walls of varying width. Supports are straight columns, not trees.
+- Walls are constant width; a thin feature gets one gap-fill line, not walls of varying width. Supports, columns or trees, are
+  planned for each object alone, so one may stand in another object's way. A tree's interface covers the whole overhang, as the
+  columns' does, and with `from_plate` a branch left out can leave a corner of it over air.
 - The skirt is an outline of the first layer, not a hull. The time estimate has not been checked against a real print.
 - A mesh whose holes are too big to fill without guessing stays open, and prints with parts missing, with a warning. STL, 3MF, OBJ and glTF in; STL and 3MF out.
 - Booleans refuse about 1 in 100 random pairs (the rest of a sphere-with-sphere union mostly), and a boolean of a boolean's result

@@ -151,6 +151,10 @@ pub const PER_OBJECT_FIELDS: &[&str] = &[
     "support_z_gap",
     "support_xy_gap",
     "support_interface_layers",
+    "support_style",
+    "tree_tip_spacing",
+    "tree_branch_angle",
+    "tree_max_radius",
     "ironing",
     "fuzzy_skin",
 ];

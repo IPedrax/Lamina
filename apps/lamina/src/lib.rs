@@ -1287,6 +1287,20 @@ impl App {
                     if p.support != Support::Off {
                         ui.add(egui::DragValue::new(&mut p.support_angle).range(10.0..=89.0).suffix(" deg"))
                             .on_hover_text(hint("support_angle"));
+                        use lamina_slicer::profile::SupportStyle;
+                        let style = |s: SupportStyle| match s {
+                            SupportStyle::Columns => "Columns",
+                            SupportStyle::Tree => "Tree",
+                        };
+                        egui::ComboBox::from_id_salt("support_style")
+                            .selected_text(style(p.support_style))
+                            .show_ui(ui, |ui| {
+                                for s in [SupportStyle::Columns, SupportStyle::Tree] {
+                                    ui.selectable_value(&mut p.support_style, s, style(s));
+                                }
+                            })
+                            .response
+                            .on_hover_text(hint("support_style"));
                     }
                 });
                 ui.end_row();
@@ -1366,6 +1380,9 @@ impl App {
             field(ui, "Gap above, mm", "support_z_gap", &mut p.support_z_gap, 0.05);
             field(ui, "Gap beside, mm", "support_xy_gap", &mut p.support_xy_gap, 0.05);
             field(ui, "Interface layers", "support_interface_layers", &mut p.support_interface_layers, 0.1);
+            field(ui, "Tree tips apart, mm", "tree_tip_spacing", &mut p.tree_tip_spacing, 0.1);
+            field(ui, "Tree branch lean, deg", "tree_branch_angle", &mut p.tree_branch_angle, 1.0);
+            field(ui, "Tree trunk radius, mm", "tree_max_radius", &mut p.tree_max_radius, 0.1);
         });
         group(ui, "Machine", &mut |ui| {
             field(ui, "Nozzle, mm", "nozzle", &mut p.nozzle, 0.05);
@@ -2278,6 +2295,12 @@ fill_angle = 45
         h.state_mut().profile.support = lamina_slicer::profile::Support::FromPlate;
         h.run();
         assert_eq!(h.state().print_json()["profile"]["support"], "from_plate");
+        // Trees are a style of support, kept with the settings, and their own settings are in the details.
+        h.state_mut().profile.support_style = lamina_slicer::profile::SupportStyle::Tree;
+        h.run();
+        assert_eq!(h.state().print_json()["profile"]["support_style"], "tree");
+        press(&mut h, "Support details");
+        h.get_by_label("Tree tips apart, mm");
     }
 
     #[test]

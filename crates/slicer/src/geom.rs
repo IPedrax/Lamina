@@ -154,6 +154,19 @@ pub fn contains(r: &Region, p: P2) -> bool {
     winding != 0
 }
 
+/// The point of `r`'s boundary nearest `p`, or none for an empty region.
+pub fn nearest(r: &Region, p: P2) -> Option<P2> {
+    r.iter()
+        .flatten()
+        .flat_map(|c| (0..c.len()).map(move |i| (c[i], c[(i + 1) % c.len()])))
+        .map(|(a, b)| {
+            let (d, len2) = ([b[0] - a[0], b[1] - a[1]], dist2(a, b));
+            let t = if len2 < 1e-18 { 0.0 } else { (((p[0] - a[0]) * d[0] + (p[1] - a[1]) * d[1]) / len2).clamp(0.0, 1.0) };
+            [a[0] + t * d[0], a[1] + t * d[1]]
+        })
+        .min_by(|x, y| dist2(*x, p).total_cmp(&dist2(*y, p)))
+}
+
 /// A region's area, mm²: outer contours minus holes.
 pub fn area(r: &Region) -> f64 {
     r.iter().flatten().map(|c| crate::slice::area(c)).sum()
@@ -197,6 +210,10 @@ mod tests {
         hole.reverse();
         let ring = region(&[square(0.0, 0.0, 10.0), hole]);
         assert!(contains(&ring, [1.0, 1.0]) && !contains(&ring, [5.0, 5.0]) && !contains(&ring, [11.0, 5.0]));
+        // The nearest point of the boundary: on the hole's edge from inside it, on the outer edge from outside.
+        let near = |p: P2| nearest(&ring, p).unwrap();
+        assert!(dist2(near([5.0, 4.0]), [5.0, 3.0]) < 1e-12 && dist2(near([12.0, 5.0]), [10.0, 5.0]) < 1e-12);
+        assert!(nearest(&Region::new(), [0.0, 0.0]).is_none());
     }
 
     #[test]

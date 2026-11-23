@@ -35,7 +35,8 @@ and `target/release/lamina-cli` (the command line).
    are generic Marlin and Klipper printers of 220 to 350 mm and a delta, PLA, PETG, ABS, ASA and TPU 95A, and 0.12 mm Fine, 0.20 mm
    Standard, 0.28 mm Draft and Strong.
 3. **Check the settings.** The main ones are in Print settings; the rest are in the groups under it (speeds, retraction and travel,
-   the skirt, cooling, support details, the machine, and the start and end G-code).
+   the skirt, cooling, support details, the machine, and the start and end G-code). Supports are columns or trees: pick Tree
+   beside Supports for branches that gather into a few trunks, less plastic under a tall overhang.
 4. **Slice.** Press Slice. The window stays usable while it works, and the Preview tab opens when it is done, with the layer count,
    the filament and the print time.
 5. **Look at the preview.** In 3D, every layer up to the one on the slider is drawn, coloured by what it prints: walls, infill,
@@ -191,4 +192,8 @@ The same text is the tooltip in the window. The names are the ones a profile fil
 | `support_z_gap` | The space between the top of a support and the part, mm, so it comes away. | 0 to 2 | 0.2 |
 | `support_xy_gap` | The space between a support and the part's walls, mm. | 0 to 5 | 0.6 |
 | `support_interface_layers` | Denser layers at the top of a support, under the part, for a cleaner underside. | 0 to 10 | 2 |
+| `support_style` | Columns under the whole overhang, or trees: thin branches that merge on the way down, less plastic and smaller marks. |  | `columns` |
+| `tree_tip_spacing` | How far apart a tree's tips touch the overhang, mm: closer holds a flatter underside. | 1 to 20 | 3.0 |
+| `tree_branch_angle` | How far a tree's branches may lean from vertical, degrees, as they gather into trunks and go round the part. | 5 to 60 | 40.0 |
+| `tree_max_radius` | The thickest a tree's trunk grows, mm: a branch thickens with the tips it carries and as it goes down. | 1 to 20 | 3.0 |
 <!-- settings:end -->

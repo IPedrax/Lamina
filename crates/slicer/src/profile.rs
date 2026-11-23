@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-pub use crate::support::Support;
+pub use crate::support::{Support, SupportStyle};
 
 /// The printer's firmware.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -139,6 +139,13 @@ pub struct Profile {
     pub support_xy_gap: f64,
     /// Denser layers at the top of the support, under the model.
     pub support_interface_layers: u32,
+    /// Straight columns under the whole overhang, or trees: branches from small tips `tree_tip_spacing` mm apart that merge on the
+    /// way down, leaning at most `tree_branch_angle` degrees from vertical, each as thick as the tips it carries up to
+    /// `tree_max_radius` mm.
+    pub support_style: SupportStyle,
+    pub tree_tip_spacing: f64,
+    pub tree_branch_angle: f64,
+    pub tree_max_radius: f64,
 }
 
 pub const PLACEHOLDERS: &[&str] = &[
@@ -222,6 +229,10 @@ impl Default for Profile {
             support_z_gap: 0.2,
             support_xy_gap: 0.6,
             support_interface_layers: 2,
+            support_style: SupportStyle::Columns,
+            tree_tip_spacing: 3.0,
+            tree_branch_angle: 40.0,
+            tree_max_radius: 3.0,
         }
     }
 }
@@ -277,6 +288,9 @@ pub const LIMITS: &[(&str, f64, f64)] = &[
     ("support_z_gap", 0.0, 2.0),
     ("support_xy_gap", 0.0, 5.0),
     ("support_interface_layers", 0.0, 10.0),
+    ("tree_tip_spacing", 1.0, 20.0),
+    ("tree_branch_angle", 5.0, 60.0),
+    ("tree_max_radius", 1.0, 20.0),
 ];
 
 /// A number field's range, from [`LIMITS`].
@@ -351,6 +365,13 @@ pub const ABOUT: &[(&str, &str)] = &[
     ("support_z_gap", "The space between the top of a support and the part, mm, so it comes away."),
     ("support_xy_gap", "The space between a support and the part's walls, mm."),
     ("support_interface_layers", "Denser layers at the top of a support, under the part, for a cleaner underside."),
+    (
+        "support_style",
+        "Columns under the whole overhang, or trees: thin branches that merge on the way down, less plastic and smaller marks.",
+    ),
+    ("tree_tip_spacing", "How far apart a tree's tips touch the overhang, mm: closer holds a flatter underside."),
+    ("tree_branch_angle", "How far a tree's branches may lean from vertical, degrees, as they gather into trunks and go round the part."),
+    ("tree_max_radius", "The thickest a tree's trunk grows, mm: a branch thickens with the tips it carries and as it goes down."),
 ];
 
 /// What a setting does, from [`ABOUT`]; empty for a name that is not a setting.
@@ -476,6 +497,14 @@ mod tests {
             json!({"seam": "random"}),
             json!({"infill_pattern": "cubic"}),
             json!({"support": "everywhere", "support_angle": 0}),
+            json!({"support_style": "bush"}),
+            json!({"support_style": "tree", "tree_tip_spacing": 0}),
+            json!({"support_style": "tree", "tree_tip_spacing": 1e9}),
+            json!({"support_style": "tree", "tree_branch_angle": 90}),
+            json!({"support_style": "tree", "tree_branch_angle": -5}),
+            json!({"support_style": "tree", "tree_max_radius": 0.1}),
+            json!({"support_style": "tree", "tree_max_radius": "big"}),
+            json!({"tree_tip_spcing": 3}),
         ] {
             assert!(Profile::from_json(&bad).is_err(), "{bad}");
         }

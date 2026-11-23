@@ -87,8 +87,8 @@ Every P0 and P1 item is done except 0.2 (below). Of P2, these were left for a de
 - 7.4 GPU viewport: it cannot be run or tested without a graphics adapter, which this session lacks (the same reason the window's
   picture is not made).
 - 7.6 Translations: the plumbing is BIMCraft's `crates/i18n`, but without translators there is nothing to show for it yet.
-- 4.1b Tree supports, 4.17 multi-material and sequential printing: each is a large slicer feature better started with test prints
-  to check against (0.2).
+- 4.17 Multi-material and sequential printing: each is a large slicer feature better started with test prints to check against
+  (0.2). Tree supports (4.1b) are done now, checked through their output only.
 - 6.4b Bambu over the LAN, USB serial, Duet on a single-board computer, PrusaLink with a password: each needs the hardware, and
   Bambu its own authorisation.
 - 3.11's bottom-edge chamfer for any object: it needs the object's bottom outline lofted to an inset of itself.

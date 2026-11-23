@@ -63,6 +63,11 @@ presets live in the app's settings panel, not in these commands.
   `support_density` (0.1 to 0.2), `support_z_gap` (one layer, 0.2 mm, so it breaks away), `support_xy_gap` (0.6 mm from the walls)
   and `support_interface_layers` (2 denser layers under the model). Turn them on for a model with overhangs past 45 degrees or
   flat parts over air: `slice_check {profile: {support: "everywhere"}}`. Better still, turn the part so it needs none.
+  `support_style` is `"columns"` (the default: lines under the whole overhang) or `"tree"`: branches from small tips
+  `tree_tip_spacing` apart (3 mm) that lean up to `tree_branch_angle` (40 degrees) to gather into trunks up to `tree_max_radius`
+  (3 mm), go round the part and touch it only through the interface. Trees use less plastic and leave smaller marks under tall
+  overhangs far from the plate, such as a figure's arms or a ball on a stalk; under a low, wide overhang the two cost about the same.
+  Compare them: `slice_check {profile: {support: "everywhere", support_style: "tree"}}` and read `features`.
 
 ## One object unlike the others
 
@@ -83,5 +88,5 @@ clears them; `inspect_scene` shows them.
 
 ## What is not there yet
 
-Tree supports, walls of varying width and multi-material. Say so when a model needs one, instead of letting the
+Walls of varying width and multi-material. Say so when a model needs one, instead of letting the
 user find out at the printer. Nothing has been verified on a real printer, so never promise that a print will succeed.

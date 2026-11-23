@@ -40,6 +40,14 @@ the load then runs along the layers.
   leaves a rougher underside.
 - `support_xy_gap`: the space beside the part's walls (0.6 mm).
 - `support_interface_layers`: denser layers at the top of the support (2) for a cleaner underside.
+- `support_style`: `"columns"` (default) fills the whole space under an overhang with lines; `"tree"` grows branches from small
+  tips under it that merge into a few trunks on the way down and go round the part. Trees save plastic and are easier to
+  remove under tall overhangs far from the plate; under a low, wide overhang they cost about the same as columns. With
+  `"from_plate"`, a branch that cannot reach the plate is left out; with `"everywhere"`, it stands on the part.
+- `tree_tip_spacing` (3 mm): how far apart the tips touch the overhang; closer holds a flatter underside.
+- `tree_branch_angle` (40 degrees): how far a branch may lean from vertical; more lets branches merge sooner and reach round
+  the part, less makes them stiffer.
+- `tree_max_radius` (3 mm): the thickest a trunk grows.
 
 Try them: `slice_check {profile: {support: "from_plate", support_angle: 50}}`. In the result, `features` gives the filament the
 support and its interface take: a large share means another orientation is worth trying.
@@ -55,5 +63,5 @@ holds up an overhang.
 
 ## What is not there yet
 
-Tree supports, painted support areas and support blockers. Say so if the user asks for one, and use orientation, `cut` or
+Painted support areas and support blockers. Say so if the user asks for one, and use orientation, `cut` or
 `set_object_settings` instead.
