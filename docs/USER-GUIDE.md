@@ -63,6 +63,12 @@ Type a name under the preset pickers and press Save printer, Save filament or Sa
 holds, as they are shown. Saved while another preset of that kind is chosen, it keeps only what you changed and follows the rest of
 that preset, so a change to it carries over. Your presets are listed under the built-in ones, marked "mine", and kept in the settings file.
 
+## Settings from another slicer
+
+Import profile, under the print settings, reads a PrusaSlicer `.ini` or an OrcaSlicer or Bambu Studio `.json` preset and lays the
+settings Lamina also has over the ones shown. The status bar lists what was left out: settings Lamina does not have, values it
+cannot take, and start G-code written with the other program's placeholders, which you write again in Lamina's.
+
 ## The assistant
 
 Choose a provider (Anthropic Claude, OpenAI or Google Gemini) and give it an API key, or choose On this computer to use a model

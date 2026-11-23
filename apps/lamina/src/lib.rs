@@ -598,6 +598,29 @@ impl App {
         });
     }
 
+    /// Takes another slicer's profile into the settings shown, and says what was left out.
+    pub fn import_profile(&mut self, path: &std::path::Path) {
+        let Some(r) = self.run("import_profile", json!({ "path": path })) else { return };
+        let fields = r["fields"].as_object().cloned().unwrap_or_default();
+        match presets::apply(&self.profile, &fields) {
+            Ok(p) => {
+                self.profile = p;
+                let left: Vec<String> = r["left_out"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .map(|l| l.split(':').next().unwrap_or(l).to_string())
+                    .collect();
+                self.status = match left.len() {
+                    0 => format!("Took {} settings from {}.", fields.len(), path.display()),
+                    n => format!("Took {} settings from {}; left out {n}: {}.", fields.len(), path.display(), left.join(", ")),
+                };
+            }
+            Err(e) => (self.failed, self.status) = (true, e),
+        }
+    }
+
     fn export(&mut self) {
         let Some(path) = rfd::FileDialog::new().add_filter("G-code", &["gcode"]).set_file_name("plate.gcode").save_file() else { return };
         self.export_to(path.to_string_lossy().into_owned());
@@ -1240,9 +1263,19 @@ impl App {
                 ui.end_row();
             });
             self.more_settings(ui);
-            if ui.button("Back to the defaults").clicked() {
-                self.profile = Profile::default();
-            }
+            ui.horizontal(|ui| {
+                if ui.button("Back to the defaults").clicked() {
+                    self.profile = Profile::default();
+                }
+                if ui
+                    .button("Import profile...")
+                    .on_hover_text("A PrusaSlicer .ini, or an OrcaSlicer or Bambu Studio .json preset")
+                    .clicked()
+                    && let Some(path) = rfd::FileDialog::new().add_filter("Profile", &["ini", "json"]).pick_file()
+                {
+                    self.import_profile(&path);
+                }
+            });
         });
     }
 
@@ -1957,6 +1990,26 @@ mod tests {
         app.filament = None;
         app.save_preset(Kind::Filament, "Whole");
         assert!(!app.my_filaments["Whole"].contains_key("inherits"));
+    }
+
+    #[test]
+    fn another_slicer_s_profile_comes_into_the_settings_shown() {
+        let dir = tempfile::tempdir().unwrap();
+        let ini = dir.path().join("prusa.ini");
+        std::fs::write(
+            &ini,
+            "layer_height = 0.16
+perimeters = 4
+fill_angle = 45
+",
+        )
+        .unwrap();
+        let mut h = window();
+        let app = h.state_mut();
+        app.profile.nozzle_temp = 230.0;
+        app.import_profile(&ini);
+        assert_eq!((app.profile.layer_height, app.profile.perimeters, app.profile.nozzle_temp), (0.16, 4, 230.0));
+        assert!(app.status.contains("Took 2 settings") && app.status.contains("fill_angle"), "{}", app.status);
     }
 
     #[test]

@@ -181,6 +181,11 @@ Priorities:
 - **5.3 Preset inheritance.** A user's preset may name another, the user's or a built-in, in `inherits`; `presets::resolve` lays
   each over the one it inherits, at most eight deep, and says when a chain comes back to itself or names a preset nobody has.
   Saved over the preset chosen, a new one keeps only what differs from it, so a change to the base carries over.
+- **5.4 Import other slicers' profiles.** `crates/slicer/src/import.rs` and `import_profile {path}`: a PrusaSlicer `.ini` or an
+  OrcaSlicer or Bambu Studio JSON preset (values as text, lists of one per extruder), mapped through a table we wrote from their
+  published setting names, never their code, and no profile file of theirs bundled. Each key with no Lamina setting, or a value
+  Lamina cannot take (a pattern it lacks, a G-code with their placeholders), is reported as left out. The window's Import
+  profile button lays the result over the settings shown.
 - **5.5 Expressions in start G-code.** `{expr}` beside `[name]` (`crates/slicer/src/expr.rs`): numbers, the placeholders, `+ - * / %`,
   comparisons, `and`, `or`, `not`, parentheses, and `if`, `min`, `max`, `round`, `floor`, `ceil`, `abs`; `{{` writes a brace. A
   recursive-descent evaluator of our own, 500 characters and 32 levels at most, fuzzed. A whole number is written without a point.
@@ -289,10 +294,6 @@ writer, the time planner and the preview's G-code reader all need to know arcs.
 sequential printing a check of the print head's clearance.
 
 ## 5. Profiles and settings
-
-**5.4 Import other slicers' profiles (P2).** How: read an OrcaSlicer JSON preset or a PrusaSlicer `.ini` the user chooses, and map the
-keys we understand to our fields through a table we write. Report the keys left out. Never bundle their profile files, whose licence
-is unclear.
 
 ## 6. Printers
 

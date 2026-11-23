@@ -48,6 +48,15 @@ pub static COMMANDS: &[Command] = &[
         files: Files::None,
     },
     Command {
+        id: "import_profile",
+        params: "{path} reads another slicer's profile: a PrusaSlicer `.ini`, or an OrcaSlicer or Bambu Studio `.json` preset. Returns \
+                 {fields (Lamina's settings it gives, to pass as `profile`), left_out (each key Lamina has no setting for, or whose value it cannot \
+                 take, with why)}. A start or end G-code with the other program's placeholders is left out. Changes nothing",
+        run: import_profile,
+        undoable: false,
+        files: Files::Read,
+    },
+    Command {
         id: "slicer_profile",
         params: "{} every profile field with its default value: the printer (bed, nozzle, start_gcode), the process (layer_height, perimeters, infill_density) and speeds, temperatures and retraction",
         run: profile,
@@ -227,6 +236,24 @@ fn list_presets(_: &mut Session, _: &Value) -> Result<Value, String> {
         l.iter().map(|p| json!({"name": p.name, "about": p.about, "fields": p.fields()})).collect()
     };
     Ok(json!({"printers": list(PRINTERS), "filaments": list(FILAMENTS), "processes": list(PROCESSES)}))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PathOnly {
+    path: String,
+}
+
+fn import_profile(_: &mut Session, p: &Value) -> Result<Value, String> {
+    let a = PathOnly::deserialize(p).map_err(|e| format!("bad parameters: {e}"))?;
+    let size = std::fs::metadata(&a.path).map_err(|e| format!("{}: {e}", a.path))?.len();
+    if size > crate::import::MAX_FILE as u64 {
+        return Err(format!("{}: larger than a profile ({} MB at most)", a.path, crate::import::MAX_FILE >> 20));
+    }
+    let text = std::fs::read_to_string(&a.path).map_err(|e| format!("{}: {e}", a.path))?;
+    let ini = a.path.to_ascii_lowercase().ends_with(".ini");
+    let r = crate::import::read(&text, ini)?;
+    Ok(json!({"fields": r.fields, "left_out": r.left_out}))
 }
 
 fn profile(_: &mut Session, _: &Value) -> Result<Value, String> {
