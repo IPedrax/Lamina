@@ -152,6 +152,10 @@ Priorities:
   0.20 mm Standard, 0.28 mm Draft and Strong. `slice` and `slice_check` take `process` (after the printer and the filament, before
   `profile`); `slicer_presets` lists them; the window has a Process picker and Save process, kept in the settings file and the
   project.
+- **5.2 All settings in the window.** Every number of the profile has its limits in one table, `profile::LIMITS`, which
+  `Profile::check` reads (a test checks every number is in it) and the window reads for each field's range, shown on hover. The
+  print settings panel has groups for speeds, retraction and travel, the skirt, cooling, support details and the machine, and a
+  start and end G-code editor that lists the placeholders and says when one is unknown.
 - **6.1 Send to Moonraker** and **6.2 Send to OctoPrint.** `crates/printer`: one multipart upload to the address the user typed
   (`/server/files/upload` with `root` and `print`, or `/api/files/local` with `select` and `print` and the key in `X-Api-Key`),
   no redirects, the reply read up to 1 MB, the address checked (http or https, no credentials, query or fragment). The
@@ -220,10 +224,6 @@ flat. `slice::layers` takes a function from z to height instead of one number.
 sequential printing a check of the print head's clearance.
 
 ## 5. Profiles and settings
-
-**5.2 All settings in the window (P1).** How: the print settings panel shows only some fields. Add collapsible groups for speeds,
-retraction, skirt and brim, cooling, and a start and end G-code editor that lists the placeholders. Each field shows its limits from
-`Profile::check`.
 
 **5.3 Preset inheritance (P2).** How: a user preset may name another in `inherits`, and its fields are laid over that one's. Resolve
 the chain with a depth limit, and refuse cycles.

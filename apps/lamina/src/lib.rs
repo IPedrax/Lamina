@@ -24,6 +24,14 @@ use serde_json::{Value, json};
 use crate::settings::{Presets, Settings};
 use crate::view3d::Pick;
 
+/// A number setting with its label, its range from the profile's table, and the range on hover.
+fn field<N: egui::emath::Numeric>(ui: &mut Ui, label: &str, name: &str, value: &mut N, speed: f64) {
+    let (lo, hi) = lamina_slicer::profile::limits(name).unwrap_or((0.0, 1e6));
+    ui.label(label);
+    ui.add(egui::DragValue::new(value).speed(speed).range(N::from_f64(lo)..=N::from_f64(hi))).on_hover_text(format!("from {lo} to {hi}"));
+    ui.end_row();
+}
+
 /// The colour of a warning: a mesh with problems, a plate changed since its slice.
 const WARNING: Color32 = Color32::from_rgb(230, 180, 90);
 
@@ -1032,8 +1040,99 @@ impl App {
                 });
                 ui.end_row();
             });
+            self.more_settings(ui);
             if ui.button("Back to the defaults").clicked() {
                 self.profile = Profile::default();
+            }
+        });
+    }
+
+    /// Every other setting, in groups, each number's limits on hover; and the start and end G-code with their placeholders.
+    fn more_settings(&mut self, ui: &mut Ui) {
+        let p = &mut self.profile;
+        let group = |ui: &mut Ui, title: &str, body: &mut dyn FnMut(&mut Ui)| {
+            egui::CollapsingHeader::new(title).show(ui, |ui| egui::Grid::new(title).num_columns(2).show(ui, |ui| body(ui)));
+        };
+        group(ui, "Speeds", &mut |ui| {
+            field(ui, "Walls, mm/s", "perimeter_speed", &mut p.perimeter_speed, 1.0);
+            field(ui, "Infill, mm/s", "infill_speed", &mut p.infill_speed, 1.0);
+            field(ui, "First layer, mm/s", "first_layer_speed", &mut p.first_layer_speed, 1.0);
+            field(ui, "Travel, mm/s", "travel_speed", &mut p.travel_speed, 1.0);
+            field(ui, "Bridges, mm/s", "bridge_speed", &mut p.bridge_speed, 1.0);
+            field(ui, "Slowest when cooling, mm/s", "min_print_speed", &mut p.min_print_speed, 1.0);
+        });
+        group(ui, "Retraction and travel", &mut |ui| {
+            field(ui, "Retract, mm", "retract_length", &mut p.retract_length, 0.1);
+            field(ui, "Retract speed, mm/s", "retract_speed", &mut p.retract_speed, 1.0);
+            field(ui, "Not under, mm of travel", "retract_min_travel", &mut p.retract_min_travel, 0.1);
+            field(ui, "Z hop, mm", "z_hop", &mut p.z_hop, 0.05);
+            field(ui, "Wipe, mm", "wipe_distance", &mut p.wipe_distance, 0.1);
+            ui.checkbox(&mut p.combing, "Travel inside the part without retracting");
+            ui.end_row();
+            ui.checkbox(&mut p.firmware_retraction, "Firmware retraction (G10, G11)");
+            ui.end_row();
+        });
+        group(ui, "Skirt", &mut |ui| {
+            field(ui, "Loops", "skirt_loops", &mut p.skirt_loops, 0.1);
+            field(ui, "Distance, mm", "skirt_distance", &mut p.skirt_distance, 0.5);
+        });
+        group(ui, "Cooling", &mut |ui| {
+            field(ui, "Fan, 0 to 255", "fan_speed", &mut p.fan_speed, 1.0);
+            field(ui, "Full fan from layer", "fan_full_layer", &mut p.fan_full_layer, 0.1);
+            field(ui, "Shortest layer, s", "min_layer_time", &mut p.min_layer_time, 0.5);
+            field(ui, "Fan on bridges", "bridge_fan", &mut p.bridge_fan, 1.0);
+            field(ui, "Bridge flow", "bridge_flow", &mut p.bridge_flow, 0.01);
+        });
+        group(ui, "Support details", &mut |ui| {
+            field(ui, "Density", "support_density", &mut p.support_density, 0.01);
+            field(ui, "Gap above, mm", "support_z_gap", &mut p.support_z_gap, 0.05);
+            field(ui, "Gap beside, mm", "support_xy_gap", &mut p.support_xy_gap, 0.05);
+            field(ui, "Interface layers", "support_interface_layers", &mut p.support_interface_layers, 0.1);
+        });
+        group(ui, "Machine", &mut |ui| {
+            field(ui, "Nozzle, mm", "nozzle", &mut p.nozzle, 0.05);
+            field(ui, "Filament, mm", "filament_diameter", &mut p.filament_diameter, 0.05);
+            field(ui, "Height, mm", "max_height", &mut p.max_height, 1.0);
+            field(ui, "Acceleration, mm/s2", "max_acceleration", &mut p.max_acceleration, 10.0);
+            field(ui, "Junction deviation, mm", "junction_deviation", &mut p.junction_deviation, 0.001);
+            field(ui, "Pressure advance", "pressure_advance", &mut p.pressure_advance, 0.001);
+            ui.label("Firmware");
+            {
+                use lamina_slicer::profile::Firmware;
+                let name = |f: Firmware| match f {
+                    Firmware::Marlin => "Marlin",
+                    Firmware::Klipper => "Klipper",
+                    Firmware::Reprap => "RepRapFirmware",
+                };
+                egui::ComboBox::from_id_salt("firmware").selected_text(name(p.firmware)).show_ui(ui, |ui| {
+                    for f in [Firmware::Marlin, Firmware::Klipper, Firmware::Reprap] {
+                        ui.selectable_value(&mut p.firmware, f, name(f));
+                    }
+                });
+            }
+            ui.end_row();
+            ui.label("Thumbnail, pixels");
+            ui.add(egui::DragValue::new(&mut p.thumbnail).range(0..=512)).on_hover_text("0 for none, or from 16 to 512");
+            ui.end_row();
+            ui.checkbox(&mut p.origin_center, "Zero in the middle (delta)");
+            ui.end_row();
+        });
+        egui::CollapsingHeader::new("Start and end G-code").show(ui, |ui| {
+            ui.label(
+                RichText::new(format!(
+                    "Placeholders: {}",
+                    lamina_slicer::profile::PLACEHOLDERS.iter().map(|n| format!("[{n}]")).collect::<Vec<_>>().join(" ")
+                ))
+                .small(),
+            );
+            ui.label("Start");
+            ui.add(egui::TextEdit::multiline(&mut p.start_gcode).code_editor().desired_rows(4));
+            ui.label("End");
+            ui.add(egui::TextEdit::multiline(&mut p.end_gcode).code_editor().desired_rows(4));
+            for text in [&p.start_gcode, &p.end_gcode] {
+                if let Err(e) = p.expand(text) {
+                    ui.label(RichText::new(e).color(WARNING));
+                }
             }
         });
     }
@@ -1343,6 +1442,28 @@ mod tests {
         app.apply_preset(Kind::Process, "Strong");
         app.apply_preset(Kind::Process, "Five walls");
         assert_eq!(app.profile.perimeters, 5);
+    }
+
+    #[test]
+    fn every_setting_has_a_place_and_bad_gcode_is_said() {
+        let mut h = window();
+        // Each group opened on its own (the panel scrolls), one of its fields found, and closed again.
+        for (group, one) in [
+            ("Speeds", "Walls, mm/s"),
+            ("Retraction and travel", "Z hop, mm"),
+            ("Skirt", "Loops"),
+            ("Cooling", "Shortest layer, s"),
+            ("Support details", "Gap above, mm"),
+            ("Machine", "Junction deviation, mm"),
+        ] {
+            press(&mut h, group);
+            h.get_by_label(one);
+            press(&mut h, group);
+        }
+        press(&mut h, "Start and end G-code");
+        h.state_mut().profile.start_gcode = "M104 S[nope]".into();
+        h.run();
+        h.get_by_label_contains("unknown placeholder");
     }
 
     #[test]

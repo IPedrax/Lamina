@@ -198,6 +198,57 @@ impl Default for Profile {
     }
 }
 
+/// Each number's range, as `check` enforces it and the window shows it. The layer heights are also no more than 0.8 of the nozzle,
+/// the plate's sides from 10 to 2000 mm, and a thumbnail 0 or from 16 to 512 pixels.
+pub const LIMITS: &[(&str, f64, f64)] = &[
+    ("max_height", 1.0, 2000.0),
+    ("pressure_advance", 0.0, 2.0),
+    ("max_acceleration", 10.0, 100_000.0),
+    ("junction_deviation", 0.0, 1.0),
+    ("nozzle", 0.1, 2.0),
+    ("filament_diameter", 1.0, 3.5),
+    ("layer_height", 0.02, 1.6),
+    ("first_layer_height", 0.02, 1.6),
+    ("perimeters", 0.0, 10.0),
+    ("top_layers", 0.0, 50.0),
+    ("bottom_layers", 0.0, 50.0),
+    ("infill_density", 0.0, 1.0),
+    ("skirt_loops", 0.0, 10.0),
+    ("skirt_distance", 0.0, 50.0),
+    ("brim_width", 0.0, 50.0),
+    ("raft_layers", 0.0, 10.0),
+    ("perimeter_speed", 1.0, 1000.0),
+    ("infill_speed", 1.0, 1000.0),
+    ("first_layer_speed", 1.0, 1000.0),
+    ("travel_speed", 1.0, 1000.0),
+    ("nozzle_temp", 0.0, 400.0),
+    ("first_layer_nozzle_temp", 0.0, 400.0),
+    ("bed_temp", 0.0, 400.0),
+    ("first_layer_bed_temp", 0.0, 400.0),
+    ("retract_length", 0.0, 20.0),
+    ("retract_speed", 1.0, 200.0),
+    ("retract_min_travel", 0.0, 100.0),
+    ("z_hop", 0.0, 5.0),
+    ("wipe_distance", 0.0, 10.0),
+    ("fan_speed", 0.0, 255.0),
+    ("fan_full_layer", 1.0, 100.0),
+    ("min_layer_time", 0.0, 120.0),
+    ("min_print_speed", 1.0, 100.0),
+    ("bridge_speed", 1.0, 1000.0),
+    ("bridge_flow", 0.5, 1.5),
+    ("bridge_fan", 0.0, 255.0),
+    ("support_angle", 10.0, 89.0),
+    ("support_density", 0.05, 1.0),
+    ("support_z_gap", 0.0, 2.0),
+    ("support_xy_gap", 0.0, 5.0),
+    ("support_interface_layers", 0.0, 10.0),
+];
+
+/// A number field's range, from [`LIMITS`].
+pub fn limits(field: &str) -> Option<(f64, f64)> {
+    LIMITS.iter().find(|(name, _, _)| *name == field).map(|&(_, lo, hi)| (lo, hi))
+}
+
 fn within(what: &str, x: f64, lo: f64, hi: f64) -> Result<(), String> {
     if x.is_finite() && x >= lo && x <= hi { Ok(()) } else { Err(format!("`{what}` must be from {lo} to {hi}, not {x}")) }
 }
@@ -218,58 +269,16 @@ impl Profile {
     pub fn check(&self) -> Result<(), String> {
         within("bed", self.bed[0].min(self.bed[1]), 10.0, 2000.0)?;
         within("bed", self.bed[0].max(self.bed[1]), 10.0, 2000.0)?;
-        within("max_height", self.max_height, 1.0, 2000.0)?;
-        within("pressure_advance", self.pressure_advance, 0.0, 2.0)?;
         if self.thumbnail != 0 {
             within("thumbnail", f64::from(self.thumbnail), 16.0, 512.0)?;
         }
-        within("max_acceleration", self.max_acceleration, 10.0, 100_000.0)?;
-        within("junction_deviation", self.junction_deviation, 0.0, 1.0)?;
-        within("nozzle", self.nozzle, 0.1, 2.0)?;
-        within("filament_diameter", self.filament_diameter, 1.0, 3.5)?;
-        within("layer_height", self.layer_height, 0.02, self.nozzle * 0.8)?;
-        within("first_layer_height", self.first_layer_height, 0.02, self.nozzle * 0.8)?;
-        within("perimeters", f64::from(self.perimeters), 0.0, 10.0)?;
-        within("top_layers", f64::from(self.top_layers), 0.0, 50.0)?;
-        within("bottom_layers", f64::from(self.bottom_layers), 0.0, 50.0)?;
-        within("infill_density", self.infill_density, 0.0, 1.0)?;
-        within("skirt_loops", f64::from(self.skirt_loops), 0.0, 10.0)?;
-        within("skirt_distance", self.skirt_distance, 0.0, 50.0)?;
-        within("brim_width", self.brim_width, 0.0, 50.0)?;
-        within("raft_layers", f64::from(self.raft_layers), 0.0, 10.0)?;
-        for (what, s) in [
-            ("perimeter_speed", self.perimeter_speed),
-            ("infill_speed", self.infill_speed),
-            ("first_layer_speed", self.first_layer_speed),
-            ("travel_speed", self.travel_speed),
-        ] {
-            within(what, s, 1.0, 1000.0)?;
+        // Every number in the table; the layer heights also no more than 0.8 of the nozzle.
+        let all = serde_json::to_value(self).map_err(|e| e.to_string())?;
+        for &(name, lo, hi) in LIMITS {
+            let v = all.get(name).and_then(Value::as_f64).ok_or_else(|| format!("internal: `{name}` is not a number"))?;
+            let hi = if name.ends_with("layer_height") { hi.min(self.nozzle * 0.8) } else { hi };
+            within(name, v, lo, hi)?;
         }
-        for (what, t) in [
-            ("nozzle_temp", self.nozzle_temp),
-            ("first_layer_nozzle_temp", self.first_layer_nozzle_temp),
-            ("bed_temp", self.bed_temp),
-            ("first_layer_bed_temp", self.first_layer_bed_temp),
-        ] {
-            within(what, t, 0.0, 400.0)?;
-        }
-        within("retract_length", self.retract_length, 0.0, 20.0)?;
-        within("retract_speed", self.retract_speed, 1.0, 200.0)?;
-        within("retract_min_travel", self.retract_min_travel, 0.0, 100.0)?;
-        within("z_hop", self.z_hop, 0.0, 5.0)?;
-        within("wipe_distance", self.wipe_distance, 0.0, 10.0)?;
-        within("fan_speed", self.fan_speed, 0.0, 255.0)?;
-        within("fan_full_layer", f64::from(self.fan_full_layer), 1.0, 100.0)?;
-        within("min_layer_time", self.min_layer_time, 0.0, 120.0)?;
-        within("min_print_speed", self.min_print_speed, 1.0, 100.0)?;
-        within("bridge_speed", self.bridge_speed, 1.0, 1000.0)?;
-        within("bridge_flow", self.bridge_flow, 0.5, 1.5)?;
-        within("bridge_fan", self.bridge_fan, 0.0, 255.0)?;
-        within("support_angle", self.support_angle, 10.0, 89.0)?;
-        within("support_density", self.support_density, 0.05, 1.0)?;
-        within("support_z_gap", self.support_z_gap, 0.0, 2.0)?;
-        within("support_xy_gap", self.support_xy_gap, 0.0, 5.0)?;
-        within("support_interface_layers", f64::from(self.support_interface_layers), 0.0, 10.0)?;
         self.expand(&self.start_gcode)?;
         self.expand(&self.end_gcode)?;
         Ok(())
@@ -364,6 +373,17 @@ mod tests {
             let text = String::from_utf8_lossy(&r.input(&[b"M104 S[nozzle_temp]\nG28 [bed_x]"])).into_owned();
             let _ = Profile::default().expand(&text);
         }
+    }
+
+    #[test]
+    fn every_number_of_the_profile_has_its_limits_in_the_table() {
+        let all = serde_json::to_value(Profile::default()).unwrap();
+        for (k, v) in all.as_object().unwrap() {
+            if v.is_number() && k != "thumbnail" {
+                assert!(limits(k).is_some(), "`{k}` has no limits");
+            }
+        }
+        assert!(LIMITS.iter().all(|(k, _, _)| all.get(*k).is_some_and(Value::is_number)), "a limit for a field that is not a number");
     }
 
     #[test]
