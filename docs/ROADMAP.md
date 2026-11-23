@@ -166,6 +166,11 @@ Priorities:
 - **7.1 File menu and drag and drop.** New, Open, Open recent, Save, Save as (with Ctrl shortcuts), Import mesh, Export G-code and
   Quit; the title shows the project and a star for unsaved changes; New, Open and closing ask first when something would be lost;
   files dropped on the window are opened (`.lamina`) or imported (meshes). `apps/lamina/src/files.rs`.
+- **7.2 The window's work on a thread.** Slicing, booleans and the cut, writing G-code and sending it run on a thread
+  (`apps/lamina/src/work.rs`), with a spinner, the seconds so far and Cancel on the status bar. A job runs on a sibling session and
+  its scene comes back as one undo step (`Session::adopt`), refused if the plate changed meanwhile; the window's own commands wait
+  for a job that changes the plate. Cancel sets a flag (`lamina_core::cancel`) the slicer checks each layer and a boolean's child
+  wait checks, ending the child.
 
 ## Order of work
 
@@ -244,9 +249,6 @@ window.
 limited by Bambu's own authorization), and USB serial with line numbers and resends. Each is its own module in `crates/printer`.
 
 ## 7. Desktop
-
-**7.2 Status of the window's work (P1).** How: slicing and booleans can take seconds. Run them on a thread, as the chat already runs
-its requests, with a spinner and Cancel. The UI stays responsive.
 
 **7.3 3D G-code preview (P1).** How: draw the extrusion moves up to the chosen layer as lines in the 3D view, with depth. The CPU
 rasterizer already draws depth-tested lines (`Raster::line`). Colour them by feature type from 4.13, and keep the 2D layer view.

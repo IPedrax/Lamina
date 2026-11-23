@@ -117,6 +117,24 @@ impl Session {
         self.resets += 1;
     }
 
+    /// Takes `scene`, made from the scene `from` by commands run elsewhere (a sibling session on a worker thread, so the window
+    /// stays responsive), as one undo step named `label`. Refused when this session's scene is no longer `from`: something changed
+    /// the plate meanwhile, and taking `scene` would undo it.
+    pub fn adopt(&mut self, label: &str, from: &Arc<Scene>, scene: Arc<Scene>) -> Result<(), String> {
+        if !Arc::ptr_eq(&self.scene, from) {
+            return Err(format!("the plate changed while `{label}` ran, so its result was not applied: run it again"));
+        }
+        if Arc::ptr_eq(from, &scene) {
+            return Ok(());
+        }
+        self.undo.push((label.to_string(), std::mem::replace(&mut self.scene, scene)));
+        if self.undo.len() > UNDO_LIMIT {
+            self.undo.remove(0);
+        }
+        self.redo.clear();
+        Ok(())
+    }
+
     /// Runs `f` (several commands) as one undo step named `label`, all or nothing: when it fails or panics, the scene and the undo
     /// and redo history are as they were. When it changes the scene, the steps its commands made become one, holding the scene from
     /// before the first. A command that started a new history inside it (`open`, `new`) keeps the history it began. (BIMCraft's
@@ -246,6 +264,26 @@ mod tests {
         });
         assert!(boom.unwrap_err().contains("internal error"));
         assert_eq!(s.scene.objects.len(), 4);
+    }
+
+    #[test]
+    fn work_done_on_a_sibling_is_adopted_as_one_step_unless_the_plate_changed() {
+        let mut s = Session::new();
+        boxes(&mut s, 1).unwrap();
+        let from = Arc::clone(&s.scene);
+        // On a worker thread: a sibling given the same scene does the work.
+        let mut sibling = s.sibling();
+        sibling.scene = Arc::clone(&from);
+        let done = std::thread::spawn(move || boxes(&mut sibling, 2).map(|()| sibling.scene)).join().unwrap().unwrap();
+        s.adopt("two more", &from, done).unwrap();
+        assert_eq!((s.scene.objects.len(), s.undo_label()), (3, Some("two more")));
+        s.undo().unwrap();
+        assert_eq!(s.scene.objects.len(), 1);
+        // The plate changed meanwhile: a result made from the old one is refused, and nothing changes.
+        boxes(&mut s, 1).unwrap();
+        let stale = Arc::new(Scene::default());
+        assert!(s.adopt("late", &from, stale).unwrap_err().contains("changed"));
+        assert_eq!((s.scene.objects.len(), s.undo_label()), (2, Some("add_primitive")));
     }
 
     #[test]

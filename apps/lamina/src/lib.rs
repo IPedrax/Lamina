@@ -10,6 +10,7 @@ pub mod preview;
 pub mod printer;
 pub mod settings;
 pub mod view3d;
+pub mod work;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -153,6 +154,8 @@ pub struct App {
     pub recovery: Option<PathBuf>,
     /// What is wrong with each mesh, by the address of its `Arc`, worked out once and kept while the mesh lives.
     problems: std::collections::HashMap<usize, lamina_core::repair::Problems>,
+    /// The long work running on a thread, if any.
+    pub job: Option<work::Job>,
 }
 
 impl App {
@@ -198,6 +201,7 @@ impl App {
             link: printer::PrinterPanel::default(),
             autosave: None,
             recovery: None,
+            job: None,
         }
         .ready()
     }
@@ -384,6 +388,9 @@ impl App {
 
     /// Runs a command as a button does: an error goes to the status bar, and the selection forgets objects that are gone.
     pub fn run(&mut self, command: &str, params: Value) -> Option<Value> {
+        if self.waits() {
+            return None;
+        }
         let result = self.session.execute(command, &params);
         self.prune();
         match result {
@@ -400,6 +407,9 @@ impl App {
 
     /// Runs several commands as one undo step, as a button does: all of them or none.
     pub fn run_all(&mut self, label: &str, commands: Vec<(&str, Value)>) -> bool {
+        if self.waits() {
+            return false;
+        }
         let result = self.session.transaction(label, |s| commands.iter().try_for_each(|(c, p)| s.execute(c, p).map(|_| ())));
         self.prune();
         match result {
@@ -412,6 +422,13 @@ impl App {
                 false
             }
         }
+    }
+
+    /// Whether a command must wait for a job that changes the plate (said on the status bar), so neither undoes the other.
+    fn waits(&mut self) -> bool {
+        let Some(job) = self.job.as_ref().filter(|j| j.changes_plate) else { return false };
+        (self.failed, self.status) = (true, format!("Wait for {} to finish, or cancel it.", job.label));
+        true
     }
 
     /// Deletes every picked object, as one undo step.
@@ -470,39 +487,57 @@ impl App {
         }
     }
 
-    /// Slices the plate with the settings shown and opens the preview.
+    /// Slices the plate with the settings shown, on a thread, and opens the preview when it is done.
     pub fn slice(&mut self) {
         let objects: Vec<(u32, Mesh)> = self.session.scene.objects.iter().map(|o| (o.id, o.world())).collect();
         let all: Vec<&lamina_core::Object> = self.session.scene.objects.iter().collect();
-        let sliced = lamina_slicer::commands::own(&all, &self.profile)
-            .and_then(|own| lamina_slicer::print::gcode_each(&objects, &own, &self.profile));
-        match sliced {
-            Ok(out) => {
-                let layers = preview::parse(&out.gcode);
-                let minutes = (out.seconds / 60.0).round() as u64;
-                let summary = format!(
-                    "{} layers, {:.2} m of filament, about {}h {:02}m",
-                    out.layers,
-                    out.filament_mm / 1000.0,
-                    minutes / 60,
-                    minutes % 60
-                );
-                self.layer = layers.len() / 2;
-                let scene = Arc::as_ptr(&self.session.scene) as usize;
-                self.sliced = Some(Sliced { layers, summary, warnings: out.warnings, scene });
-                (self.failed, self.status, self.tab) = (false, String::new(), Tab::Preview);
+        let own = match lamina_slicer::commands::own(&all, &self.profile) {
+            Ok(own) => own,
+            Err(e) => return (self.failed, self.status) = (true, e),
+        };
+        let profile = self.profile.clone();
+        let scene = Arc::as_ptr(&self.session.scene) as usize;
+        let work = move |_: &mut Session| {
+            let out = lamina_slicer::print::gcode_each(&objects, &own, &profile)?;
+            let layers = preview::parse(&out.gcode);
+            let minutes = (out.seconds / 60.0).round() as u64;
+            let summary = format!(
+                "{} layers, {:.2} m of filament, about {}h {:02}m",
+                out.layers,
+                out.filament_mm / 1000.0,
+                minutes / 60,
+                minutes % 60
+            );
+            Ok(work::Done::Sliced(Sliced { layers, summary, warnings: out.warnings, scene }))
+        };
+        self.start("Slicing", false, work, |app, done| {
+            if let Ok(work::Done::Sliced(sliced)) = done {
+                app.layer = sliced.layers.len() / 2;
+                app.sliced = Some(sliced);
+                app.tab = Tab::Preview;
             }
-            Err(e) => (self.failed, self.status) = (true, e),
-        }
+        });
     }
 
     fn export(&mut self) {
         let Some(path) = rfd::FileDialog::new().add_filter("G-code", &["gcode"]).set_file_name("plate.gcode").save_file() else { return };
-        let path = path.to_string_lossy().into_owned();
+        self.export_to(path.to_string_lossy().into_owned());
+    }
+
+    /// Slices the plate with the settings shown into the G-code file at `path`, on a thread.
+    pub fn export_to(&mut self, path: String) {
         let profile = serde_json::to_value(&self.profile).unwrap_or(Value::Null);
-        if self.run("slice", json!({ "path": path, "profile": profile })).is_some() {
-            self.status = format!("Wrote {path}");
-        }
+        let params = json!({ "path": path, "profile": profile });
+        self.start(
+            "Writing the G-code",
+            false,
+            move |s| s.execute("slice", &params).map(work::Done::Value),
+            move |app, done| {
+                if done.is_ok() {
+                    app.status = format!("Wrote {path}");
+                }
+            },
+        );
     }
 
     /// The whole window, one frame of it.
@@ -523,9 +558,14 @@ impl App {
             egui::MenuBar::new().ui(ui, |ui| self.file_menu(ui));
             self.toolbar(ui);
         });
+        self.poll_work(&ctx);
         Panel::bottom("status").show(ui, |ui| {
-            let color = if self.failed { Color32::from_rgb(230, 110, 100) } else { Color32::GRAY };
-            ui.label(RichText::new(if self.status.is_empty() { "Ready" } else { &self.status }).color(color));
+            ui.horizontal(|ui| {
+                self.work_ui(ui);
+                let color = if self.failed { Color32::from_rgb(230, 110, 100) } else { Color32::GRAY };
+                let idle = if self.busy() { "" } else { "Ready" };
+                ui.label(RichText::new(if self.status.is_empty() { idle } else { &self.status }).color(color));
+            });
         });
         Panel::left("plate").resizable(true).default_size(270.0).show(ui, |ui| {
             ScrollArea::vertical().show(ui, |ui| self.plate_panel(ui));
@@ -743,10 +783,20 @@ impl App {
         self.printer_ui(ui);
     }
 
-    fn boolean(&mut self, command: &str, params: Value) {
-        if let Some(id) = self.run(command, params).and_then(|v| v["id"].as_u64()) {
-            self.selected = vec![id as u32];
-        }
+    /// A boolean or a cut, on a thread: its result replaces the plate as one undo step, and what it made is picked.
+    fn boolean(&mut self, command: &'static str, params: Value) {
+        self.start(
+            command,
+            true,
+            move |s| s.execute(command, &params).map(work::Done::Value),
+            |app, done| {
+                if let Ok(work::Done::Value(v)) = done {
+                    let one = v["id"].as_u64().into_iter();
+                    let many = v["ids"].as_array().into_iter().flatten().filter_map(Value::as_u64);
+                    app.selected = one.chain(many).map(|i| i as u32).collect();
+                }
+            },
+        );
     }
 
     fn one_object(&mut self, ui: &mut Ui, id: u32) {
@@ -809,9 +859,8 @@ impl App {
                 .button("Cut")
                 .on_hover_text("Cut at this height: the top part is turned onto its cut face beside the bottom one")
                 .clicked()
-                && let Some(v) = self.run("cut", json!({ "id": id, "z": self.cut_z }))
             {
-                self.selected = v["ids"].as_array().into_iter().flatten().filter_map(Value::as_u64).map(|i| i as u32).collect();
+                self.boolean("cut", json!({ "id": id, "z": self.cut_z }));
             }
         });
         ui.horizontal(|ui| {
@@ -1223,8 +1272,11 @@ mod tests {
         h
     }
 
+    /// Clicks a button and lets the window settle, waiting for any job the click started.
     fn press(h: &mut Harness<App>, label: &str) {
         h.get_by_label(label).click();
+        h.step();
+        h.state_mut().wait();
         h.run();
     }
 
@@ -1266,6 +1318,39 @@ mod tests {
         assert_eq!(h.state().session.scene.objects.len(), 1);
         press(&mut h, "Undo");
         assert_eq!(h.state().session.scene.objects.len(), 3, "one undo brings both back");
+    }
+
+    #[test]
+    fn long_work_runs_on_a_thread_with_a_spinner_and_cancel() {
+        let mut h = window();
+        press(&mut h, "Add box");
+        press(&mut h, "Add cylinder");
+        // Slicing: the window draws while it runs, says so, and Cancel forgets it whether or not it had finished.
+        h.get_by_label("Slice").click();
+        h.step();
+        assert!(h.state().busy());
+        h.get_by_label("Cancel");
+        h.get_by_label_contains("Slicing...");
+        h.get_by_label("Cancel").click();
+        h.step();
+        h.run();
+        assert!(!h.state().busy() && h.state().sliced.is_none() && h.state().status == "Cancelled Slicing.", "{}", h.state().status);
+        // A boolean changes the plate: while it runs, the window's own commands wait, and a second job is refused.
+        let app = h.state_mut();
+        app.selected = vec![1, 2];
+        app.boolean("union", json!({ "ids": [1, 2] }));
+        assert!(app.run("delete", json!({ "id": 1 })).is_none() && app.status.contains("Wait for union"), "{}", app.status);
+        app.slice();
+        assert!(app.status.contains("Wait for union"));
+        app.wait();
+        assert_eq!((app.session.scene.objects.len(), app.selected.clone(), app.session.undo_label()), (1, vec![3], Some("union")));
+        // The plate changed under a boolean (the assistant did something meanwhile): its result is not applied, and that is said.
+        app.run("add_primitive", json!({"kind": "box", "size": [5, 5, 5], "at": [60, 0]}));
+        app.boolean("union", json!({ "ids": [3, 4] }));
+        app.session.execute("add_primitive", &json!({"kind": "box", "size": [5, 5, 5], "at": [-60, 0]})).unwrap();
+        app.wait();
+        assert_eq!(app.session.scene.objects.len(), 3, "nothing lost and nothing applied");
+        assert!(app.failed && app.status.contains("plate changed"), "{}", app.status);
     }
 
     #[test]
@@ -1699,9 +1784,11 @@ mod tests {
         assert!(app.failed && app.status.contains("address"), "no address yet: {}", app.status);
         app.link.connection = printer::Connection { kind: lamina_printer::Kind::Octoprint, address: address.clone() };
         app.send_to_printer(true);
+        app.wait();
         assert!(app.failed && app.status.contains("API key"), "OctoPrint needs its key: {}", app.status);
         app.link.key = "ABCDEF0123456789".into();
         app.send_to_printer(true);
+        app.wait();
         assert!(!app.failed && app.status.contains("is printing"), "{}", app.status);
         let got = got.lock().unwrap();
         assert_eq!(got.len(), 1);

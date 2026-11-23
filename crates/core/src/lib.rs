@@ -3,6 +3,7 @@
 
 pub mod base64;
 pub mod bridge;
+pub mod cancel;
 pub mod commands;
 pub mod engine;
 pub mod fuzz;

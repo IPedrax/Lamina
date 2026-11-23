@@ -161,6 +161,7 @@ pub fn in_child(exe: &Path, op: Op, a: Placed, b: Placed, time: Duration) -> Res
         run_child(exe, &[CHILD_ARG.as_ref()], Some(input), MAX_ANSWER, time).map_err(|e| format!("the boolean could not start: {e}"))?;
     let said = String::from_utf8_lossy(&ran.said).trim().to_string();
     match ran.status {
+        None if lamina_core::cancel::requested() => Err(lamina_core::cancel::CANCELLED.into()),
         None => Err(format!("the boolean took longer than {} s and was stopped; try fewer segments", time.as_secs_f64().ceil())),
         Some(s) if s.success() => {
             if ran.out.get(..4) != Some(MAGIC.as_slice()) {
@@ -204,7 +205,8 @@ fn run_child(exe: &Path, args: &[&std::ffi::OsStr], input: Option<Vec<u8>>, cap:
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break Some(status),
-            Ok(None) if start.elapsed() < time => std::thread::sleep(Duration::from_millis(5)),
+            // Asked to stop (the window's Cancel): the child is ended as one that ran too long is.
+            Ok(None) if start.elapsed() < time && !lamina_core::cancel::requested() => std::thread::sleep(Duration::from_millis(5)),
             Ok(None) | Err(_) => {
                 let _ = child.kill();
                 let _ = child.wait();

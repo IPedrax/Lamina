@@ -241,6 +241,7 @@ pub fn gcode_each(objects: &[(u32, Mesh)], own: &[Option<Profile>], p: &Profile)
     }
     let below = p.raft_layers as usize;
     for k in 0..count {
+        lamina_core::cancel::check()?;
         g.line(format!(";LAYER:{}", k + below));
         // The fan: off for the first layer, then up a step a layer to full at `fan_full_layer`.
         let fan = fan_at(p, k + below);
@@ -387,6 +388,7 @@ fn plan(mesh: &Mesh, p: &Profile, w: f64) -> Result<ObjectPlan, String> {
         regions.iter().map(|r| if p.perimeters == 0 { r.clone() } else { geom::inset(r, walls * w - INFILL_OVERLAP * w) }).collect();
     let mut out = Vec::with_capacity(layers.len());
     for (k, layer) in layers.iter().enumerate() {
+        lamina_core::cancel::check()?;
         let speed = |s: f64| if k == 0 { p.first_layer_speed } else { s };
         let mut strokes = Vec::new();
         // Vase mode, above the bottom: the outer wall alone, climbing as it goes round; no infill and no top.
@@ -970,6 +972,15 @@ mod tests {
 
     fn cube(side: f64) -> Vec<(u32, Mesh)> {
         vec![(1, Mesh::cuboid([side, side, side]))]
+    }
+
+    #[test]
+    fn a_cancelled_slice_stops_with_an_error() {
+        use std::sync::Arc;
+        use std::sync::atomic::AtomicBool;
+        let stop = lamina_core::cancel::watch(Arc::new(AtomicBool::new(true)), || gcode(&cube(20.0), &Profile::default()));
+        assert_eq!(stop.unwrap_err(), lamina_core::cancel::CANCELLED);
+        assert!(lamina_core::cancel::watch(Arc::new(AtomicBool::new(false)), || gcode(&cube(5.0), &Profile::default())).is_ok());
     }
 
     #[test]

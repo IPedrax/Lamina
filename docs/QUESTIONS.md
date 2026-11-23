@@ -44,10 +44,12 @@ Reads work.
 - Taken: Remember seals the key under the program's secret (`lm1`), as the assistant's default is, and the panel says it is
   scrambling, not protection. The assistant's passphrase option (`lm2`) is not offered for the printer key yet.
 
-## Sending blocks the window
+## Cancel during an upload
 
-- The slice and the upload run in the frame, so the window waits for them (seconds on a home network). Running them on a thread
-  with a spinner and Cancel is roadmap 7.2.
+- Since 7.2 the slice and the upload run on a thread. Cancel stops the slice at once, but an upload already under way is not
+  interrupted (ureq has no way to abort a request from another thread): the window stops waiting and says it was cancelled, and the
+  file may still reach the printer. Taken because the upload is short and a half-sent file is worse than a whole one. Say if a
+  cancelled upload should be followed by a delete on the printer.
 
 ## Blocked: real test prints (roadmap 0.2)
 

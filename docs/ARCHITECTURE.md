@@ -82,6 +82,13 @@ its build.
 `apps/lamina` is egui 0.36 on eframe (wgpu), the same stack as BIMCraft. The window is thin: it reads `session.scene` and changes it
 only through `Session::execute`, so the assistant, a button and a script do the same thing the same way.
 
+- **Long work (`work.rs`).** Slicing, the booleans and the cut, writing G-code and sending it run on a thread, as the chat's requests
+  do, so the window keeps drawing; the status bar shows a spinner, the time so far and Cancel. A job runs on a sibling session that
+  shares the scene, so it still goes through `Session::execute`, and its new scene comes back with `Session::adopt` as one undo
+  step, refused if the plate changed meanwhile. While a job that changes the plate runs, the window's own commands wait. Cancel sets
+  the job's flag (`lamina_core::cancel`, a thread-local the slicer checks each layer and the boolean's child wait checks every
+  5 ms, ending the child) and the window forgets the job.
+
 - **3D view (`view3d.rs`).** The camera and rasterizer are `lamina_core::render`, shared with the G-code thumbnails and the
   assistant's picture. An orbit camera (drag to orbit, right or middle drag to pan, wheel to zoom) and a small CPU
   rasterizer that draws the plate, its 10 mm grid and the objects into an egui texture, redrawn only when the scene, the selection,

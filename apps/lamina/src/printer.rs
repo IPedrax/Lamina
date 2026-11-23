@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::App;
+use crate::work::Done;
+use lamina_core::Session;
 
 /// What the settings file keeps of the connection: the kind and the address (the key is apart, sealed).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -66,18 +68,23 @@ impl App {
         let stem = self.project.as_ref().and_then(|p| p.file_stem()).map_or("plate".into(), |n| n.to_string_lossy().into_owned());
         let path = std::env::temp_dir().join(format!("lamina-send-{}-{}.gcode", std::process::id(), crate::files::clean_name(&stem)));
         let profile = serde_json::to_value(&self.profile).unwrap_or_default();
-        if self.run("slice", json!({ "path": path, "profile": profile })).is_none() {
-            return;
-        }
-        let key = Some(self.link.key.trim()).filter(|k| !k.is_empty());
-        let params =
+        let key = Some(self.link.key.trim()).filter(|k| !k.is_empty()).map(str::to_string);
+        let slice = json!({ "path": path, "profile": profile });
+        let send =
             json!({ "path": path, "printer": c.kind, "address": c.address, "key": key, "name": format!("{stem}.gcode"), "print": print });
-        let sent = self.run("send_to_printer", params);
-        let _ = std::fs::remove_file(&path);
-        if let Some(v) = sent {
-            let verb = if print { "is printing" } else { "has" };
-            self.status = format!("Sent {} to {}: it {verb} it.", v["name"].as_str().unwrap_or("the plate"), c.kind.name());
-        }
+        // Slicing and the upload both on the thread: a slow printer does not stop the window. (Cancel during the upload stops the
+        // window waiting, not the upload.)
+        let work = move |s: &mut Session| {
+            let sent = s.execute("slice", &slice).and_then(|_| s.execute("send_to_printer", &send));
+            let _ = std::fs::remove_file(&path);
+            sent.map(Done::Value)
+        };
+        self.start("Sending to the printer", false, work, move |app, done| {
+            if let Ok(Done::Value(v)) = done {
+                let verb = if print { "is printing" } else { "has" };
+                app.status = format!("Sent {} to {}: it {verb} it.", v["name"].as_str().unwrap_or("the plate"), c.kind.name());
+            }
+        });
     }
 
     pub(crate) fn printer_ui(&mut self, ui: &mut Ui) {

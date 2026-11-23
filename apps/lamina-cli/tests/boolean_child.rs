@@ -44,6 +44,20 @@ fn a_child_that_is_stopped_is_an_error_and_the_next_boolean_still_works() {
 }
 
 #[test]
+fn a_cancelled_boolean_ends_its_child_at_once() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let (a, b) = (Mesh::sphere(10.0, 128), Mesh::sphere(10.0, 128).transformed(&lamina_core::Transform::translate([5.0, 1.0, 2.0])));
+    // Asked to stop before it starts: the child is ended at its first look, long before it could finish.
+    let flag = Arc::new(AtomicBool::new(false));
+    flag.store(true, Ordering::Relaxed);
+    let start = std::time::Instant::now();
+    let err = lamina_core::cancel::watch(flag, || in_child(exe(), Op::Union, (&a, I), (&b, I), Duration::from_secs(120))).unwrap_err();
+    assert_eq!(err, lamina_core::cancel::CANCELLED);
+    assert!(start.elapsed() < Duration::from_secs(20), "{:?}", start.elapsed());
+}
+
+#[test]
 fn the_cli_runs_its_booleans_in_a_child() {
     let out = std::process::Command::new(exe())
         .args([
