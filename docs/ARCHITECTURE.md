@@ -56,7 +56,7 @@ desktop (lamina) ──────┘
 | `lamina-csg` | `boolean` over csgrs' BSP trees, crack repair, the soundness gate, the `union`, `difference` and `intersect` commands | core, csgrs |
 | `lamina-assistant` | provider clients, sealed key storage, tool layer, turn loop | core, ureq, ring |
 | `lamina-printer` | uploads to Moonraker and OctoPrint, the `send_to_printer` command | core, ureq |
-| `lamina` (apps/lamina) | the desktop window: 3D view, objects panel, settings, layer preview, assistant panel, printer connection | core, slicer, csg, assistant, printer, eframe, rfd |
+| `lamina` (apps/lamina) | the desktop window: 3D view, objects panel, settings, layer preview, assistant panel, printer connection | core, slicer, csg, assistant, printer, eframe (wgpu), rfd, pollster |
 | `lamina-cli` | `lamina-cli` binary, MCP server | core, slicer, csg, printer |
 | `lamina-notices` (tools/notices) | checks every dependency's licence, writes the third-party notice a release carries | serde_json |
 
@@ -117,9 +117,18 @@ only through `Session::execute`, so the assistant, a button and a script do the 
 - **3D view (`view3d.rs`).** The camera and rasterizer are `lamina_core::render`, shared with the G-code thumbnails and the
   assistant's picture. An orbit camera (drag to orbit, right or middle drag to pan, wheel to zoom) and a small CPU
   rasterizer that draws the plate, its 10 mm grid and the objects into an egui texture, redrawn only when the scene, the selection,
-  the camera or the size changes. Each pixel keeps the id of the object drawn there, which is the click-to-pick. BIMCraft draws on
-  the GPU (`crates/ui-egui/src/gpu.rs`, rendering into a texture egui shows); that is the upgrade for meshes past a few hundred
-  thousand triangles, and the CPU path stays as the fallback, as it does there.
+  the camera or the size changes. Each pixel keeps the id of the object drawn there, which is the click-to-pick.
+- **The 3D view on the graphics card (`gpu.rs`, `gpu.wgsl`, ported from BIMCraft's `crates/ui-egui/src/gpu.rs`).** The same
+  picture drawn with wgpu on eframe's own device, into a texture registered with egui (`register_native_texture`). Each object's
+  world mesh goes up once for each scene `Arc` (three vertices a triangle, with its unit normal and its place in the mesh); the camera
+  is a uniform, and the selection and a drag's preview are a colour and a transform for each object, so orbiting, picking and
+  dragging upload nothing. The first pass writes the flat-shaded colour (the processor's light formula), the object and triangle,
+  and the plane (normal turned to the eye, and distance) with a depth of one over the distance ahead, as `Picture` keeps it; the
+  second darkens the nearer pixel where the object changes, or faces meet at a crease over 35 degrees or a step between parallel
+  faces over 0.05 mm, as `Raster::outline` does. A click reads back one pixel of ids and depth, never a frame. The processor draws
+  instead in a window with no wgpu device (every egui_kittest test), on OpenGL, when the user ticks View, Draw the 3D view on the
+  processor (kept in the settings file), or when the card fails: its errors are caught in error scopes, the card is let go, and the
+  status bar (and `lamina.log`) says why. Ignored tests compare the two pictures and their picks on a real card, and drive the window on one.
 - **Gizmo.** Rings turn the picked objects about an axis (by the angle the pointer sweeps round the middle, snapped to 5 degrees) and
   a corner square scales them; on release one transaction runs `rotate` or `scale` on each. The arrows and plate square move them:
   the picked objects (one or several, at the middle of their bounds) carry three axis arrows and a square to slide
@@ -260,7 +269,8 @@ BIMCraft is `/mnt/ai/RevCraft` (github.com/IPedrax/BIMCraft), same author, MIT O
 | `apps/bimcraft/src/startup.rs` (log, graphics fallback) | `apps/lamina/src/startup.rs` | lifted; no translations, no old-mark reading |
 | `crates/dwg` (`in_child`, `child_main`, `run_child`) | `crates/csg/src/child.rs` | the same pattern, for booleans |
 | `packaging/` (env, Linux, Windows WiX, macOS), `.github/workflows/release.yml` | the same paths | AppImage, tarball, MSI and DMG only: no deb, rpm, Flatpak, Arch, riscv64, APT, Discord or updater; the icon is drawn in Rust (`apps/lamina/src/icon.rs`) |
-| `crates/ui-egui/src/orbit.rs`, `camera.rs`, `gpu.rs`, `gpu.wgsl`, `retained.rs` (wgpu 3D view, orbit/pan/zoom, picking) | `apps/lamina/src/view3d.rs`, own and smaller | the same interaction, drawn on the CPU; the GPU pass is the upgrade |
+| `crates/ui-egui/src/orbit.rs`, `camera.rs`, `retained.rs` (orbit/pan/zoom, picking) | `apps/lamina/src/view3d.rs`, own and smaller | the same interaction, drawn on the CPU or the card |
+| `crates/ui-egui/src/gpu.rs`, `gpu.wgsl` (wgpu 3D view) | `apps/lamina/src/gpu.rs`, `gpu.wgsl`, much smaller | the texture registered with egui, ids and depth targets, an edge pass over them, errors caught in error scopes; no sections, see-through, textures, levels, instancing or memory budgets |
 | `crates/ui-egui` panels, `assistant.rs` (chat palette) | `apps/lamina/src/chat.rs` | rewritten small on the same chat, with the same Remember and passphrase; no Co-Work |
 | `crates/core/src/view3d.rs`, `view3d/gpu.rs` | not reused | BIM-specific (levels, elements, section boxes) |
 

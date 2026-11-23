@@ -228,6 +228,11 @@ Priorities:
   chosen one in 3D (`lamina_core::render::draw_paths`: each line as wide as it prints, shaded round, depth-tested), coloured by kind
   with a legend; the layer view from above stays one click away. Triangles and lines are now cut at the near plane, so the plate
   seen from close by is drawn up to the eye in the 3D view too.
+- **7.4 GPU viewport.** `apps/lamina/src/gpu.rs` and `gpu.wgsl`, ported from BIMCraft's: the 3D view drawn with wgpu into a
+  texture egui shows, the scene uploaded only when its `Arc` changes, the camera, selection and drag preview as uniforms and a small
+  buffer of objects, edges in a second pass over normal, depth and id targets, and ids and depth read back only for a click. The
+  processor stays the fallback (no adapter, OpenGL, a device error, a test harness, or View, Draw the 3D view on the processor, kept
+  in the settings file); a failure is said on the status bar. Ignored tests compare the two pictures, drive the window on the card and time a 512,000-triangle plate.
 - **7.5 Comfort.** Shortcuts: G, L and M pick the move, lay flat and measure tools (rotating is the gizmo's rings, in the move tool),
   R turns the picked objects 90 degrees, F frames them, A arranges, Ctrl+D duplicates, Ctrl+A picks all. A right-click menu on
   objects in the 3D view and the plate list. Edit, History lists the undo and redo steps (`Session::history`). Every setting has a
@@ -334,9 +339,6 @@ line numbers and resends, a Duet run by a single-board computer (DSF's own API),
 password (digest authentication) rather than an API key. Each its own module in `crates/printer`.
 
 ## 7. Desktop
-
-**7.4 GPU viewport (P2).** The CPU view slows past a few hundred thousand triangles. How: render the scene with wgpu into a texture
-egui shows (`register_native_texture`), as BIMCraft's `crates/ui-egui/src/gpu.rs` does, and keep the CPU path as the fallback.
 
 **7.6 Translations (P2).** How: lift BIMCraft's `crates/i18n` (PO files compiled in, English fallback) and pass every interface string
 through it.

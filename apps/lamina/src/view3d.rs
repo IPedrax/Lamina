@@ -1,12 +1,13 @@
-//! The 3D view: the plate and the objects on it, drawn on the processor into a picture egui shows. The picture is redrawn only when
-//! the scene, the selection, the camera or the size changes, and each pixel keeps the id of the object drawn there, which is the pick.
+//! The 3D view: the plate and the objects on it, drawn on the graphics card (`gpu.rs`) or on the processor into a picture egui shows.
+//! The picture is redrawn only when the scene, the selection, the camera or the size changes, and each pixel keeps the id of the
+//! object drawn there, which is the pick.
 //! A primary drag orbits, a secondary or middle drag pans, the wheel zooms, a click picks. The picked objects carry a gizmo: an arrow
 //! for each axis and a square to slide them on the plate, a ring for each axis to turn them, and a corner square to scale them; a drag
 //! that starts on one changes them (seen as it goes, snapped unless Shift is held) and, on release, says how, which the window runs as
 //! one transaction of `move`, `rotate` or `scale` commands.
 //!
-//! shortcut: a software rasterizer, enough for scenes of tens of thousands of triangles; a GPU pass like BIMCraft's
-//! (`crates/ui-egui/src/gpu.rs`) is the upgrade for large imported meshes.
+//! The processor's rasterizer is enough for scenes of tens of thousands of triangles; the card draws the same picture for large
+//! imported meshes, and the processor draws when there is no card, the card fails, or the user asks for it.
 
 use std::sync::Arc;
 
@@ -34,6 +35,7 @@ struct Drawn {
     bed: [f64; 2],
     size: [usize; 2],
     moving: Option<(Vec<u32>, Change)>,
+    cpu: bool,
 }
 
 /// What a click in the view landed on.
@@ -322,6 +324,8 @@ pub fn steer(camera: &mut Camera, response: &egui::Response, ui: &Ui, orbit: boo
 pub struct View {
     pub camera: Camera,
     texture: Option<TextureHandle>,
+    /// The picture shown: the processor's (`texture`, and `picture` to pick in) or the card's.
+    shown: Option<egui::TextureId>,
     picture: Option<Picture>,
     drawn: Option<Drawn>,
     moving: Option<Moving>,
@@ -333,6 +337,8 @@ pub struct View {
     /// Where the view was last drawn in the window, and its response, for the right-click menu.
     pub rect: Option<Rect>,
     pub response: Option<egui::Response>,
+    /// The graphics card, when the window has one and may draw on it.
+    pub card: crate::gpu::Card,
 }
 
 impl View {
@@ -384,7 +390,23 @@ impl View {
             bed,
             size,
             moving: moving.clone(),
+            cpu: self.card.cpu,
         };
+        if self.drawn.as_ref() != Some(&now) {
+            // A drag's preview on the card: each object moved about its own middle, as the processor's copy of the scene has it.
+            let moved: Vec<(u32, lamina_core::Transform)> = moving
+                .iter()
+                .flat_map(|(ids, change)| {
+                    ids.iter().filter_map(|&id| {
+                        let (lo, hi) = scene.get(id).ok()?.bounds()?;
+                        Some((id, change.about([(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, (lo[2] + hi[2]) / 2.0])))
+                    })
+                })
+                .collect();
+            if let Some(id) = self.card.draw(scene, selected, &moved, &self.camera, bed, size) {
+                (self.shown, self.picture, self.drawn) = (Some(id), None, Some(now.clone()));
+            }
+        }
         if self.drawn.as_ref() != Some(&now) {
             let picture = match &moving {
                 Some((ids, change)) => {
@@ -405,11 +427,12 @@ impl View {
                 Some(t) => t.set(image(&picture), TextureOptions::LINEAR),
                 None => self.texture = Some(ui.ctx().load_texture("lamina-3d", image(&picture), TextureOptions::LINEAR)),
             }
+            self.shown = self.texture.as_ref().map(TextureHandle::id);
             (self.picture, self.drawn) = (Some(picture), Some(now));
         }
         let painter = ui.painter_at(rect);
-        if let Some(t) = &self.texture {
-            painter.image(t.id(), rect, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+        if let Some(t) = self.shown {
+            painter.image(t, rect, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
         }
         let shift = match moving.as_ref().map(|(_, c)| *c) {
             Some(Change::Move(by)) => by,
@@ -445,21 +468,38 @@ impl View {
             && self.gizmo.and_then(|g| g.handle_at(p)).is_none()
         {
             let (x, y) = (((p.x - rect.min.x) * ppp).max(0.0) as usize, ((p.y - rect.min.y) * ppp).max(0.0) as usize);
-            let pic = self.picture.as_ref();
+            let (id, face, point) = self.seen(x, y);
             match self.tool {
-                Tool::Move => shown.pick = Some(pic.and_then(|pic| pic.id_at(x, y)).map_or(Pick::Nothing, Pick::Object)),
-                Tool::LayFlat => shown.face = pic.and_then(|pic| pic.face_at(x, y)),
-                Tool::Measure => shown.point = pic.and_then(|pic| pic.point_at(&self.camera, x, y)),
+                Tool::Move => shown.pick = Some(id.map_or(Pick::Nothing, Pick::Object)),
+                Tool::LayFlat => shown.face = face,
+                Tool::Measure => shown.point = point,
             }
         }
         if response.secondary_clicked()
             && let Some(p) = response.interact_pointer_pos()
         {
             let (x, y) = (((p.x - rect.min.x) * ppp).max(0.0) as usize, ((p.y - rect.min.y) * ppp).max(0.0) as usize);
-            shown.context = Some(self.picture.as_ref().and_then(|pic| pic.id_at(x, y)).map_or(Pick::Nothing, Pick::Object));
+            shown.context = Some(self.seen(x, y).0.map_or(Pick::Nothing, Pick::Object));
         }
         self.response = Some(response);
         shown
+    }
+
+    /// Whether the picture shown is the card's.
+    #[cfg(test)]
+    pub(crate) fn on_card(&self) -> bool {
+        self.picture.is_none() && self.shown.is_some()
+    }
+
+    /// What the picture shows at pixel (`x`, `y`): the object (none on the plate or nothing), its triangle, and the point seen there.
+    /// Read from the processor's picture, or back from the card's.
+    fn seen(&self, x: usize, y: usize) -> (Option<u32>, Option<(u32, usize)>, Option<P3>) {
+        if let Some(pic) = &self.picture {
+            return (pic.id_at(x, y), pic.face_at(x, y), pic.point_at(&self.camera, x, y));
+        }
+        let Some(hit) = self.card.at(x, y) else { return (None, None, None) };
+        let id = (hit.id != 0).then_some(hit.id);
+        (id, id.map(|id| (id, hit.tri as usize)), self.camera.at_depth(x, y, hit.size, hit.inv))
     }
 }
 

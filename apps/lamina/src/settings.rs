@@ -56,6 +56,9 @@ pub struct Settings {
     /// The Agents section: whether the window lets agents in, on which port, and whether they may change the plate.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agents: Option<crate::control::Agents>,
+    /// The 3D view drawn on the processor even where there is a graphics card.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cpu_view: bool,
 }
 
 /// Where the settings file is (`lamina_core::bridge::settings_file`, which the CLI reads too, to find the window's bridge file).
@@ -147,6 +150,12 @@ impl Settings {
                 Err(_) => notes.push("The Agents settings were left out: they do not read".into()),
             }
         }
+        if let Some(v) = all.get("cpu_view") {
+            match v.as_bool() {
+                Some(b) => s.cpu_view = b,
+                None => notes.push("The 3D view's processor setting was left out: it is not true or false".into()),
+            }
+        }
         if let Some(v) = all.get("look") {
             match serde_json::from_value::<crate::comfort::Look>(v.clone()) {
                 Ok(l) => s.look = Some(l),
@@ -199,6 +208,7 @@ mod tests {
             connection: Some(crate::printer::Connection { kind: lamina_printer::Kind::Octoprint, address: "octopi.local".into() }),
             connection_key: Some(seal::seal("ABCDEF0123456789").unwrap()),
             look: Some(crate::comfort::Look::Light),
+            cpu_view: true,
             ..Settings::default()
         };
         s.filaments

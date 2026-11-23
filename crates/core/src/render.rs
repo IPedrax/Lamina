@@ -11,7 +11,7 @@ pub type Rgba = [u8; 4];
 
 /// Vertical field of view, degrees, and the nearest the eye sees, mm.
 pub const FOV: f64 = 35.0;
-const NEAR: f64 = 1.0;
+pub const NEAR: f64 = 1.0;
 /// Where a cut at the near plane puts the new corner: a hair in front of it, so rounding never puts it behind.
 const CLIP: f64 = NEAR * 1.01;
 
@@ -23,11 +23,11 @@ pub const SELECTED: Rgba = [245, 165, 60, 255];
 /// The plane given to what is not a part's face (the plate): level, through the origin.
 const FLAT: [f32; 4] = [0.0, 0.0, 1.0, 0.0];
 /// How much an edge darkens the pixel it is drawn on: where a part's faces meet at a crease or a step, and round each part.
-const EDGE_SHADE: f64 = 0.42;
+pub const EDGE_SHADE: f64 = 0.42;
 /// Faces whose normals differ by more than this, degrees, meet at a crease; a curved surface's facets turn by less, and stay smooth.
-const CREASE: f64 = 35.0;
+pub const CREASE: f64 = 35.0;
 /// Parallel faces further apart than this, mm, are a step (a pocket's floor beside the top it is cut into, raised lettering).
-const STEP: f32 = 0.05;
+pub const STEP: f32 = 0.05;
 
 /// An orbit camera round `target`: `azimuth` degrees counter-clockwise from east, `elevation` degrees up, `distance` mm away.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -84,6 +84,23 @@ impl Camera {
         (t > 0.0).then(|| add(eye, scale(dir, t)))
     }
 
+    /// The light: from over the viewer's shoulder, so faces turned to the eye are bright and the top reads from the sides.
+    pub fn light(&self) -> P3 {
+        normalize(add(scale(self.frame().3, -1.0), [0.25, 0.15, 0.7]))
+    }
+
+    /// The point seen at pixel (`x`, `y`) of a picture `size` pixels, at one over depth `inv` (as [`Picture`] keeps it); none where
+    /// nothing is (`inv` not above 0).
+    pub fn at_depth(&self, x: usize, y: usize, size: [usize; 2], inv: f32) -> Option<P3> {
+        let inv = f64::from(inv);
+        if inv <= 0.0 {
+            return None;
+        }
+        let (eye, dir) = self.ray(x as f64 + 0.5, y as f64 + 0.5, size[0] as f64, size[1] as f64);
+        let t = (1.0 / inv) / dot(dir, self.frame().3);
+        Some(add(eye, scale(dir, t)))
+    }
+
     /// Looks at `bounds` from where the camera looks now, from far enough to see all of them.
     pub fn frame_all(&mut self, (lo, hi): (P3, P3)) {
         self.target = [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, (lo[2] + hi[2]) / 2.0];
@@ -119,14 +136,7 @@ impl Picture {
         if x >= w || y >= h {
             return None;
         }
-        let inv = f64::from(self.depth[y * w + x]);
-        if inv <= 0.0 {
-            return None;
-        }
-        let (eye, dir) = camera.ray(x as f64 + 0.5, y as f64 + 0.5, w as f64, h as f64);
-        let forward = camera.frame().3;
-        let t = (1.0 / inv) / dot(dir, forward);
-        Some(add(eye, scale(dir, t)))
+        camera.at_depth(x, y, self.size, self.depth[y * w + x])
     }
 }
 
@@ -190,9 +200,7 @@ pub fn draw_paths(paths: &[Path], camera: &Camera, bed: [f64; 2], size: [usize; 
 impl Raster {
     fn new(camera: &Camera, size: [usize; 2]) -> Raster {
         let (w, h) = (size[0].clamp(1, 8192), size[1].clamp(1, 8192));
-        let (_, _, _, forward) = camera.frame();
-        // A light from over the viewer's shoulder, so faces turned to the eye are bright and the top reads from the sides.
-        let light = normalize(add(scale(forward, -1.0), [0.25, 0.15, 0.7]));
+        let light = camera.light();
         let n = w * h;
         Raster {
             w,
@@ -433,8 +441,7 @@ pub fn thumbnail_of(meshes: &[crate::Mesh], size: usize) -> Picture {
         camera.distance *= 0.8;
     }
     let size = size.clamp(1, 1024);
-    let (_, _, _, forward) = camera.frame();
-    let light = normalize(add(scale(forward, -1.0), [0.25, 0.15, 0.7]));
+    let light = camera.light();
     let n = size * size;
     let mut r = Raster {
         w: size,

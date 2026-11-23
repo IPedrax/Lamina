@@ -8,6 +8,7 @@ pub mod chat;
 pub mod comfort;
 pub mod control;
 pub mod files;
+pub mod gpu;
 pub mod icon;
 pub mod preview;
 pub mod printer;
@@ -271,6 +272,7 @@ impl App {
             (s.printer.clone(), s.filament.clone(), s.printers.clone(), s.filaments.clone());
         app.recent = s.recent.clone();
         app.look = s.look.unwrap_or_default();
+        app.view.card.cpu = s.cpu_view;
         if let Some(u) = &s.local_url {
             app.chat.chat.local_url.clone_from(u);
         }
@@ -321,6 +323,7 @@ impl App {
             local_url: Some(self.chat.chat.local_url.clone()).filter(|u| u != lamina_assistant::local::DEFAULT_URL),
             local_model: Some(self.chat.local_model.clone()).filter(|m| m != lamina_assistant::Provider::Local.default_model()),
             agents: Some(self.agents.clone()).filter(|a| *a != control::Agents::default()),
+            cpu_view: self.view.card.cpu,
         }
     }
 
@@ -1444,6 +1447,9 @@ impl App {
     fn prepare(&mut self, ui: &mut Ui) {
         let scene = Arc::clone(&self.session.scene);
         let shown = self.view.show(ui, &scene, &self.selected, self.profile.bed);
+        if let Some(note) = self.view.card.note.take() {
+            (self.failed, self.status) = (true, note);
+        }
         if let Some((ids, change)) = &shown.moved {
             use crate::view3d::Change;
             // One command for each picked object, in one transaction, so one undo takes the whole drag back.
@@ -2467,6 +2473,57 @@ fill_angle = 45
         assert!(text.contains("printer.local:7125") && !text.contains("secret-key-123"), "sealed, never as typed");
         let again = App::with_settings(session(), net(), path);
         assert_eq!((again.link.key.as_str(), again.link.remember), ("secret-key-123", true));
+    }
+
+    /// The window's 3D view on a real graphics card, through egui's own renderer: the card's picture shown in the window, a click
+    /// picked by reading the card back, the processor when View asks for it, and the card again after.
+    #[test]
+    #[ignore = "needs a graphics card: cargo test -p lamina -- --ignored the_window_draws_on_the_card"]
+    fn the_window_draws_on_the_card() {
+        let setup = eframe::egui_wgpu::WgpuSetup::CreateNew(eframe::egui_wgpu::WgpuSetupCreateNew::without_display_handle());
+        let state = egui_kittest::wgpu::create_render_state(setup, Default::default());
+        let mut app = App::new(session(), Arc::new(lamina_assistant::testing::Fake::default()));
+        app.view.card.state = Some(state.clone());
+        let mut h = Harness::builder()
+            .with_size([1400.0, 860.0])
+            .renderer(egui_kittest::wgpu::WgpuTestRenderer::from_render_state(state))
+            .build_ui_state(|ui, app: &mut App| app.show(ui), app);
+        h.run();
+        press(&mut h, "Add box");
+        h.state_mut().selected.clear();
+        h.state_mut().view.camera = view3d::Camera { target: [0.0, 0.0, 10.0], azimuth: -60.0, elevation: 30.0, distance: 200.0 };
+        h.run();
+        assert!(h.state().view.on_card() && !h.state().failed, "{}", h.state().status);
+        let middle = h.state().view.rect.unwrap().center();
+        let colour = |h: &mut Harness<App>| {
+            let image = h.render().unwrap();
+            // The box's left face, clear of the pointer and the gizmo at the middle.
+            let p = image.get_pixel(middle.x as u32 - 60, middle.y as u32 + 60).0;
+            [p[0], p[1], p[2]]
+        };
+        assert!(colour(&mut h)[2] > colour(&mut h)[0], "the box in the model colour: {:?}", colour(&mut h));
+        h.hover_at(middle);
+        h.run();
+        for pressed in [true, false] {
+            h.event(egui::Event::PointerButton {
+                pos: middle,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: Default::default(),
+            });
+            h.run();
+        }
+        assert_eq!(h.state().selected, [1], "picked by reading the card back");
+        let picked = colour(&mut h);
+        assert!(picked[0] > picked[2], "drawn in the highlight: {picked:?}");
+        h.state_mut().view.card.cpu = true;
+        h.run();
+        assert!(!h.state().view.on_card());
+        let cpu = colour(&mut h);
+        assert!(picked.iter().zip(cpu).all(|(a, b)| a.abs_diff(b) <= 6), "the processor draws it alike: {picked:?} {cpu:?}");
+        h.state_mut().view.card.cpu = false;
+        h.run();
+        assert!(h.state().view.on_card());
     }
 
     /// The whole window as a picture, for looking at: `cargo test -p lamina -- --ignored picture_of_the_window`.

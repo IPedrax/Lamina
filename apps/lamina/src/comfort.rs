@@ -188,6 +188,13 @@ impl App {
                 ui.radio_value(&mut self.look, look, name);
             }
             ui.separator();
+            let processor = ui
+                .checkbox(&mut self.view.card.cpu, "Draw the 3D view on the processor")
+                .on_hover_text("Slower with large meshes. The graphics card draws it otherwise, where the window has one.");
+            if processor.changed() {
+                self.view.card.retry();
+            }
+            ui.separator();
             ui.menu_button("Keyboard shortcuts", |ui| {
                 egui::Grid::new("shortcuts").num_columns(2).show(ui, |ui| {
                     for (keys, what) in SHORTCUTS {

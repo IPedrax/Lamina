@@ -99,9 +99,20 @@ fn main() -> ExitCode {
     if let Some(backends) = graphics.backends() {
         setup.instance_descriptor.backends = backends;
     }
+    // The 3D view puts a scene's triangles in one buffer on the card: as big a buffer as the adapter allows (OpenGL keeps its own).
+    let asked = setup.device_descriptor.clone();
+    setup.device_descriptor = Arc::new(move |adapter| {
+        let mut d = asked(adapter);
+        if adapter.get_info().backend != eframe::egui_wgpu::wgpu::Backend::Gl {
+            d.required_limits.max_buffer_size = adapter.limits().max_buffer_size;
+        }
+        d
+    });
     options.wgpu_options.wgpu_setup = eframe::egui_wgpu::WgpuSetup::CreateNew(setup);
     let up_files = files.clone();
     let start = move |cc: &eframe::CreationContext| -> Result<Box<dyn eframe::App>, _> {
+        let mut app = app;
+        app.view.card.state = cc.wgpu_render_state.clone();
         let adapter = cc.wgpu_render_state.as_ref().map(|state| {
             let info = state.adapter.get_info();
             format!("{} ({:?}, driver {} {})", info.name, info.backend, info.driver, info.driver_info)
