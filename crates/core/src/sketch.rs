@@ -113,8 +113,7 @@ fn solid(shapes: &[Vec<Vec<P2>>], height: f64) -> Result<Mesh, String> {
         let at = |i: u32, z: f64| -> Option<[f32; 3]> { t.points.get(i as usize).map(|p| [p[0] as f32, p[1] as f32, z as f32]) };
         // Caps: the triangulation winds counter-clockwise, which faces up; the bottom faces down.
         let mut edges: HashMap<(u32, u32), u32> = HashMap::new();
-        for tri in t.indices.chunks_exact(3) {
-            let (a, b, c) = (tri[0], tri[1], tri[2]);
+        for &[a, b, c] in t.indices.as_chunks::<3>().0 {
             if let (Some(pa), Some(pb), Some(pc)) = (at(a, height), at(b, height), at(c, height)) {
                 corners.extend([pa, pb, pc]);
             }
