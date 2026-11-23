@@ -2064,6 +2064,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "lamina-notices"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "lamina-printer"
 version = "0.1.0"
 dependencies = [

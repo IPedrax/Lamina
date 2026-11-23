@@ -44,10 +44,16 @@ warn() {
   if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::warning::$*"; else echo "warning: $*" >&2; fi
 }
 
-# The readme, the licence and the notice, into a package's directory.
+# The readme, the licence and the notice, into a package's directory, and the third-party notice when it has been written
+# (`cargo run -p lamina-notices`, which the release workflow does first).
 copy_docs() {
   local dest="$1" f
   for f in README.md LICENSE NOTICE; do
     cp "$ROOT/$f" "$dest/"
   done
+  if [ -f "$ROOT/THIRD-PARTY-NOTICES.txt" ]; then
+    cp "$ROOT/THIRD-PARTY-NOTICES.txt" "$dest/"
+  else
+    warn "THIRD-PARTY-NOTICES.txt is missing: run cargo run -p lamina-notices first for a package to give away"
+  fi
 }

@@ -21,5 +21,6 @@ BIMCraft (https://github.com/IPedrax/BIMCraft), MIT OR Apache-2.0, by the same a
   The assistant crate (provider clients, sealed key storage, attachments, turn loop) and the design of the command engine and the MCP
   server are ported from it.
 
-Every other dependency keeps its own licence; `cargo tree` lists them. Slicers whose behaviour Lamina follows (PrusaSlicer, OrcaSlicer,
+Every other dependency keeps its own licence. A release carries THIRD-PARTY-NOTICES.txt, which lists every crate it is built from with
+its licence and repository, and the text of each licence (written by `cargo run -p lamina-notices`). Slicers whose behaviour Lamina follows (PrusaSlicer, OrcaSlicer,
 Bambu Studio, Cura) are AGPL or LGPL and none of their code is used.

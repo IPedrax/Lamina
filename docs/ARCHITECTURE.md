@@ -58,6 +58,7 @@ desktop (lamina) ──────┘
 | `lamina-printer` | uploads to Moonraker and OctoPrint, the `send_to_printer` command | core, ureq |
 | `lamina` (apps/lamina) | the desktop window: 3D view, objects panel, settings, layer preview, assistant panel, printer connection | core, slicer, csg, assistant, printer, eframe, rfd |
 | `lamina-cli` | `lamina-cli` binary, MCP server | core, slicer, csg, printer |
+| `lamina-notices` (tools/notices) | checks every dependency's licence, writes the third-party notice a release carries | serde_json |
 
 A test in `lamina-core` reads every manifest and fails if any crate but `assistant` and `printer` depends on an HTTP client, or any but
 `assistant` on `ring`.

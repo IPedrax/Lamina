@@ -63,6 +63,15 @@ Reads work.
 - Not lifted from BIMCraft: deb, rpm, Flatpak, Arch and riscv64 packages, the APT repository and the Discord posts. Say which of
   them Lamina should have.
 
+## The licence: MIT kept (roadmap 8.4)
+
+- Question: stay MIT, or move to MIT OR Apache-2.0 as BIMCraft is (Apache-2.0 adds a patent grant and a patent retaliation clause).
+- Options: keep MIT; dual-license MIT OR Apache-2.0 (add LICENSE-APACHE, set `license` in the workspace manifest, update NOTICE,
+  the README and the installers).
+- Taken: MIT kept. Changing a project's licence is the owner's decision, not a night's run, and MIT can still become dual later, as
+  the code is the owner's and what is lifted from BIMCraft is MIT OR Apache-2.0 already. The rest of 8.4 is done: every release
+  now carries THIRD-PARTY-NOTICES.txt, and a test fails if any dependency's licence offers no permissive choice.
+
 ## Blocked: real test prints (roadmap 0.2)
 
 - Printing the calibration cube, the single-wall box and the bridge test on a Marlin and a Klipper printer needs the printers, and

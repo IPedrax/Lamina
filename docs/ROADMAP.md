@@ -195,6 +195,11 @@ Priorities:
   setting made from `profile::ABOUT`, `LIMITS` and the defaults (`crates/slicer/tests/guide.rs` checks it; `LAMINA_BLESS=1`
   writes it again). Its pictures are drawn by Lamina's CPU renderer (`docs_pictures`, ignored); a picture of the whole window
   still needs a machine with a graphics card (docs/QUESTIONS.md).
+- **8.4 Licence and third-party notice.** MIT stays until the owner decides otherwise (docs/QUESTIONS.md). `tools/notices`
+  (`lamina-notices`) reads `cargo metadata`, refuses any crate whose licence offers no permissive choice (a test runs it on the
+  whole tree, every platform's crates), and writes THIRD-PARTY-NOTICES.txt: every crate with its licence and repository, then each
+  distinct licence text once with the crates that ship it. Each release job writes it, and the MSI, the AppImage, the tarball and
+  the DMG carry it. Written in Rust rather than with `cargo about`, so the release needs no tool installed.
 
 ## Order of work
 
@@ -287,9 +292,6 @@ DMG, each checked against the SHA-256 digest GitHub gives the asset. The release
 
 **8.2 Benchmarks (P2).** How: ignored tests that time slicing a 100,000-triangle mesh and a boolean of two detailed shapes, printed so
 regressions are seen.
-
-**8.4 Licence (P1).** Decide whether to stay MIT or move to MIT OR Apache-2.0 as BIMCraft is (Apache adds a patent grant). Generate a
-full third-party notice for releases, for example with `cargo about`.
 
 ## 9. The assistant
 

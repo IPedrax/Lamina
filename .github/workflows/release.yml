@@ -36,6 +36,10 @@ jobs:
       - name: Test
         run: cargo test --workspace
 
+      # Every crate's licence checked, and their texts written for the installer to carry.
+      - name: Third-party notice
+        run: cargo run --locked -p lamina-notices -- THIRD-PARTY-NOTICES.txt
+
       # The C runtime linked in, as BIMCraft does, so the programs run on a Windows without the Visual C++ redistributable. Scoped
       # to the target, so build scripts and proc macros are left as they are.
       - name: Build
@@ -79,7 +83,7 @@ jobs:
           $log = Join-Path $env:RUNNER_TEMP 'install.log'
           $p = Start-Process msiexec.exe -ArgumentList "/i `"$env:MSI`" INSTALLFOLDER=`"$dir`" /qn /l*v `"$log`"" -Wait -PassThru
           if ($p.ExitCode -notin 0, 3010) { Get-Content $log -Tail 60; throw "the install exited with $($p.ExitCode)" }
-          foreach ($file in 'lamina.exe', 'lamina-cli.exe', 'LICENSE.txt', 'NOTICE.txt') {
+          foreach ($file in 'lamina.exe', 'lamina-cli.exe', 'LICENSE.txt', 'NOTICE.txt', 'THIRD-PARTY-NOTICES.txt') {
             if (-not (Test-Path "$dir\$file")) { throw "expected $file in the folder that was chosen" }
           }
           & "$dir\lamina-cli.exe" --version
@@ -120,12 +124,15 @@ jobs:
       - name: Test
         run: cargo test --workspace
 
+      - name: Third-party notice
+        run: cargo run --locked -p lamina-notices -- THIRD-PARTY-NOTICES.txt
+
       - name: Build and package
         run: packaging/linux/package.sh
 
       - name: Check
         run: |
-          tar tzf dist/release/*.tar.gz | grep -E 'bin/lamina$|bin/lamina-cli$|applications/|mime/'
+          tar tzf dist/release/*.tar.gz | grep -E 'bin/lamina$|bin/lamina-cli$|applications/|mime/|THIRD-PARTY-NOTICES.txt'
           for appimage in dist/release/*.AppImage; do
             chmod +x "$appimage"
             APPIMAGE_EXTRACT_AND_RUN=1 "$appimage" --version
@@ -150,6 +157,9 @@ jobs:
 
       - name: Test
         run: cargo test --workspace
+
+      - name: Third-party notice
+        run: cargo run --locked -p lamina-notices -- THIRD-PARTY-NOTICES.txt
 
       # Without the secrets (a fork, say) the app is signed ad hoc and not notarized: it runs, but Gatekeeper asks before it does.
       - name: Signing certificate

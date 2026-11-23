@@ -30,7 +30,7 @@ mod network_boundary {
     fn only_the_assistant_and_the_printer_connection_depend_on_an_http_client() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let mut manifests = 0;
-        for dir in ["crates", "apps"] {
+        for dir in ["crates", "apps", "tools"] {
             for entry in std::fs::read_dir(root.join("../..").join(dir)).unwrap().flatten() {
                 let Ok(text) = std::fs::read_to_string(entry.path().join("Cargo.toml")) else { continue };
                 manifests += 1;

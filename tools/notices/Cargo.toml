@@ -1,0 +1,17 @@
+[package]
+name = "lamina-notices"
+description = "Checks that every crate Lamina is built from has a licence it may use, and writes the third-party notice releases carry"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

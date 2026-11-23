@@ -2,7 +2,8 @@
 <!--
   Lamina's Windows installer, for the WiX Toolset 5 (the wix .NET tool, 5.0.2) and its UI extension, which draws the setup
   wizard: wix extension add -g WixToolset.UI.wixext/5.0.2
-  From the repository root, after a release build of lamina and lamina-cli for x86_64-pc-windows-msvc:
+  From the repository root, after a release build of lamina and lamina-cli for x86_64-pc-windows-msvc and
+  `cargo run -p lamina-notices` (which writes THIRD-PARTY-NOTICES.txt):
 
     wix build packaging\windows\lamina.wxs -arch x64 -ext WixToolset.UI.wixext -d Version=0.1.0
       -d BinDir=target\x86_64-pc-windows-msvc\release -o lamina-0.1.0-windows-x64.msi
@@ -82,6 +83,9 @@
       </Component>
       <Component Id="NoticeFile" Directory="INSTALLFOLDER">
         <File Id="Notice" Name="NOTICE.txt" Source="NOTICE" KeyPath="yes" />
+      </Component>
+      <Component Id="ThirdPartyNotices" Directory="INSTALLFOLDER">
+        <File Id="ThirdParty" Source="THIRD-PARTY-NOTICES.txt" KeyPath="yes" />
       </Component>
       <!-- A shortcut that isn't advertised needs a registry key path, and in a profile folder (the desktop, which per-machine is
            the Public one) that key must be under HKCU (ICE38, ICE43, ICE57). -->
