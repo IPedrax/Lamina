@@ -20,6 +20,12 @@ with `move {id, by: [x, y, 0]}`.
 - Flat parts: `extrude {shape: "rounded_rect", size: [60, 40], corner: 5, height: 4, round_holes: [[-22, -12, 4], [22, -12, 4]]}`
   lifts an outline into a solid (also `shape: "slot"` or `"circle"`, or your own `outline: [[x, y], ...]` with `holes`). Brackets,
   plates with mounting holes and spacers are one extrude each: prefer it to a box with cylinders subtracted.
+- Lettering: `text {text: "LAMINA", height: 8, depth: 1}` is a solid of letters lying on the plate (capitals `height` mm tall,
+  5 mm or more to print cleanly). To emboss, put it on a face and `union`; to engrave, move it so it sinks 0.5 to 1 mm into the face
+  and `difference`. Turn it with `rotate` for a side face. Latin, Greek and Cyrillic only.
+- Rounded and chamfered edges: there is no fillet or chamfer for any edge of any part. Round what can be built round:
+  `rounded_box` (every edge), `extrude` with a `corner` (rounded corners seen from above), a `cone` with `radius_top` for a taper.
+  Say so when a part needs a fillet these cannot give.
 - Place and reshape: `move`, `rotate` (about the object's centre, then it is set back on the plate), `scale` (positive factors,
   one per axis with `by`, so a sphere can become an ellipsoid and a cylinder a disc), `mirror {id, axis}` (a left part from a right
   one), `drop_to_bed`, `delete`, `undo`, `redo`.

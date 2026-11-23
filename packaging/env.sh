@@ -44,13 +44,16 @@ warn() {
   if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::warning::$*"; else echo "warning: $*" >&2; fi
 }
 
-# The readme, the licence and the notice, into a package's directory, and the third-party notice when it has been written
+# The readme, the licence, the notice and the font's licence, into a package's directory, and the third-party notice when it has been written
 # (`cargo run -p lamina-notices`, which the release workflow does first).
 copy_docs() {
   local dest="$1" f
   for f in README.md LICENSE NOTICE; do
     cp "$ROOT/$f" "$dest/"
   done
+  # The licence of the font the programs hold (the OFL asks for it with every copy; NOTICE says where it is).
+  mkdir -p "$dest/fonts/ibm-plex-mono"
+  cp "$ROOT/assets/fonts/ibm-plex-mono/OFL.txt" "$dest/fonts/ibm-plex-mono/"
   if [ -f "$ROOT/THIRD-PARTY-NOTICES.txt" ]; then
     cp "$ROOT/THIRD-PARTY-NOTICES.txt" "$dest/"
   else

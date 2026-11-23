@@ -17,6 +17,10 @@ quick-xml (https://github.com/tafia/quick-xml), MIT
 miniz_oxide (https://github.com/Frommi/miniz_oxide), MIT OR Zlib OR Apache-2.0
   Deflate for the ZIP packages 3MF files are.
 
+IBM Plex Mono (https://github.com/IBM/plex), SIL Open Font License 1.1
+  Copyright 2017 IBM Corp. with Reserved Font Name "Plex". The font is compiled into Lamina for the `text` command; its licence is
+  assets/fonts/ibm-plex-mono/OFL.txt, and fonts/ibm-plex-mono/OFL.txt in every package.
+
 BIMCraft (https://github.com/IPedrax/BIMCraft), MIT OR Apache-2.0, by the same author
   The assistant crate (provider clients, sealed key storage, attachments, turn loop) and the design of the command engine and the MCP
   server are ported from it.

@@ -16,5 +16,7 @@ quick-xml = "0.41"
 # Sketch and extrude: outlines cleaned by i_overlay (the slicer's polygon library), caps triangulated by i_triangle (its author's).
 i_overlay = "9.2.0"
 i_triangle = "0.51"
+# Text: glyph outlines from the bundled font (MIT OR Apache-2.0, already in the desktop's tree through egui), no features beyond std.
+ttf-parser = { version = "0.25", default-features = false, features = ["std"] }
 serde = { workspace = true }
 serde_json = { workspace = true, features = ["float_roundtrip"] }

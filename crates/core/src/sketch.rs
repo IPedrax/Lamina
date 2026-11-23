@@ -74,10 +74,36 @@ pub fn extrude(outline: &[P2], holes: &[Vec<P2>], height: f64) -> Result<Mesh, S
     if shapes.is_empty() {
         return Err("the outline encloses nothing (or the holes take all of it)".into());
     }
+    solid(&shapes, height)
+}
+
+/// The solid of `contours` filled by their winding (non-zero: a contour wound the other way inside another is a hole, overlapping
+/// ones join), `height` tall: the letters of a text, as a font draws them.
+pub fn extrude_contours(contours: &[Vec<P2>], height: f64) -> Result<Mesh, String> {
+    let points: usize = contours.iter().map(Vec::len).sum();
+    if points > MAX_POINTS {
+        return Err(format!("{points} points is more than the {MAX_POINTS} an outline may have"));
+    }
+    if contours.iter().flatten().flatten().any(|c| !c.is_finite() || c.abs() > MAX_COORD) {
+        return Err(format!("every point must be finite and within {MAX_COORD} mm"));
+    }
+    if !(height.is_finite() && height > 0.0 && height <= MAX_COORD) {
+        return Err("`height` must be a number above 0".into());
+    }
+    let subject: Vec<Vec<P2>> = contours.iter().filter(|c| c.len() >= 3).cloned().collect();
+    let shapes = subject.overlay(&Vec::<Vec<P2>>::new(), OverlayRule::Subject, FillRule::NonZero);
+    if shapes.is_empty() {
+        return Err("the outlines enclose nothing".into());
+    }
+    solid(&shapes, height)
+}
+
+/// Each cleaned shape (an outer contour and its holes) lifted into a closed solid, `height` tall, its bottom on z = 0.
+fn solid(shapes: &[Vec<Vec<P2>>], height: f64) -> Result<Mesh, String> {
     // Each shape is welded on its own: two that touch at a point keep their own walls there, so every edge has two faces.
     let mut solids: Vec<Mesh> = Vec::new();
     let mut total = 0usize;
-    for shape in &shapes {
+    for shape in shapes {
         let mut corners: Vec<[f32; 3]> = Vec::new();
         let t = shape.as_slice().triangulate().to_triangulation::<u32>();
         total += t.indices.len() * 4;

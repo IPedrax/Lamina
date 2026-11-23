@@ -16,6 +16,7 @@ pub mod scene;
 pub mod simplify;
 pub mod sketch;
 pub mod stl;
+pub mod text;
 pub mod threemf;
 pub mod zip;
 

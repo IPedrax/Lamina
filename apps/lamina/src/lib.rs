@@ -717,6 +717,9 @@ impl App {
                     }
                 }
                 ui.separator();
+                if ui.button("Text").on_hover_text("Lettering, 10 mm capitals, 1 mm deep; the assistant or `text` writes any").clicked() {
+                    self.add_with("text", json!({"text": "Lamina", "height": 10, "depth": 1}), 50.0);
+                }
                 if ui
                     .button("Plate with four holes")
                     .on_hover_text("A rounded plate, extruded; the assistant or `extrude` makes any outline")

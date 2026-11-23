@@ -2049,6 +2049,7 @@ dependencies = [
  "quick-xml",
  "serde",
  "serde_json",
+ "ttf-parser",
 ]
 
 [[package]]

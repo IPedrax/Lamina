@@ -104,6 +104,13 @@ Priorities:
   empty plate of their own (`Session::sibling`, the same commands; no file, replace, undo or nested build), which must end with one
   object, and keeps the recipe; `edit {id, step, params}` merges new parameters into one step and rebuilds the part where it
   stands. Projects keep recipes, `info` shows them, and the modelling skill teaches editing a step rather than redoing work.
+- **3.10 Text.** `text {text, height, depth, spacing?, at?}`: glyph outlines from IBM Plex Mono Regular (bundled under the OFL, its
+  licence in every package) read with `ttf-parser`, curves cut into steps, lines one under another, extruded by the new
+  `sketch::extrude_contours` (non-zero winding, so a letter's holes are holes). A boolean engraves or embosses it; tested through
+  the CLI, the box stays closed. In the window under More shapes.
+- **3.11 Fillets and chamfers, where tractable.** Rounded boxes, rounded corners on any extruded outline and tapered cones exist,
+  and the modelling skill now says plainly that there is no fillet or chamfer for an arbitrary edge. A chamfer of the bottom edge
+  of any object, against elephant's foot, is still open: it needs the object's bottom outline lofted to an inset of itself.
 - **4.1 Supports.** `crates/slicer/src/support.rs`: where a layer leans past `support_angle` from vertical, all of it that is over
   air is held up; overhangs are carried down to the model or the plate (`support`: `off`, `everywhere`, `from_plate`), keep
   `support_xy_gap` from the walls and stop `support_z_gap` below the model, with `support_interface_layers` of denser lines on top.
@@ -256,13 +263,6 @@ what is wrong before adding features.
 ## 2. Meshes
 
 ## 3. Modelling
-
-**3.10 Text (P2).** How: read glyph outlines from a font with `ttf-parser` (BIMCraft uses it, with IBM Plex under the OFL, which may be
-bundled with its licence). Flatten the curves to polylines and extrude with 3.9. Engrave or emboss with a boolean.
-
-**3.11 Fillets and chamfers (P2).** A general mesh fillet is research-level work. How: offer them where they are tractable. Rounded
-and chamfered boxes are built directly (3.8). Chamfer the bottom edge of any object with a boolean against a wedge ring. Say plainly in
-the AI's skills what is not possible.
 
 ## 4. Slicer
 

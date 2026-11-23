@@ -32,6 +32,13 @@ pub static ALL: &[Command] = &[
         Files::None,
     ),
     cmd(
+        "text",
+        "{text, height (of the capitals, mm), depth (how far it rises, mm), spacing? (1 is the font's own space between letters), name?, at?:[x,y]} lettering as a solid lying on the plate, read from above, centred on `at`: IBM Plex Mono, Latin, Greek and Cyrillic, `\\n` starts a new line. Capitals 5 mm or taller and a depth of 0.6 to 1 mm print cleanly. Emboss it with `union`, engrave it with `difference` (move it so it sinks into the face). Returns {id, triangles, watertight, size}",
+        text,
+        true,
+        Files::None,
+    ),
+    cmd(
         "extrude",
         "{height, outline?:[[x,y],...] | shape?:\"rounded_rect\"|\"slot\"|\"circle\", size?:[x,y] (rounded_rect: width and depth; slot: length and width), corner? (rounded_rect's corner radius), radius? (circle), holes?:[[[x,y],...],...], round_holes?:[[x,y,diameter],...], segments? (per quarter turn of a round edge, default 8), name?, at?:[x,y]} a flat outline, minus its holes, lifted `height` mm into a solid: a bracket, a plate with mounting holes, a spacer. Points are mm in the sketch's own frame (a shape is centred on its origin); the solid is put on the plate centred on `at`. Returns {id, triangles, watertight, size}",
         extrude,
@@ -457,6 +464,32 @@ fn extrude(s: &mut Session, p: &Value) -> Result<Value, String> {
     }
     let mesh = sketch::extrude(&outline, &holes, positive("height", a.height, MAX)?)?;
     added(s, a.name.as_deref().unwrap_or("extrusion"), mesh, a.at)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Text {
+    text: String,
+    height: f64,
+    depth: f64,
+    spacing: Option<f64>,
+    name: Option<String>,
+    at: Option<[f64; 2]>,
+}
+
+fn text(s: &mut Session, p: &Value) -> Result<Value, String> {
+    let a: Text = parse(p)?;
+    let mut contours = crate::text::contours(&a.text, a.height, a.spacing.unwrap_or(1.0))?;
+    // Centred on the origin, as the other shapes are, so `at` is where its middle stands.
+    let (lo, hi) = contours
+        .iter()
+        .flatten()
+        .fold(([f64::MAX; 2], [f64::MIN; 2]), |(lo, hi), p| ([lo[0].min(p[0]), lo[1].min(p[1])], [hi[0].max(p[0]), hi[1].max(p[1])]));
+    let mid = [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0];
+    contours.iter_mut().flatten().for_each(|p| *p = [p[0] - mid[0], p[1] - mid[1]]);
+    let mesh = sketch::extrude_contours(&contours, positive("depth", a.depth, 1000.0)?)?;
+    let name = a.name.unwrap_or_else(|| a.text.chars().take(24).collect::<String>().replace('\n', " "));
+    added(s, &name, mesh, a.at)
 }
 
 /// The most steps a recipe may have, and the most text its steps may take.
@@ -1139,6 +1172,24 @@ mod tests {
         run(&mut s, "undo", json!({})).unwrap();
         assert!(!s.scene.get(1).unwrap().mesh.is_watertight());
         assert!(run(&mut s, "repair", json!({"id": 7})).is_err());
+    }
+
+    #[test]
+    fn text_is_a_solid_on_the_plate_that_a_boolean_engraves() {
+        let mut s = Session::new();
+        let r = run(&mut s, "text", json!({"text": "LAMINA", "height": 8, "depth": 1, "at": [0, 0]})).unwrap();
+        assert_eq!(r["watertight"], true);
+        let size = r["size"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect::<Vec<_>>();
+        assert!((size[1] - 8.0).abs() < 0.3 && (size[2] - 1.0).abs() < 1e-6 && size[0] > 30.0, "{size:?}");
+        let o = s.scene.get(1).unwrap();
+        assert_eq!(o.name, "LAMINA");
+        let (lo, hi) = o.bounds().unwrap();
+        assert!(((lo[0] + hi[0]) / 2.0).abs() < 1e-3 && lo[2].abs() < 1e-9, "centred on the plate: {lo:?} {hi:?}");
+        for bad in
+            [json!({"text": "", "height": 5, "depth": 1}), json!({"text": "a", "height": 5, "depth": 0}), json!({"text": "a", "height": 5})]
+        {
+            assert!(run(&mut s, "text", bad.clone()).is_err(), "{bad}");
+        }
     }
 
     #[test]

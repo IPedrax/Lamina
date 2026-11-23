@@ -33,7 +33,13 @@
     <Property Id="ARPHELPLINK" Value="https://github.com/IPedrax/Lamina/issues" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
-      <Directory Id="INSTALLFOLDER" Name="Lamina" />
+      <Directory Id="INSTALLFOLDER" Name="Lamina">
+        <!-- The font's licence, where NOTICE says it is: fonts\ibm-plex-mono\OFL.txt. Not "FontsFolder", which is Windows
+             Installer's own name for the system Fonts folder. -->
+        <Directory Id="LicenceFontsFolder" Name="fonts">
+          <Directory Id="PlexMonoFolder" Name="ibm-plex-mono" />
+        </Directory>
+      </Directory>
     </StandardDirectory>
 
     <!-- Where the previous install put Lamina, from the key the app component writes, so an upgrade stays in the folder that was
@@ -83,6 +89,9 @@
       </Component>
       <Component Id="NoticeFile" Directory="INSTALLFOLDER">
         <File Id="Notice" Name="NOTICE.txt" Source="NOTICE" KeyPath="yes" />
+      </Component>
+      <Component Id="PlexMonoLicence" Directory="PlexMonoFolder">
+        <File Id="PlexMonoOfl" Source="assets\fonts\ibm-plex-mono\OFL.txt" KeyPath="yes" />
       </Component>
       <Component Id="ThirdPartyNotices" Directory="INSTALLFOLDER">
         <File Id="ThirdParty" Source="THIRD-PARTY-NOTICES.txt" KeyPath="yes" />

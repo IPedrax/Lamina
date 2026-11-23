@@ -83,7 +83,7 @@ jobs:
           $log = Join-Path $env:RUNNER_TEMP 'install.log'
           $p = Start-Process msiexec.exe -ArgumentList "/i `"$env:MSI`" INSTALLFOLDER=`"$dir`" /qn /l*v `"$log`"" -Wait -PassThru
           if ($p.ExitCode -notin 0, 3010) { Get-Content $log -Tail 60; throw "the install exited with $($p.ExitCode)" }
-          foreach ($file in 'lamina.exe', 'lamina-cli.exe', 'LICENSE.txt', 'NOTICE.txt', 'THIRD-PARTY-NOTICES.txt') {
+          foreach ($file in 'lamina.exe', 'lamina-cli.exe', 'LICENSE.txt', 'NOTICE.txt', 'THIRD-PARTY-NOTICES.txt', 'fonts\ibm-plex-mono\OFL.txt') {
             if (-not (Test-Path "$dir\$file")) { throw "expected $file in the folder that was chosen" }
           }
           & "$dir\lamina-cli.exe" --version
