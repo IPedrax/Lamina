@@ -6,6 +6,21 @@ use serde_json::Value;
 
 pub use crate::support::Support;
 
+/// Where a wall loop starts.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Seam {
+    /// Near the seam of the layer below, so the marks make one tidy line.
+    #[default]
+    Aligned,
+    /// At the back (greatest y), out of sight from the front.
+    Rear,
+    /// In the sharpest inside corner, where a mark hides; else the sharpest corner.
+    Sharpest,
+    /// Wherever the head already is: the least travel, the marks scattered.
+    Nearest,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct Profile {
@@ -51,6 +66,8 @@ pub struct Profile {
     pub retract_min_travel: f64,
     /// The part-cooling fan, 0 to 255, from the third layer on.
     pub fan_speed: f64,
+    /// Where each wall loop starts, which leaves a small mark.
+    pub seam: Seam,
     // Supports
     pub support: Support,
     /// Degrees from vertical beyond which a surface is held up.
@@ -110,6 +127,7 @@ impl Default for Profile {
             retract_speed: 35.0,
             retract_min_travel: 1.5,
             fan_speed: 255.0,
+            seam: Seam::Aligned,
             support: Support::Off,
             support_angle: 45.0,
             support_density: 0.15,
@@ -238,6 +256,7 @@ mod tests {
             json!({"start_gcode": "M104 S[nozzle_temp"}),
             json!({"bed": [0, 0]}),
             json!({"support": "sometimes"}),
+            json!({"seam": "random"}),
             json!({"support": "everywhere", "support_angle": 0}),
         ] {
             assert!(Profile::from_json(&bad).is_err(), "{bad}");

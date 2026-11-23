@@ -681,6 +681,26 @@ impl App {
                     ui.add(egui::DragValue::new(&mut p.first_layer_bed_temp).range(0.0..=400.0));
                 });
                 ui.end_row();
+                ui.label("Seam");
+                {
+                    use lamina_slicer::profile::Seam;
+                    let name = |s: Seam| match s {
+                        Seam::Aligned => "Aligned",
+                        Seam::Rear => "At the back",
+                        Seam::Sharpest => "Sharpest corner",
+                        Seam::Nearest => "Nearest",
+                    };
+                    egui::ComboBox::from_id_salt("seam")
+                        .selected_text(name(p.seam))
+                        .show_ui(ui, |ui| {
+                            for s in [Seam::Aligned, Seam::Rear, Seam::Sharpest, Seam::Nearest] {
+                                ui.selectable_value(&mut p.seam, s, name(s));
+                            }
+                        })
+                        .response
+                        .on_hover_text("Where each wall starts and ends, which leaves a small mark");
+                }
+                ui.end_row();
                 ui.label("Brim, mm / raft layers");
                 ui.horizontal(|ui| {
                     ui.add(egui::DragValue::new(&mut p.brim_width).speed(0.5).range(0.0..=50.0))

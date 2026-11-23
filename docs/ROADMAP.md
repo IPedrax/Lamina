@@ -49,6 +49,9 @@ Priorities:
 - **4.3 Connected infill.** After clipping, each infill, support and raft line's end is joined to the next line's start by the
   straight path, or else the way along the boundary both ends lie on, when it is within three line spacings and clipping shows it
   stays inside the region. Retractions in the golden files fell by about 40 %; a 20 mm cube retracts about twice a layer.
+- **4.4 Seam placement.** `seam`: `aligned` (the default: each loop starts nearest the seam below that is nearest it, the first
+  layer at the rear), `rear` (greatest y, the leftmost of ties), `sharpest` (the sharpest inside corner, else the sharpest corner,
+  rearmost of near ties) or `nearest` (where the head is, as before). Skirt and brim loops follow the same rule.
 - **7.1 File menu and drag and drop.** New, Open, Open recent, Save, Save as (with Ctrl shortcuts), Import mesh, Export G-code and
   Quit; the title shows the project and a star for unsaved changes; New, Open and closing ask first when something would be lost;
   files dropped on the window are opened (`.lamina`) or imported (meshes). `apps/lamina/src/files.rs`.
@@ -61,7 +64,7 @@ The P0 items, in the order that unblocks the most:
 2. Golden G-code tests and real test prints (0.1, 0.2). The golden tests are done; the test prints need hardware.
 3. Mesh repair on import, and 3MF import (2.2, 2.3, 1.4). Done.
 4. Supports and brim (4.1, 4.2). Done.
-5. Connected infill and seam placement (4.3, 4.4), so prints are clean and do not string.
+5. Connected infill and seam placement (4.3, 4.4). Done.
 6. One undo step per chat turn (0.3), and continuous integration (8.1).
 7. Send to Moonraker and OctoPrint (6.1, 6.2).
 
@@ -169,10 +172,6 @@ between two clicked points in the window, and add a core `measure {a, b}` for ag
 ## 4. Slicer
 
 **4.1b Tree supports (P2).** Branches that grow from the plate toward each overhang, using less plastic than the straight columns of 4.1.
-
-**4.4 Seam placement (P0).** How: in `print.rs`, choose where each wall loop starts with a `seam` field. `aligned` starts nearest the
-previous layer's seam. `rear` uses the point with the greatest y. `sharpest` uses the most concave corner. Today the loop starts
-nearest the head.
 
 **4.5 More infill patterns (P1).** How: an `infill_pattern` field.
 - Grid: both directions on every layer.
