@@ -36,6 +36,36 @@ The engine, the slicer, the AI chat, the CLI and the planned desktop are Rust. T
 same stack as BIMCraft, so its camera and mesh pass can be lifted. There is no web view, no JavaScript and no Python in the app or
 its build.
 
+## The desktop
+
+`apps/lamina` is egui 0.36 on eframe (wgpu), the same stack as BIMCraft. The window is thin: it reads `session.scene` and changes it
+only through `Session::execute`, so the assistant, a button and a script do the same thing the same way.
+
+- **3D view (`view3d.rs`).** An orbit camera (drag to orbit, right or middle drag to pan, wheel to zoom) and a small CPU
+  rasterizer that draws the plate, its 10 mm grid and the objects into an egui texture, redrawn only when the scene, the selection,
+  the camera or the size changes. Each pixel keeps the id of the object drawn there, which is the click-to-pick. BIMCraft draws on
+  the GPU (`crates/ui-egui/src/gpu.rs`, rendering into a texture egui shows); that is the upgrade for meshes past a few hundred
+  thousand triangles, and the CPU path stays as the fallback, as it does there.
+- **Objects and settings.** Add a box, cylinder or sphere (placed beside what is on the plate, in one undo step, through
+  `add_primitive {at}`), import an STL, move, rotate, scale, drop, delete, and with several picked, join, subtract or intersect.
+  The print settings edit the profile the slice uses.
+- **Preview (`preview.rs`).** Slicing reads the G-code back into layers of moves, so the preview shows exactly what the printer
+  will be told: one layer, the one below it dim, travels optional, zoomed to what is printed. It says when the plate has changed since.
+- **Assistant (`chat.rs`).** The ported chat, with provider, model and key; the turn runs in the frame on the window's session.
+  The key comes from the provider's environment variable or the box. Ticking Remember keeps it in the settings file, sealed by
+  `lamina_assistant::seal`: by default under a secret built into the program, which the panel says plainly is scrambling and not
+  protection from anyone who has Lamina; with a passphrase, AES-256-GCM under PBKDF2 (600,000 rounds), typed once a session and
+  stored nowhere. This is BIMCraft's design, ported with the crate.
+- **Settings (`settings.rs`).** One `settings.json` in the user's settings folder (`%APPDATA%\Lamina`,
+  `~/Library/Application Support/Lamina`, or `~/.config/lamina`; `LAMINA_SETTINGS` overrides): the print settings, the presets last
+  chosen, the user's own presets and the sealed keys. Read hostilely, a part that does not read is left out and said; written whole,
+  to a file only its owner can read, then moved over the old one, and only when something changed and nothing is being dragged.
+- **Presets.** Built in, in `lamina-slicer` (`presets.rs`), so the CLI, the MCP server and the assistant name them too (`slice
+  {printer, filament}`, `slicer_presets`): printers by plate and firmware (Marlin, Klipper with `PRINT_START`, a centred delta) and
+  filaments (PLA, PETG, ABS, ASA, TPU). A printer sets only the machine's fields, a filament only temperatures and fan, so they combine
+  and leave the print settings alone. The values are typical figures of our own, not any maker's profile. The window adds presets of
+  the user's own, saved from the settings shown.
+
 ## Skills for the app's AI
 
 The in-app assistant is a model behind a provider API, so what it knows about modelling for a printer has to come from its prompt
@@ -123,7 +153,7 @@ BIMCraft is `/mnt/ai/RevCraft` (github.com/IPedrax/BIMCraft), same author, MIT O
 | `apps/bimcraft-cli/src/mcp.rs` | `apps/lamina-cli/src/mcp.rs` | ported, own session only |
 | `crates/core/src/mesh_in.rs` (OBJ and glTF readers, "knows no element") | not yet | next: lift as `core/obj.rs`, `core/gltf.rs` |
 | `crates/ui-egui/src/orbit.rs`, `camera.rs`, `gpu.rs`, `gpu.wgsl`, `retained.rs` (wgpu 3D view, orbit/pan/zoom, picking) | `apps/lamina/src/view3d.rs`, own and smaller | the same interaction, drawn on the CPU; the GPU pass is the upgrade |
-| `crates/ui-egui` panels, `assistant.rs` (chat palette) | `apps/lamina/src/chat.rs` | rewritten small on the same chat; no saved key, no Co-Work |
+| `crates/ui-egui` panels, `assistant.rs` (chat palette) | `apps/lamina/src/chat.rs` | rewritten small on the same chat, with the same Remember and passphrase; no Co-Work |
 | `crates/core/src/view3d.rs`, `view3d/gpu.rs` | not reused | BIM-specific (levels, elements, section boxes) |
 
 The assistant's only coupling to the core was `Session`, `bridge::run`, `Access` and `find`, which is why porting it took a

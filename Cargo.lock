@@ -1998,7 +1998,9 @@ dependencies = [
  "lamina-csg",
  "lamina-slicer",
  "rfd",
+ "serde",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

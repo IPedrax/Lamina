@@ -5,16 +5,20 @@
 
 pub mod chat;
 pub mod preview;
+pub mod settings;
 pub mod view3d;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use egui::{Color32, Key, Panel, RichText, ScrollArea, Ui};
 use lamina_assistant::net::Net;
 use lamina_core::{Mesh, Session};
+use lamina_slicer::presets::{self, FILAMENT_FIELDS, FILAMENTS, PRINTER_FIELDS, PRINTERS};
 use lamina_slicer::profile::Profile;
 use serde_json::{Value, json};
 
+use crate::settings::{Presets, Settings};
 use crate::view3d::Pick;
 
 /// A session with every command: the core's, the slicer's and the booleans'.
@@ -29,6 +33,36 @@ pub fn session() -> Session {
 pub enum Tab {
     Prepare,
     Preview,
+}
+
+/// The two kinds of preset: a printer sets the machine's fields, a filament its temperatures and fan.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind {
+    Printer,
+    Filament,
+}
+
+impl Kind {
+    fn word(self) -> &'static str {
+        match self {
+            Kind::Printer => "printer",
+            Kind::Filament => "filament",
+        }
+    }
+
+    fn fields(self) -> &'static [&'static str] {
+        match self {
+            Kind::Printer => PRINTER_FIELDS,
+            Kind::Filament => FILAMENT_FIELDS,
+        }
+    }
+
+    fn built_in(self) -> &'static [presets::Preset] {
+        match self {
+            Kind::Printer => PRINTERS,
+            Kind::Filament => FILAMENTS,
+        }
+    }
 }
 
 /// A slice of the plate, read back from its G-code, and which scene it was made of (so the preview can say it is out of date).
@@ -55,6 +89,15 @@ pub struct App {
     degrees: f64,
     factor: f64,
     pub chat: chat::ChatPanel,
+    /// The presets last applied, as labels, and the ones the user saved.
+    pub printer: Option<String>,
+    pub filament: Option<String>,
+    pub my_printers: Presets,
+    pub my_filaments: Presets,
+    preset_name: String,
+    /// Where the settings are kept between runs, and what was last written there; none in a test that does not ask for it.
+    pub settings_path: Option<PathBuf>,
+    saved: Option<Settings>,
 }
 
 impl App {
@@ -76,7 +119,164 @@ impl App {
             degrees: 90.0,
             factor: 1.5,
             chat: chat::ChatPanel::new(net),
+            printer: None,
+            filament: None,
+            my_printers: Presets::new(),
+            my_filaments: Presets::new(),
+            preset_name: String::new(),
+            settings_path: None,
+            saved: None,
         }
+    }
+
+    /// A window that keeps its settings in the file at `path`: what is there now is taken (the print settings, the presets, a
+    /// remembered key), and what changes is written back as it changes. What does not read is left out and said on the status bar.
+    pub fn with_settings(session: Session, net: Arc<dyn Net>, path: PathBuf) -> App {
+        let mut app = App::new(session, net);
+        let (s, mut notes) = Settings::read(&path);
+        if let Some(p) = &s.profile {
+            app.profile = p.clone();
+        }
+        (app.printer, app.filament, app.my_printers, app.my_filaments) =
+            (s.printer.clone(), s.filament.clone(), s.printers.clone(), s.filaments.clone());
+        notes.extend(app.chat.restore(s.keys.clone()));
+        if !notes.is_empty() {
+            (app.failed, app.status) = (true, notes.join(" "));
+        }
+        app.saved = Some(app.settings());
+        app.settings_path = Some(path);
+        app
+    }
+
+    /// What the settings file would hold now.
+    fn settings(&self) -> Settings {
+        Settings {
+            profile: Some(self.profile.clone()),
+            printer: self.printer.clone(),
+            filament: self.filament.clone(),
+            printers: self.my_printers.clone(),
+            filaments: self.my_filaments.clone(),
+            keys: self.chat.saved.clone(),
+        }
+    }
+
+    /// Writes the settings when they changed, but not while a value is being dragged, so a drag is one write and not one a frame.
+    fn persist(&mut self, ctx: &egui::Context) {
+        let Some(path) = self.settings_path.clone() else { return };
+        let now = self.settings();
+        if self.saved.as_ref() == Some(&now) || ctx.input(|i| i.pointer.any_down()) {
+            return;
+        }
+        match now.write(&path) {
+            Ok(()) => self.saved = Some(now),
+            Err(e) => {
+                (self.failed, self.status) = (true, e);
+                self.saved = Some(now); // said once, not every frame
+            }
+        }
+    }
+
+    fn mine(&mut self, kind: Kind) -> &mut Presets {
+        match kind {
+            Kind::Printer => &mut self.my_printers,
+            Kind::Filament => &mut self.my_filaments,
+        }
+    }
+
+    /// Applies a preset by name, the user's first, then a built-in: its fields go over the settings shown, the others stay.
+    pub fn apply_preset(&mut self, kind: Kind, name: &str) {
+        let fields = match self.mine(kind).get(name) {
+            Some(f) => Ok(f.clone()),
+            None => presets::find(kind.built_in(), name).map(|p| p.fields()),
+        };
+        match fields.and_then(|f| presets::apply(&self.profile, &f)) {
+            Ok(p) => {
+                self.profile = p;
+                let label = Some(name.to_string());
+                match kind {
+                    Kind::Printer => self.printer = label,
+                    Kind::Filament => self.filament = label,
+                }
+                (self.failed, self.status) = (false, String::new());
+            }
+            Err(e) => (self.failed, self.status) = (true, e),
+        }
+    }
+
+    /// Saves the settings shown that a preset of `kind` holds, under `name`.
+    pub fn save_preset(&mut self, kind: Kind, name: &str) {
+        let name = name.trim();
+        if name.is_empty() || name.chars().count() > 60 {
+            (self.failed, self.status) = (true, "A preset needs a name of up to 60 characters.".into());
+            return;
+        }
+        if kind.built_in().iter().any(|p| p.name.eq_ignore_ascii_case(name)) {
+            (self.failed, self.status) = (true, format!("\"{name}\" is a built-in {}: choose another name.", kind.word()));
+            return;
+        }
+        let fields = presets::capture(&self.profile, kind.fields());
+        self.mine(kind).insert(name.to_string(), fields);
+        self.apply_preset(kind, name);
+        self.status = format!("Saved the {} preset \"{name}\".", kind.word());
+    }
+
+    fn preset_picker(&mut self, ui: &mut Ui, kind: Kind) {
+        let chosen = match kind {
+            Kind::Printer => self.printer.clone(),
+            Kind::Filament => self.filament.clone(),
+        };
+        let mut pick = None;
+        let mine: Vec<String> = match kind {
+            Kind::Printer => self.my_printers.keys().cloned().collect(),
+            Kind::Filament => self.my_filaments.keys().cloned().collect(),
+        };
+        egui::ComboBox::from_id_salt(kind.word()).selected_text(chosen.clone().unwrap_or_else(|| "Choose...".into())).width(170.0).show_ui(
+            ui,
+            |ui| {
+                for p in kind.built_in() {
+                    if ui.selectable_label(chosen.as_deref() == Some(p.name), p.name).on_hover_text(p.about).clicked() {
+                        pick = Some(p.name.to_string());
+                    }
+                }
+                if !mine.is_empty() {
+                    ui.separator();
+                }
+                for name in &mine {
+                    if ui.selectable_label(chosen.as_deref() == Some(name), format!("{name} (mine)")).clicked() {
+                        pick = Some(name.clone());
+                    }
+                }
+            },
+        );
+        if let Some(name) = chosen.filter(|n| mine.contains(n))
+            && ui.small_button("Delete").on_hover_text("Forget this preset of yours").clicked()
+        {
+            self.mine(kind).remove(&name);
+        }
+        if let Some(name) = pick {
+            self.apply_preset(kind, &name);
+        }
+    }
+
+    fn presets_ui(&mut self, ui: &mut Ui) {
+        egui::Grid::new("presets").num_columns(2).show(ui, |ui| {
+            ui.label("Printer");
+            ui.horizontal(|ui| self.preset_picker(ui, Kind::Printer));
+            ui.end_row();
+            ui.label("Filament");
+            ui.horizontal(|ui| self.preset_picker(ui, Kind::Filament));
+            ui.end_row();
+        });
+        ui.horizontal(|ui| {
+            ui.add(egui::TextEdit::singleline(&mut self.preset_name).hint_text("Preset name").desired_width(110.0));
+            let name = self.preset_name.clone();
+            if ui.button("Save printer").on_hover_text("Save the plate, nozzle, G-code and retraction shown").clicked() {
+                self.save_preset(Kind::Printer, &name);
+            }
+            if ui.button("Save filament").on_hover_text("Save the temperatures and fan shown").clicked() {
+                self.save_preset(Kind::Filament, &name);
+            }
+        });
     }
 
     /// Runs a command as a button does: an error goes to the status bar, and the selection forgets objects that are gone.
@@ -179,6 +379,7 @@ impl App {
             Tab::Prepare => self.prepare(ui),
             Tab::Preview => self.preview(ui),
         });
+        self.persist(&ctx);
     }
 
     fn keys(&mut self, ctx: &egui::Context) {
@@ -300,7 +501,8 @@ impl App {
             }
         }
         ui.separator();
-        self.settings(ui);
+        self.presets_ui(ui);
+        self.print_settings(ui);
     }
 
     fn boolean(&mut self, command: &str, params: Value) {
@@ -347,7 +549,7 @@ impl App {
         });
     }
 
-    fn settings(&mut self, ui: &mut Ui) {
+    fn print_settings(&mut self, ui: &mut Ui) {
         egui::CollapsingHeader::new("Print settings").default_open(true).show(ui, |ui| {
             let p = &mut self.profile;
             let max_layer = p.nozzle * 0.8;
@@ -535,6 +737,58 @@ mod tests {
         press(&mut h, "Send");
         let log = &h.state().chat.chat.log;
         assert!(matches!(log.last(), Some(lamina_assistant::Line::Note(n)) if n.contains("key")), "{log:?}");
+    }
+
+    #[test]
+    fn a_printer_and_a_filament_preset_set_their_own_fields() {
+        let mut h = window();
+        h.get_by_label("Printer");
+        let app = h.state_mut();
+        app.profile.infill_density = 0.4;
+        app.apply_preset(Kind::Printer, "Generic 350 mm, Klipper");
+        app.apply_preset(Kind::Filament, "ABS");
+        assert_eq!((app.profile.bed, app.profile.bed_temp, app.profile.infill_density), ([350.0, 350.0], 100.0, 0.4));
+        assert_eq!((app.printer.as_deref(), app.filament.as_deref()), (Some("Generic 350 mm, Klipper"), Some("ABS")));
+        app.apply_preset(Kind::Filament, "wood");
+        assert!(app.failed && app.status.contains("there are"));
+    }
+
+    #[test]
+    fn a_preset_of_your_own_is_saved_and_applied_again() {
+        let mut h = window();
+        let app = h.state_mut();
+        app.profile.nozzle_temp = 236.0;
+        app.save_preset(Kind::Filament, "My PETG");
+        app.save_preset(Kind::Filament, "PLA");
+        assert!(app.failed, "a built-in's name is refused");
+        app.apply_preset(Kind::Filament, "PLA");
+        assert_eq!(app.profile.nozzle_temp, 210.0);
+        app.apply_preset(Kind::Filament, "My PETG");
+        assert_eq!(app.profile.nozzle_temp, 236.0);
+    }
+
+    #[test]
+    fn settings_and_a_remembered_key_outlive_the_window() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let net = || -> Arc<dyn Net> { Arc::new(lamina_assistant::testing::Fake::default()) };
+        let mut first = App::with_settings(session(), net(), path.clone());
+        first.apply_preset(Kind::Printer, "Generic 250 x 210 mm, Marlin");
+        first.profile.layer_height = 0.12;
+        first.my_filaments.insert("Mine".into(), presets::capture(&first.profile, FILAMENT_FIELDS));
+        first.chat.chat.provider = lamina_assistant::Provider::Gemini;
+        let mut h = Harness::builder().with_size([1400.0, 860.0]).build_ui_state(|ui, app: &mut App| app.show(ui), first);
+        h.run();
+        let app = h.state_mut();
+        app.chat.saved.insert("gemini".into(), lamina_assistant::seal::seal("AIza-test-0123456789abcdef").unwrap());
+        h.run();
+        assert!(path.exists());
+        let again = App::with_settings(session(), net(), path);
+        assert!(!again.failed, "{}", again.status);
+        assert_eq!((again.profile.bed, again.profile.layer_height), ([250.0, 210.0], 0.12));
+        assert_eq!(again.printer.as_deref(), Some("Generic 250 x 210 mm, Marlin"));
+        assert!(again.my_filaments.contains_key("Mine"));
+        assert_eq!(again.chat.saved.len(), 1);
     }
 
     /// The whole window as a picture, for looking at: `cargo test -p lamina -- --ignored picture_of_the_window`.

@@ -38,7 +38,8 @@ command that fails, panics or leaves the scene invalid changes nothing, and each
 
 To let an agent outside the app model for you, point your MCP client at `lamina-cli mcp`. The assistant inside the app needs an
 Anthropic, OpenAI or Gemini key, typed in its panel or set in the provider's usual environment variable (`ANTHROPIC_API_KEY`,
-`OPENAI_API_KEY`, `GEMINI_API_KEY`); the key is kept for the session only.
+`OPENAI_API_KEY`, `GEMINI_API_KEY`). Tick Remember to keep it on this computer, sealed in the settings file, and add a passphrase to
+encrypt it. Printer and filament presets are in the app's settings panel and, by name, in `slice` and `slice_check`.
 
 ## Design notes
 

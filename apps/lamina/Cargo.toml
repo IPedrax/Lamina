@@ -24,6 +24,7 @@ lamina-core = { workspace = true }
 lamina-slicer = { workspace = true }
 lamina-csg = { workspace = true }
 lamina-assistant = { path = "../../crates/assistant" }
+serde = { workspace = true }
 serde_json = { workspace = true }
 eframe = "0.36"
 egui = "0.36"
@@ -33,3 +34,4 @@ rfd = "0.17"
 lamina-assistant = { path = "../../crates/assistant", features = ["testing"] }
 # `wgpu` lets a test render the whole window to a picture, to look at it.
 egui_kittest = { version = "0.36", features = ["wgpu"] }
+tempfile = "3"

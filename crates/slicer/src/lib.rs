@@ -3,6 +3,7 @@
 
 pub mod commands;
 pub mod geom;
+pub mod presets;
 pub mod print;
 pub mod profile;
 pub mod slice;

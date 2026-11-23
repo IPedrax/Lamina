@@ -4,6 +4,7 @@ use lamina_core::{Command, Files, Mesh, Session};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use crate::presets::{self, FILAMENTS, PRINTERS};
 use crate::print;
 use crate::profile::Profile;
 
@@ -13,8 +14,9 @@ const MAX_PROFILE_FILE: u64 = 1 << 20;
 pub static COMMANDS: &[Command] = &[
     Command {
         id: "slice",
-        params: "{path, ids?, profile?, profile_path?} slices the objects on the plate (all, or `ids`) to G-code at `path`. `profile` is an object \
-                 of the fields that differ from the defaults (see `slicer_profile`), applied over `profile_path`'s JSON file when both are given. \
+        params: "{path, ids?, printer?, filament?, profile?, profile_path?} slices the objects on the plate (all, or `ids`) to G-code at `path`. \
+                 Settings are laid over the defaults in this order: `profile_path`'s JSON file, the `printer` and `filament` presets by name (see \
+                 `slicer_presets`), then `profile`, an object of the fields that differ (see `slicer_profile`). \
                  Returns {path, layers, filament_mm, print_seconds, warnings}. It refuses an object that is off the plate, below it or too tall, and says which",
         run: slice,
         undoable: false,
@@ -22,8 +24,16 @@ pub static COMMANDS: &[Command] = &[
     },
     Command {
         id: "slice_check",
-        params: "{ids?, profile?} the same slice as `slice`, with no file written: what would print and whether it can. Returns {layers, filament_mm, print_seconds, print_time, warnings}, or an error saying what does not fit the plate (off it, below it, too tall) or what a setting must be. Use it to check a model before the user exports it",
+        params: "{ids?, printer?, filament?, profile?} the same slice as `slice`, with no file written: what would print and whether it can. Returns {layers, filament_mm, print_seconds, print_time, warnings}, or an error saying what does not fit the plate (off it, below it, too tall) or what a setting must be. Use it to check a model before the user exports it",
         run: slice_check,
+        undoable: false,
+        files: Files::None,
+    },
+    Command {
+        id: "slicer_presets",
+        params: "{} the built-in printer and filament presets: {printers:[{name, about, fields}], filaments:[...]}. Pass a name as `printer` or \
+                 `filament` to `slice` or `slice_check`; a printer sets the machine's fields, a filament its temperatures and fan",
+        run: list_presets,
         undoable: false,
         files: Files::None,
     },
@@ -41,6 +51,8 @@ pub static COMMANDS: &[Command] = &[
 struct Args {
     path: String,
     ids: Option<Vec<u32>>,
+    printer: Option<String>,
+    filament: Option<String>,
     profile: Option<Value>,
     profile_path: Option<String>,
 }
@@ -49,12 +61,22 @@ struct Args {
 #[serde(deny_unknown_fields)]
 struct Check {
     ids: Option<Vec<u32>>,
+    printer: Option<String>,
+    filament: Option<String>,
     profile: Option<Value>,
 }
 
-/// Slices the objects named (or all) with the profile: the file's, if any, with `over`'s fields on top.
-fn run(s: &Session, ids: Option<&[u32]>, over: Option<Value>, profile_path: Option<&str>) -> Result<print::Output, String> {
-    let mut merged = match profile_path {
+/// The settings a slice asks for, in the order they are laid over the defaults.
+struct Settings<'a> {
+    file: Option<&'a str>,
+    printer: Option<&'a str>,
+    filament: Option<&'a str>,
+    over: Option<Value>,
+}
+
+/// Slices the objects named (or all) with the settings: the defaults, then the file's, the presets', and the fields given.
+fn run(s: &Session, ids: Option<&[u32]>, settings: Settings) -> Result<print::Output, String> {
+    let mut merged = match settings.file {
         Some(file) => {
             if std::fs::metadata(file).map_err(|e| format!("{file}: {e}"))?.len() > MAX_PROFILE_FILE {
                 return Err(format!("{file} is larger than {MAX_PROFILE_FILE} bytes"));
@@ -64,10 +86,16 @@ fn run(s: &Session, ids: Option<&[u32]>, over: Option<Value>, profile_path: Opti
         }
         None => json!({}),
     };
-    match (&mut merged, over) {
-        (Value::Object(base), Some(Value::Object(over))) => base.extend(over),
-        (_, Some(Value::Null) | None) => {}
-        (_, Some(_)) => return Err("`profile` is an object".into()),
+    let Value::Object(base) = &mut merged else { return Err("a profile file holds one JSON object".into()) };
+    for (name, list) in [(settings.printer, PRINTERS), (settings.filament, FILAMENTS)] {
+        if let Some(name) = name {
+            base.extend(presets::find(list, name)?.fields());
+        }
+    }
+    match settings.over {
+        Some(Value::Object(over)) => base.extend(over),
+        Some(Value::Null) | None => {}
+        Some(_) => return Err("`profile` is an object".into()),
     }
     let profile = Profile::from_json(&merged)?;
     let objects: Vec<(u32, Mesh)> = match ids {
@@ -92,7 +120,9 @@ fn summary(out: &print::Output) -> Value {
 
 fn slice(s: &mut Session, p: &Value) -> Result<Value, String> {
     let a = Args::deserialize(p).map_err(|e| format!("bad parameters: {e}"))?;
-    let out = run(s, a.ids.as_deref(), a.profile, a.profile_path.as_deref())?;
+    let settings =
+        Settings { file: a.profile_path.as_deref(), printer: a.printer.as_deref(), filament: a.filament.as_deref(), over: a.profile };
+    let out = run(s, a.ids.as_deref(), settings)?;
     std::fs::write(&a.path, &out.gcode).map_err(|e| format!("{}: {e}", a.path))?;
     let mut v = summary(&out);
     v["path"] = json!(a.path);
@@ -101,7 +131,15 @@ fn slice(s: &mut Session, p: &Value) -> Result<Value, String> {
 
 fn slice_check(s: &mut Session, p: &Value) -> Result<Value, String> {
     let a = Check::deserialize(p).map_err(|e| format!("bad parameters: {e}"))?;
-    run(s, a.ids.as_deref(), a.profile, None).map(|out| summary(&out))
+    let settings = Settings { file: None, printer: a.printer.as_deref(), filament: a.filament.as_deref(), over: a.profile };
+    run(s, a.ids.as_deref(), settings).map(|out| summary(&out))
+}
+
+fn list_presets(_: &mut Session, _: &Value) -> Result<Value, String> {
+    let list = |l: &[presets::Preset]| -> Vec<Value> {
+        l.iter().map(|p| json!({"name": p.name, "about": p.about, "fields": p.fields()})).collect()
+    };
+    Ok(json!({"printers": list(PRINTERS), "filaments": list(FILAMENTS)}))
 }
 
 fn profile(_: &mut Session, _: &Value) -> Result<Value, String> {
@@ -147,6 +185,23 @@ mod tests {
         s.execute("scale", &json!({"id": 1, "factor": 20})).unwrap();
         assert!(s.execute("slice_check", &json!({})).unwrap_err().contains("does not fit"));
         assert!(s.execute("slice_check", &json!({"path": "/tmp/x"})).is_err());
+    }
+
+    #[test]
+    fn presets_go_in_by_name_and_the_fields_given_win() {
+        let path = std::env::temp_dir().join(format!("lamina-presets-{}.gcode", std::process::id())).to_string_lossy().into_owned();
+        let mut s = session();
+        s.execute("add_primitive", &json!({"kind": "box", "size": [10, 10, 4]})).unwrap();
+        s.execute("slice", &json!({"path": path, "printer": "Generic 300 mm, Klipper", "filament": "petg", "profile": {"bed_temp": 85}}))
+            .unwrap();
+        let g = std::fs::read_to_string(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        assert!(g.contains("PRINT_START BED=80 EXTRUDER=245"), "the printer's start G-code with the filament's first layer");
+        assert!(g.contains("M140 S85"), "the bed temperature given wins over the filament's 80");
+        assert!(g.contains("X150."), "a 300 mm plate puts the middle at 150");
+        assert!(s.execute("slice_check", &json!({"filament": "wood"})).unwrap_err().contains("there are: PLA"));
+        let listed = s.execute("slicer_presets", &json!({})).unwrap();
+        assert!(listed["filaments"].as_array().unwrap().iter().any(|f| f["name"] == "ABS" && f["fields"]["fan_speed"] == 0));
     }
 
     #[test]

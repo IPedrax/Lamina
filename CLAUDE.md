@@ -40,8 +40,9 @@ cargo test --workspace
   `engine.rs` (`Session`: execute, undo, script, catalog), `commands.rs` (the built-in commands).
   `bridge.rs` (what an agent may ask: execute, script, catalog; read-only access).
 - `crates/slicer`: `slice.rs` (mesh to closed loops per layer), `geom.rs` (polygon booleans, offsets, line clipping on i_overlay),
-  `print.rs` (walls, skins, infill, skirt, the G-code writer), `profile.rs` (settings, checks, `[name]` placeholders), `commands.rs`
-  (`slice`, `slice_check`, `slicer_profile`; an app adds them with `session.register(lamina_slicer::COMMANDS)`).
+  `print.rs` (walls, skins, infill, skirt, the G-code writer), `profile.rs` (settings, checks, `[name]` placeholders), `presets.rs`
+  (built-in printers and filaments, each setting only its own fields; `apply` and `capture`), `commands.rs`
+  (`slice`, `slice_check`, `slicer_presets`, `slicer_profile`; an app adds them with `session.register(lamina_slicer::COMMANDS)`).
 - `crates/csg`: `boolean(op, a, b)`, the only code that knows csgrs, and the `union`, `difference` and `intersect` commands. A result is
   returned only if `sound` accepts it (closed, possible volume and bounds): refuse, never return a broken mesh. `vendor/core2` is a
   stand-in for a yanked crate csgrs asks for (see the root `Cargo.toml`).
@@ -51,7 +52,8 @@ cargo test --workspace
   crate that may use `ureq` or `ring` (a test in `lamina-core` checks every manifest).
 - `apps/lamina`: the desktop app (`lamina`): `lib.rs` (the window: toolbar, plate panel, settings, tabs), `view3d.rs` (orbit camera
   and a CPU rasterizer that keeps an object id per pixel for picking), `preview.rs` (layers read back from the G-code, one drawn at a
-  time), `chat.rs` (the assistant panel). Thin: it changes the scene only through `Session::execute`. UI behaviour is tested with
+  time), `chat.rs` (the assistant panel, with Remember and a passphrase for the key), `settings.rs` (the settings file: print settings,
+  presets, sealed keys; read hostilely, written whole and owner-only). Thin: it changes the scene only through `Session::execute`. UI behaviour is tested with
   egui_kittest; `picture_of_the_window` (ignored, needs a GPU) renders it to a PNG to look at.
 - `apps/lamina-cli`: the `lamina-cli` binary and `mcp.rs`, the MCP server.
 - `docs/`: `ARCHITECTURE.md` (what is ported from BIMCraft and what is not), `RESEARCH.md` (slicers, editors, crates, licence flags),

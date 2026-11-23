@@ -10,6 +10,8 @@ Ordered by what unblocks the next thing. Each step ends with a test that looks a
 - CLI and MCP server. AI chat engine ported from BIMCraft (providers, sealed key, attachments, tool layer).
 - The desktop app: a 3D view with orbit and picking, the objects' tools, print settings, slicing with a layer preview, G-code
   export, and the assistant panel.
+- Printer and filament presets (built in, by name from any front end, and the user's own in the app), and a settings file that
+  keeps the print settings, the presets and, when asked, the assistant's key, sealed.
 - Booleans: `union`, `difference` and `intersect`, with crack repair and a gate that refuses broken results.
 - The AI's skills (`read_skill`: modelling, design for FDM, slicer settings, working from a picture) and `slice_check`, a slice that
   writes no file, so the model can verify a part while `slice` stays refused to it.
@@ -27,7 +29,7 @@ Ordered by what unblocks the next thing. Each step ends with a test that looks a
 4. **Profiles.** Printer, filament and process presets with inheritance; Prusa-style `{expr}` placeholders; import Orca and Prusa profiles.
 5. **Send to printer.** Moonraker, then OctoPrint (one multipart POST each), as a separate crate that only the desktop and CLI use.
 6. **Desktop, next round.** A move/rotate/scale gizmo in the 3D view; the GPU viewport for big meshes; a 3D G-code preview with
-   colours by feature; a remembered key (the sealed store is ported); saving and opening a project file; printer and filament presets.
+   colours by feature; saving and opening a project file; process presets (fine, standard, draft) and importing Orca or Prusa profiles.
 7. **A render the model can see.** A `preview` command that draws the scene to a PNG and returns it to the model, so it can compare
    with a picture the way the OpenSCAD and CadQuery skills do. Anthropic takes images in tool results; the other providers need a
    follow-up message.

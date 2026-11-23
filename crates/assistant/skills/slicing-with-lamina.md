@@ -10,6 +10,11 @@ says what is wrong.
 
 ## Settings
 
+`slicer_presets` lists the built-in printers and filaments. Name them instead of setting temperatures by hand:
+`slice_check {printer: "Generic 300 mm, Klipper", filament: "PETG"}`. A printer preset sets the plate, nozzle, start and end G-code
+and retraction; a filament preset sets the temperatures and the fan; `profile` fields given as well win over both. The user's own
+presets live in the app's settings panel, not in these commands.
+
 `slicer_profile` prints every setting with its default. Pass only the fields that differ, for example
 `slice_check {profile: {layer_height: 0.16, infill_density: 0.3}}`. A misspelled field is an error, and so is a value out of range.
 
