@@ -162,6 +162,10 @@ Priorities:
   `set_object_settings {id, profile}` with the fields an object may change (walls, skins, infill and its pattern, seam, speeds,
   supports); `print::gcode_each` slices each object with its settings over the plate's. Layer heights stay plate-wide, as objects
   share layers. A small "This object's settings" panel in the window. Modifier meshes are P2.
+- **4.15 Adaptive layer height.** `adaptive_layers` and `min_layer_height`: `slice::adaptive_tops` chooses the plate's layer tops
+  from every object's sloped faces (a face whose normal makes `n_z` with the vertical allows at most `min / n_z`, walls and flat
+  faces ask nothing, growth at most half a layer per layer), and each object is sliced at those tops (`slice::layers_at`), so the
+  objects stay level. A process preset field, in the window beside the layer height. Uniform slicing is unchanged.
 - **5.1 Process presets.** A third kind in `presets.rs`, setting only the layers and the strength (`PROCESS_FIELDS`): 0.12 mm Fine,
   0.20 mm Standard, 0.28 mm Draft and Strong. `slice` and `slice_check` take `process` (after the printer and the filament, before
   `profile`); `slicer_presets` lists them; the window has a Process picker and Save process, kept in the settings file and the
@@ -267,9 +271,6 @@ what is wrong before adding features.
 ## 4. Slicer
 
 **4.1b Tree supports (P2).** Branches that grow from the plate toward each overhang, using less plastic than the straight columns of 4.1.
-
-**4.15 Adaptive layer height (P2).** How: choose each layer's height from the steepest surface it crosses, thin where faces are close to
-flat. `slice::layers` takes a function from z to height instead of one number.
 
 **4.16 Ironing, fuzzy skin, arc fitting (P2).**
 - Ironing: a low-flow pass over top surfaces.

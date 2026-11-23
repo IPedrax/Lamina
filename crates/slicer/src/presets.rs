@@ -36,8 +36,17 @@ pub const PRINTER_FIELDS: &[&str] = &[
     "travel_speed",
 ];
 /// The fields a process preset may set: the layers and the strength, never the machine or the filament.
-pub const PROCESS_FIELDS: &[&str] =
-    &["layer_height", "first_layer_height", "perimeters", "top_layers", "bottom_layers", "infill_density", "infill_pattern"];
+pub const PROCESS_FIELDS: &[&str] = &[
+    "layer_height",
+    "first_layer_height",
+    "adaptive_layers",
+    "min_layer_height",
+    "perimeters",
+    "top_layers",
+    "bottom_layers",
+    "infill_density",
+    "infill_pattern",
+];
 pub const FILAMENT_FIELDS: &[&str] =
     &["nozzle_temp", "first_layer_nozzle_temp", "bed_temp", "first_layer_bed_temp", "fan_speed", "pressure_advance"];
 

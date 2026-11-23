@@ -26,6 +26,8 @@ presets live in the app's settings panel, not in these commands.
   `pressure_advance`.
 - Quality: `layer_height` from 0.02 mm up to 0.8 times the nozzle (0.12 for fine detail, 0.2 normal, 0.28 draft),
   `first_layer_height`, `perimeters` (2 normal, 3 to 4 for strength), `top_layers` and `bottom_layers` (enough for 0.8 to 1.0 mm of skin).
+  `adaptive_layers: true` varies each layer from `min_layer_height` (0.08) up to `layer_height`: thin on domes and gentle slopes,
+  thick on walls; good for figures and rounded parts, little use for boxy ones.
 - Strength: `infill_density` from 0 to 1. Use 0.1 to 0.2 for looks and 0.3 to 0.5 for parts that bear load. Walls add more
   strength than infill does. `infill_pattern`: `"lines"` (the default, quickest), `"grid"`, `"triangles"` (stiff in the plane),
   `"gyroid"` (strong in every direction, the usual choice for functional parts) or `"honeycomb"`.

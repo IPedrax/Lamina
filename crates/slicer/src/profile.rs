@@ -64,6 +64,10 @@ pub struct Profile {
     pub perimeters: u32,
     /// Vase mode: above the bottom layers, one wall climbing without a stop, no infill, an open top.
     pub vase: bool,
+    /// Adaptive layers: each layer from `min_layer_height` to `layer_height`, thin where a surface is near flat (so its steps stay
+    /// small) and thick on walls. The plate's layers, shared by every object.
+    pub adaptive_layers: bool,
+    pub min_layer_height: f64,
     pub top_layers: u32,
     pub bottom_layers: u32,
     /// 0 to 1: the share of the inside that is filled.
@@ -158,6 +162,8 @@ impl Default for Profile {
             first_layer_height: 0.2,
             perimeters: 2,
             vase: false,
+            adaptive_layers: false,
+            min_layer_height: 0.08,
             top_layers: 4,
             bottom_layers: 4,
             infill_density: 0.15,
@@ -209,6 +215,7 @@ pub const LIMITS: &[(&str, f64, f64)] = &[
     ("filament_diameter", 1.0, 3.5),
     ("layer_height", 0.02, 1.6),
     ("first_layer_height", 0.02, 1.6),
+    ("min_layer_height", 0.02, 1.6),
     ("perimeters", 0.0, 10.0),
     ("top_layers", 0.0, 50.0),
     ("bottom_layers", 0.0, 50.0),
@@ -267,6 +274,8 @@ pub const ABOUT: &[(&str, &str)] = &[
     ("thumbnail", "A picture of the plate this many pixels square, for the printer's screen; 0 for none."),
     ("layer_height", "The height of each layer, mm: thinner is finer and slower."),
     ("first_layer_height", "The height of the first layer, mm: a thicker one sticks better to an uneven plate."),
+    ("adaptive_layers", "Thin layers where a surface is nearly flat, so its steps hardly show, and thick ones on walls, to save time."),
+    ("min_layer_height", "The thinnest an adaptive layer may be, mm; the thickest is the layer height."),
     ("perimeters", "Walls round each layer: more is stronger and slower."),
     ("vase", "Vase mode: above the bottom, one wall that climbs without stopping, with no infill and an open top."),
     ("top_layers", "Solid layers that close the top of the part."),
@@ -341,6 +350,12 @@ impl Profile {
             let v = all.get(name).and_then(Value::as_f64).ok_or_else(|| format!("internal: `{name}` is not a number"))?;
             let hi = if name.ends_with("layer_height") { hi.min(self.nozzle * 0.8) } else { hi };
             within(name, v, lo, hi)?;
+        }
+        if self.adaptive_layers && self.min_layer_height > self.layer_height {
+            return Err(format!(
+                "`min_layer_height` ({}) must be no more than `layer_height` ({}): adaptive layers go from one to the other",
+                self.min_layer_height, self.layer_height
+            ));
         }
         self.expand(&self.start_gcode)?;
         self.expand(&self.end_gcode)?;

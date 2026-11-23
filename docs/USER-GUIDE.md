@@ -132,6 +132,8 @@ The same text is the tooltip in the window. The names are the ones a profile fil
 | `thumbnail` | A picture of the plate this many pixels square, for the printer's screen; 0 for none. |  | 0 |
 | `layer_height` | The height of each layer, mm: thinner is finer and slower. | 0.02 to 1.6 | 0.2 |
 | `first_layer_height` | The height of the first layer, mm: a thicker one sticks better to an uneven plate. | 0.02 to 1.6 | 0.2 |
+| `adaptive_layers` | Thin layers where a surface is nearly flat, so its steps hardly show, and thick ones on walls, to save time. |  | false |
+| `min_layer_height` | The thinnest an adaptive layer may be, mm; the thickest is the layer height. | 0.02 to 1.6 | 0.08 |
 | `perimeters` | Walls round each layer: more is stronger and slower. | 0 to 10 | 2 |
 | `vase` | Vase mode: above the bottom, one wall that climbs without stopping, with no infill and an open top. |  | false |
 | `top_layers` | Solid layers that close the top of the part. | 0 to 50 | 4 |

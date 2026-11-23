@@ -1100,6 +1100,13 @@ impl App {
                 ui.label("Layer height, mm");
                 ui.add(egui::DragValue::new(&mut p.layer_height).speed(0.01).range(0.02..=max_layer)).on_hover_text(hint("layer_height"));
                 ui.end_row();
+                ui.label("");
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut p.adaptive_layers, "Adaptive, from").on_hover_text(hint("adaptive_layers"));
+                    ui.add_enabled(p.adaptive_layers, egui::DragValue::new(&mut p.min_layer_height).speed(0.01).range(0.02..=max_layer))
+                        .on_hover_text(hint("min_layer_height"));
+                });
+                ui.end_row();
                 ui.label("First layer, mm");
                 ui.add(egui::DragValue::new(&mut p.first_layer_height).speed(0.01).range(0.02..=max_layer))
                     .on_hover_text(hint("first_layer_height"));

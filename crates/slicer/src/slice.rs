@@ -34,6 +34,79 @@ pub fn layers(mesh: &Mesh, first: f64, height: f64) -> Result<Vec<Layer>, String
     if count > 1 && tops[count - 1] - tops[count - 2] < 0.25 * height {
         tops.pop();
     }
+    layers_at(mesh, &tops)
+}
+
+/// Layer tops for the plate whose objects are `meshes`, of varying height (adaptive layers): the first `first` mm, then each as
+/// thick as `max` allows unless a sloped face it crosses would show steps taller than `min` (a face whose normal makes `n_z` with the
+/// vertical leaves steps of about the layer height times `n_z`, so the layer is at most `min / n_z`), never thinner than `min` and
+/// growing by at most half from one layer to the next. Flat faces (tops and floors) and walls ask for nothing.
+pub fn adaptive_tops(meshes: &[&Mesh], first: f64, min: f64, max: f64) -> Result<Vec<f64>, String> {
+    if !(first.is_finite() && first > 0.0 && min.is_finite() && min > 0.0 && max.is_finite() && max >= min) {
+        return Err("layer heights must be above 0, the smallest no more than the largest".into());
+    }
+    let top = meshes.iter().filter_map(|m| m.bounds()).map(|(_, hi)| hi[2]).fold(0.0, f64::max);
+    if top <= first {
+        return Ok(vec![first]);
+    }
+    // What each thin band of height allows, from the sloped faces crossing it.
+    const BAND: f64 = 0.01;
+    let bands = ((top / BAND).ceil() as usize + 1).min(4 * MAX_LAYERS * 100);
+    let mut allowed = vec![max; bands];
+    for m in meshes {
+        for i in 0..m.triangles.len() {
+            let Some(c) = m.tri(i) else { continue };
+            let (u, v) =
+                ([c[1][0] - c[0][0], c[1][1] - c[0][1], c[1][2] - c[0][2]], [c[2][0] - c[0][0], c[2][1] - c[0][1], c[2][2] - c[0][2]]);
+            let n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+            let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+            if len < 1e-12 {
+                continue;
+            }
+            let nz = (n[2] / len).abs();
+            if !(0.05..=0.999).contains(&nz) {
+                continue; // a wall, or a flat top or floor: no steps to hide
+            }
+            let limit = (min / nz).clamp(min, max);
+            let (lo, hi) = (c.iter().map(|p| p[2]).fold(f64::MAX, f64::min), c.iter().map(|p| p[2]).fold(f64::MIN, f64::max));
+            let (from, to) = (((lo / BAND).floor().max(0.0)) as usize, ((hi / BAND).ceil() as usize).min(bands - 1));
+            for a in allowed.iter_mut().take(to + 1).skip(from) {
+                *a = a.min(limit);
+            }
+        }
+    }
+    let mut tops = vec![first];
+    let (mut z, mut last) = (first, first.min(max));
+    while z < top {
+        let mut h = (last * 1.5).min(max);
+        // As thick as every band it would cross allows.
+        let (from, to) = ((z / BAND) as usize, (((z + h) / BAND).ceil() as usize).min(bands - 1));
+        if let Some(least) = allowed.get(from..=to.max(from)).and_then(|a| a.iter().copied().reduce(f64::min)) {
+            h = h.min(least).max(min);
+        }
+        z = (z + h).min(top);
+        // A last layer thinner than a quarter of the smallest is a sliver: the plate is that much shorter.
+        if top - z < 0.25 * min && z < top {
+            z = top;
+        }
+        tops.push(z);
+        last = h;
+        if tops.len() > MAX_LAYERS {
+            return Err(format!("more than the {MAX_LAYERS} layers a plate may have: raise the smallest layer height"));
+        }
+    }
+    Ok(tops)
+}
+
+/// The layers of `mesh` with these tops (rising, the first above 0), each cut through its middle.
+pub fn layers_at(mesh: &Mesh, tops: &[f64]) -> Result<Vec<Layer>, String> {
+    if tops.is_empty()
+        || tops.len() > MAX_LAYERS
+        || tops[0] <= 0.0
+        || tops.windows(2).any(|w| w[1].partial_cmp(&w[0]) != Some(std::cmp::Ordering::Greater))
+    {
+        return Err("internal: layer tops must rise from above 0".into());
+    }
     // Each layer is cut through its middle and printed as thick as it really is, so a clamped last layer is not over-extruded.
     let bottoms: Vec<f64> = std::iter::once(0.0).chain(tops.iter().copied()).collect();
     let cuts: Vec<f64> = tops.iter().zip(&bottoms).map(|(t, b)| (t + b) / 2.0).collect();
@@ -127,6 +200,32 @@ pub fn area(l: &[P2]) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn adaptive_layers_are_thin_on_gentle_slopes_and_thick_on_walls() {
+        let (min, max) = (0.08, 0.3);
+        // A box's walls are vertical: every layer as thick as allowed.
+        let b = Mesh::cuboid([10.0, 10.0, 10.0]);
+        let tops = adaptive_tops(&[&b], 0.2, min, max).unwrap();
+        let heights: Vec<f64> = tops.windows(2).map(|w| w[1] - w[0]).collect();
+        assert!(heights.iter().skip(3).all(|h| (h - max).abs() < 1e-9 || *h < max), "{heights:?}");
+        assert!((tops.last().unwrap() - 10.0).abs() < 1e-9);
+        assert!(tops.len() < 40, "{}", tops.len());
+        // A sphere: thin near its top and bottom, where the surface is nearly flat, thick at its waist.
+        let s = Mesh::sphere(10.0, 96);
+        let tops = adaptive_tops(&[&s], 0.2, min, max).unwrap();
+        let at = |z: f64| tops.windows(2).find(|w| w[0] <= z && z < w[1]).map(|w| w[1] - w[0]).unwrap();
+        assert!(at(10.0) > 2.0 * at(19.5), "waist {} vs top {}", at(10.0), at(19.5));
+        assert!(at(19.5) < 0.12 && at(10.0) > 0.25, "{} {}", at(19.5), at(10.0));
+        let uniform_fine = (20.0 / min) as usize;
+        assert!(tops.len() < uniform_fine && tops.len() > (20.0 / max) as usize, "{}", tops.len());
+        // Each layer grows by half at most, and the sphere slices at those tops into closed loops.
+        assert!(tops.windows(3).all(|w| (w[2] - w[1]) <= 1.5 * (w[1] - w[0]) + 1e-9));
+        let layers = layers_at(&s, &tops).unwrap();
+        assert_eq!(layers.len(), tops.len());
+        assert!(!layers[tops.len() / 2].loops.is_empty() && layers[tops.len() / 2].loops.iter().all(|l| l.len() > 10));
+        assert!(layers_at(&s, &[0.2, 0.1]).is_err() && layers_at(&s, &[]).is_err());
+    }
 
     #[test]
     fn a_box_is_cut_into_square_layers() {

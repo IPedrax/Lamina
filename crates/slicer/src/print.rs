@@ -114,7 +114,9 @@ pub fn gcode(objects: &[(u32, Mesh)], p: &Profile) -> Result<Output, String> {
 pub fn gcode_each(objects: &[(u32, Mesh)], own: &[Option<Profile>], p: &Profile) -> Result<Output, String> {
     for o in own.iter().flatten() {
         o.check()?;
-        if (o.layer_height, o.first_layer_height) != (p.layer_height, p.first_layer_height) {
+        if (o.layer_height, o.first_layer_height, o.adaptive_layers, o.min_layer_height)
+            != (p.layer_height, p.first_layer_height, p.adaptive_layers, p.min_layer_height)
+        {
             return Err("an object's own settings may not change the layer heights: every object prints on the plate's layers".into());
         }
     }
@@ -146,11 +148,18 @@ pub fn gcode_each(objects: &[(u32, Mesh)], own: &[Option<Profile>], p: &Profile)
         warnings.push("vase mode climbs one wall without stopping: with several objects the head stops at each, so print one".into());
     }
     let w = p.line_width();
+    // Adaptive layers are the plate's, chosen from every object's surfaces, so the objects' layers stay level with each other.
+    let tops = if p.adaptive_layers {
+        let meshes: Vec<&Mesh> = objects.iter().map(|(_, m)| m).collect();
+        Some(slice::adaptive_tops(&meshes, p.first_layer_height, p.min_layer_height, p.layer_height)?)
+    } else {
+        None
+    };
     // The plan of each object: its first layer's region, then its layers and the strokes of each.
     let mut plans: Vec<ObjectPlan> = objects
         .iter()
         .enumerate()
-        .map(|(i, (_, m))| plan(m, own.get(i).and_then(Option::as_ref).unwrap_or(p), w))
+        .map(|(i, (_, m))| plan(m, own.get(i).and_then(Option::as_ref).unwrap_or(p), w, tops.as_deref()))
         .collect::<Result<_, _>>()?;
     let count = plans.iter().map(|(_, l)| l.len()).max().unwrap_or(0);
 
@@ -377,9 +386,31 @@ fn flow(height: f64, width: f64, filament: f64) -> f64 {
     (height * (width - height) + PI * (height / 2.0).powi(2)) / (PI * (filament / 2.0).powi(2))
 }
 
-/// One object's first layer as a region, then its layers as (top z, thickness, strokes in print order).
-fn plan(mesh: &Mesh, p: &Profile, w: f64) -> Result<ObjectPlan, String> {
-    let layers = slice::layers(mesh, p.first_layer_height, p.layer_height)?;
+/// The plate's layer `tops` as one object of height `top` takes them: those below its top, the last one ending at its top (a sliver
+/// thinner than a quarter of `min` joins the layer under it).
+fn tops_for(tops: &[f64], top: f64, min: f64) -> Vec<f64> {
+    let mut own: Vec<f64> = tops.iter().copied().take_while(|&t| t < top - 1e-9).collect();
+    match own.last() {
+        Some(&last) if top - last < 0.25 * min && own.len() > 1 => {
+            if let Some(l) = own.last_mut() {
+                *l = top;
+            }
+        }
+        _ => own.push(top.max(tops.first().copied().unwrap_or(top))),
+    }
+    own
+}
+
+/// One object's first layer as a region, then its layers as (top z, thickness, strokes in print order). `tops`: the plate's
+/// adaptive layers, when they are on.
+fn plan(mesh: &Mesh, p: &Profile, w: f64, tops: Option<&[f64]>) -> Result<ObjectPlan, String> {
+    let layers = match tops {
+        Some(tops) => {
+            let top = mesh.bounds().ok_or("the mesh is empty")?.1[2];
+            slice::layers_at(mesh, &tops_for(tops, top, p.min_layer_height))?
+        }
+        None => slice::layers(mesh, p.first_layer_height, p.layer_height)?,
+    };
     let regions: Vec<Region> = layers.iter().map(|l| geom::region(&l.loops)).collect();
     let heights: Vec<f64> = layers.iter().map(|l| l.height).collect();
     let supports = support::plan(&regions, &heights, p);
@@ -972,6 +1003,28 @@ mod tests {
 
     fn cube(side: f64) -> Vec<(u32, Mesh)> {
         vec![(1, Mesh::cuboid([side, side, side]))]
+    }
+
+    #[test]
+    fn adaptive_layers_follow_the_surface_and_stay_level_across_objects() {
+        let p = Profile { adaptive_layers: true, min_layer_height: 0.08, layer_height: 0.28, ..Profile::default() };
+        let ball = Mesh::sphere(10.0, 64).transformed(&lamina_core::Transform::translate([-20.0, 0.0, 0.0]));
+        let block = Mesh::cuboid([10.0, 10.0, 6.0]).transformed(&lamina_core::Transform::translate([20.0, 0.0, 0.0]));
+        let out = gcode_each(&[(1, ball.clone()), (2, block)], &[], &p).unwrap();
+        // Fewer layers than all at the thinnest, more than all at the thickest.
+        assert!(out.layers > (20.0 / 0.28) as usize && out.layers < (20.0 / 0.08) as usize, "{}", out.layers);
+        // The heights the head steps through vary, and every object prints on the same ones.
+        let zs: Vec<f64> =
+            out.gcode.lines().filter_map(|l| l.strip_prefix("G1 Z")).filter_map(|r| r.split(' ').next()?.parse().ok()).collect();
+        let steps: Vec<f64> = zs.windows(2).map(|w| ((w[1] - w[0]) * 1000.0).round() / 1000.0).filter(|d| *d > 0.0).collect();
+        let (lo, hi) = steps.iter().fold((f64::MAX, f64::MIN), |(a, b), d| (a.min(*d), b.max(*d)));
+        assert!(lo < 0.1 && hi > 0.25, "{lo} {hi}");
+        let tops = slice::adaptive_tops(&[&ball], p.first_layer_height, 0.08, 0.28).unwrap();
+        assert_eq!(tops_for(&tops, 6.0, 0.08).last(), Some(&6.0));
+        assert!(tops_for(&tops, 6.0, 0.08).iter().zip(&tops).all(|(a, b)| a == b || *a == 6.0));
+        // The smallest may not pass the largest.
+        let bad = Profile { min_layer_height: 0.3, ..p };
+        assert!(gcode(&[(1, ball)], &bad).unwrap_err().contains("min_layer_height"));
     }
 
     #[test]
