@@ -294,3 +294,46 @@ mod tests {
         }
     }
 }
+
+/// The pictures in docs/USER-GUIDE.md, drawn by the same code as the window's 3D view and preview:
+/// `cargo test -p lamina --lib -- --ignored docs_pictures` writes them again.
+#[cfg(test)]
+mod docs {
+    use lamina_core::render::{Camera, draw, draw_paths, png};
+    use lamina_core::{Mesh, Session, Transform};
+    use serde_json::json;
+
+    #[test]
+    #[ignore]
+    fn docs_pictures() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/images");
+        std::fs::create_dir_all(&dir).unwrap();
+        // The plate: a few parts, one picked.
+        let mut s = Session::new();
+        for cmd in [
+            json!(["add_primitive", {"kind": "rounded_box", "size": [40, 30, 12], "corner": 4, "at": [-35, 0]}]),
+            json!(["add_primitive", {"kind": "cylinder", "radius": 12, "height": 25, "at": [10, 15]}]),
+            json!(["add_primitive", {"kind": "torus", "radius": 12, "tube": 4, "at": [40, -20]}]),
+        ] {
+            s.execute(cmd[0].as_str().unwrap(), &cmd[1]).unwrap();
+        }
+        let mut camera = Camera { azimuth: -60.0, elevation: 32.0, ..Camera::default() };
+        camera.frame_all(([-60.0, -40.0, 0.0], [60.0, 40.0, 25.0]));
+        std::fs::write(dir.join("plate.png"), png(&draw(&s.scene, &[2], &camera, [220.0, 220.0], [960, 600]))).unwrap();
+        // The preview: a part with an overhang on supports, with a brim, three quarters printed.
+        let p = lamina_slicer::profile::Profile {
+            support: lamina_slicer::profile::Support::FromPlate,
+            brim_width: 4.0,
+            ..lamina_slicer::profile::Profile::default()
+        };
+        let post = Mesh::cuboid([10.0, 10.0, 20.0]).transformed(&Transform::translate([-12.0, 0.0, 0.0]));
+        let arm = Mesh::cuboid([34.0, 10.0, 5.0]).transformed(&Transform::translate([0.0, 0.0, 15.0]));
+        let out = lamina_slicer::print::gcode(&[(1, post), (2, arm)], &p).unwrap();
+        let layers = super::parse(&out.gcode);
+        let machine = super::Machine { bed: p.bed, centred: p.origin_center, width: p.line_width() };
+        let lines = super::paths(&layers, layers.len() * 4 / 5, machine, false);
+        let mut camera = Camera { azimuth: -55.0, elevation: 28.0, ..Camera::default() };
+        camera.frame_all(([-25.0, -10.0, 0.0], [25.0, 10.0, 20.0]));
+        std::fs::write(dir.join("preview.png"), png(&draw_paths(&lines, &camera, p.bed, [960, 600]))).unwrap();
+    }
+}

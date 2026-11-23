@@ -77,5 +77,6 @@ CI (`.github/workflows/ci.yml`) runs the same three on Linux, Windows and macOS 
 - `apps/lamina-cli`: the `lamina-cli` binary and `mcp.rs`, the MCP server.
 - `packaging/` and `.github/workflows/release.yml`: the AppImage and tarball, the MSI and the DMG, built and published on each tag
   (lifted from BIMCraft's). `assets/app-icon/` is written by `apps/lamina/src/icon.rs` (`LAMINA_BLESS=1`; a test checks they match).
-- `docs/`: `ARCHITECTURE.md` (what is ported from BIMCraft and what is not), `RESEARCH.md` (slicers, editors, crates, licence flags),
+- `docs/`: `USER-GUIDE.md` (for people using the window; its table of settings is checked by `crates/slicer/tests/guide.rs`,
+  its pictures in `images/` drawn by `docs_pictures`), `ARCHITECTURE.md` (what is ported from BIMCraft and what is not), `RESEARCH.md` (slicers, editors, crates, licence flags),
   `ROADMAP.md` (the order of work and the known limits).

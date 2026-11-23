@@ -1,0 +1,158 @@
+# Lamina user guide
+
+Lamina models parts, slices them for an FDM printer and sends the G-code to it, with an assistant you can ask to do any of it. This
+guide covers the window. The command line and the MCP server are in the [README](../README.md).
+
+## Install
+
+Each tagged release has an installer on the [releases page](https://github.com/IPedrax/Lamina/releases): an MSI for Windows, an
+AppImage (or a tarball) for Linux, a DMG for macOS. From source, `cargo build --release` makes `target/release/lamina` (the window)
+and `target/release/lamina-cli` (the command line).
+
+## The window
+
+- **The menu bar.** File (new, open, recent, save, import and export), Edit (undo, redo, the history of steps, duplicate, delete,
+  pick all) and View (frame, the theme, the keyboard shortcuts).
+- **The toolbar.** Shapes to add, Import mesh, Undo and Redo, Frame all, Arrange, the three tools (Move, Lay flat, Measure),
+  Prepare and Preview, Slice and Export G-code.
+- **The plate panel, on the left.** The objects on the plate, what can be done to the picked one, the presets, the print settings
+  and the printer connection. Hover over any setting to see what it does and its range.
+- **The 3D view, in the middle.** Drag to orbit, right-drag or middle-drag to pan, scroll to zoom. Click an object to pick it,
+  Ctrl-click to pick several, right-click for a menu.
+- **The assistant, on the right.** A chat with a model that drives Lamina with the same commands as the buttons.
+- **The status bar, at the bottom.** What the last action did, or why it could not; while slicing or a boolean runs, a spinner, the
+  seconds so far and Cancel.
+
+![The plate in the 3D view, the picked cylinder in orange](images/plate.png)
+
+## Your first print
+
+1. **Put a part on the plate.** Import an STL, 3MF, OBJ or glTF file (the toolbar, File, or drop it on the window), add a shape from
+   the toolbar, or ask the assistant for a part. An imported mesh with holes or flipped faces is repaired where it can be, and a
+   warning sign beside it says what is still wrong; Repair mends what it can.
+2. **Choose your printer, filament and process.** The three preset pickers in the plate panel set only their own fields: a printer
+   sets the plate, the nozzle and the G-code, a filament its temperatures and fan, a process the layers and the strength. Built in
+   are generic Marlin and Klipper printers of 220 to 350 mm and a delta, PLA, PETG, ABS, ASA and TPU 95A, and 0.12 mm Fine, 0.20 mm
+   Standard, 0.28 mm Draft and Strong.
+3. **Check the settings.** The main ones are in Print settings; the rest are in the groups under it (speeds, retraction and travel,
+   the skirt, cooling, support details, the machine, and the start and end G-code).
+4. **Slice.** Press Slice. The window stays usable while it works, and the Preview tab opens when it is done, with the layer count,
+   the filament and the print time.
+5. **Look at the preview.** In 3D, every layer up to the one on the slider is drawn, coloured by what it prints: walls, infill,
+   bridges, supports, brim and skirt, with a legend. Layer shows that one layer from above, with its travels if you tick Travels.
+6. **Print.** Export G-code writes a file for an SD card or USB stick. With a printer connection (below), Send to printer uploads it
+   and Send and print starts it.
+
+![The 3D preview: walls in orange and yellow, infill in red and purple, supports in green, the brim in blue](images/preview.png)
+
+## Arranging and changing parts
+
+- **Move** (G): drag the arrows to move along an axis, the square to slide on the plate, a ring to turn about its axis, the corner
+  square to scale. Moves snap; hold Shift to move freely. The position and size fields under the object take typed numbers.
+- **Lay flat** (L): click a face to turn it down onto the plate. **Measure** (M): click two points.
+- **R** turns the picked objects 90 degrees, **F** frames them, **A** arranges the plate, **Ctrl+D** duplicates, **Delete**
+  deletes. View, Keyboard shortcuts lists them all.
+- With one object picked, the panel also has Move by, Rotate, Mirror, Scale, Cut at a height, Duplicate and Drop to plate. With
+  several, Union, Subtract and Intersect. A boolean that cannot give a sound solid says so and changes nothing.
+- **This object's settings** lets one object print differently from the rest: its own walls, infill, seam, speeds or supports.
+- **Undo** takes back a whole step, a drag or a chat turn alike; Edit, History goes back several at once.
+
+## Presets of your own
+
+Type a name under the preset pickers and press Save printer, Save filament or Save process: it saves the fields that kind of preset
+holds, as they are shown. Your presets are listed under the built-in ones, marked "mine", and kept in the settings file.
+
+## The assistant
+
+Choose a provider (Anthropic Claude, OpenAI or Google Gemini) and give it an API key. The key is used for that session only, unless
+you tick Remember: then the settings file keeps it sealed. By default it is sealed under a secret built into Lamina, which scrambles
+it but does not protect it from anyone who has Lamina; with a passphrase it is encrypted under that, and you type the passphrase
+once a session. A key in `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `GEMINI_API_KEY` is used instead of any typed one.
+
+The assistant can model (shapes, outlines extruded into parts, booleans, cuts, arranging), set up and check a slice, and read notes
+on design for FDM and on slicer settings. It cannot touch files, so it cannot open, save or export anything or send to a printer,
+and it cannot start a new plate. Each of its turns is one undo step.
+
+## Sending to a printer
+
+Printer connection, in the plate panel, takes the kind of server (Moonraker for Klipper, or OctoPrint) and its address, such as
+`192.168.1.20` or `http://printer.local:7125`. OctoPrint needs an API key (from its settings, Application Keys); Moonraker only if it
+asks for one. Lamina sends only to that address, and only when you press Send. The key is kept like the assistant's: in memory, or
+sealed in the settings file when Remember is ticked.
+
+## Projects and autosave
+
+Save writes a `.lamina` project: the plate, each object's recipe and its own settings, and the print settings and presets chosen.
+Open brings it all back. The window asks before New, Open or closing would lose changes. Every two minutes the plate is written to
+an autosave beside the settings file; after a crash, the next start offers it back.
+
+## Where Lamina keeps things
+
+The settings file is `settings.json` in `%APPDATA%\Lamina` on Windows, `~/Library/Application Support/Lamina` on macOS and
+`~/.config/lamina` on Linux (or wherever `LAMINA_SETTINGS` says). Beside it are the autosave and `lamina.log`, which records each
+start, the graphics adapter, errors and crashes: attach it to a bug report.
+
+If the window does not open, look in `lamina.log`. On Windows, a start that died tries another graphics backend the next time
+(DirectX 12, then Vulkan, then OpenGL). Setting `WGPU_BACKEND` to `vulkan`, `dx12`, `metal` or `opengl` chooses one yourself.
+
+## Every setting
+
+The same text is the tooltip in the window. The names are the ones a profile file, a project and the assistant use.
+
+<!-- settings:begin -->
+| Setting | What it does | Range | Default |
+|---|---|---|---|
+| `bed` | The plate's size, mm, x then y. |  | 220.0 x 220.0 |
+| `origin_center` | Whether the printer's zero is the middle of the plate (most delta printers) instead of its front left corner. |  | false |
+| `max_height` | The tallest the printer can print, mm. | 1 to 2000 | 250.0 |
+| `pressure_advance` | The filament's pressure advance (linear advance on Marlin), sent at the start; 0 leaves the printer's own. | 0 to 2 | 0.0 |
+| `max_acceleration` | The printer's acceleration, mm/s2: the print time estimate plans each move with it. | 10 to 100000 | 1500.0 |
+| `junction_deviation` | How fast the printer takes corners (Marlin's junction deviation, mm); used for the time estimate. | 0 to 1 | 0.013 |
+| `nozzle` | The nozzle's diameter, mm: lines are this wide, and layers at most 80 % of it. | 0.1 to 2 | 0.4 |
+| `filament_diameter` | The filament's diameter, mm, usually 1.75. | 1 to 3.5 | 1.75 |
+| `start_gcode` | G-code sent before the print; [name] is replaced by that setting. |  | see the window |
+| `end_gcode` | G-code sent after the print; [name] is replaced by that setting. |  | see the window |
+| `firmware` | The printer's firmware: Klipper also gets object markers, so one failed object can be cancelled alone. |  | `marlin` |
+| `firmware_retraction` | Retract with the firmware's G10 and G11, so the printer's own retraction settings apply. |  | false |
+| `thumbnail` | A picture of the plate this many pixels square, for the printer's screen; 0 for none. |  | 0 |
+| `layer_height` | The height of each layer, mm: thinner is finer and slower. | 0.02 to 1.6 | 0.2 |
+| `first_layer_height` | The height of the first layer, mm: a thicker one sticks better to an uneven plate. | 0.02 to 1.6 | 0.2 |
+| `perimeters` | Walls round each layer: more is stronger and slower. | 0 to 10 | 2 |
+| `vase` | Vase mode: above the bottom, one wall that climbs without stopping, with no infill and an open top. |  | false |
+| `top_layers` | Solid layers that close the top of the part. | 0 to 50 | 4 |
+| `bottom_layers` | Solid layers at the bottom of the part. | 0 to 50 | 4 |
+| `infill_density` | How much of the inside is filled, from 0 to 1 (the window shows it in %). | 0 to 1 | 0.15 |
+| `infill_pattern` | The pattern of the sparse infill: lines, grid, triangles, gyroid or honeycomb. |  | `lines` |
+| `skirt_loops` | Loops round the part on the first layer, not touching it, to start the flow; 0 for none. | 0 to 10 | 1 |
+| `skirt_distance` | How far the skirt stands from the part, mm. | 0 to 50 | 3.0 |
+| `brim_width` | Loops round the first layer, touching it, that hold its edges down, mm wide; 0 for none. | 0 to 50 | 0.0 |
+| `raft_layers` | Layers of lines under the part, which is lifted onto them; 0 for none. | 0 to 10 | 0 |
+| `perimeter_speed` | How fast walls print, mm/s. | 1 to 1000 | 45.0 |
+| `infill_speed` | How fast infill and support print, mm/s. | 1 to 1000 | 80.0 |
+| `first_layer_speed` | How fast the first layer prints, mm/s: slower sticks better. | 1 to 1000 | 20.0 |
+| `travel_speed` | How fast the head moves when it is not printing, mm/s. | 1 to 1000 | 150.0 |
+| `nozzle_temp` | The nozzle's temperature, C. | 0 to 400 | 210.0 |
+| `first_layer_nozzle_temp` | The nozzle's temperature for the first layer, C. | 0 to 400 | 215.0 |
+| `bed_temp` | The plate's temperature, C; 0 for an unheated plate. | 0 to 400 | 60.0 |
+| `first_layer_bed_temp` | The plate's temperature for the first layer, C. | 0 to 400 | 60.0 |
+| `retract_length` | How far the filament is pulled back before a travel, mm, so it does not ooze and string. | 0 to 20 | 0.8 |
+| `retract_speed` | How fast the filament is pulled back and pushed again, mm/s. | 1 to 200 | 35.0 |
+| `retract_min_travel` | A travel shorter than this is made without retracting, mm. | 0 to 100 | 1.5 |
+| `combing` | Travel inside the part without retracting, however far: it crosses no gap, so nothing strings. |  | true |
+| `z_hop` | Lift the nozzle by this much while it travels, mm, so it does not knock the part; 0 for none. | 0 to 5 | 0.0 |
+| `wipe_distance` | Retract while moving back along the line just printed, mm, which leaves a smaller blob; 0 for none. | 0 to 10 | 0.0 |
+| `fan_speed` | The part-cooling fan, 0 to 255: off for the first layer, then up in steps to this. | 0 to 255 | 255.0 |
+| `fan_full_layer` | The layer from which the fan runs at its full setting. | 1 to 100 | 3 |
+| `min_layer_time` | A layer that would print faster than this, s, is slowed so it cools before the next. | 0 to 120 | 5.0 |
+| `min_print_speed` | The slowest a layer is slowed to cool, mm/s. | 1 to 100 | 10.0 |
+| `seam` | Where each wall starts and ends, which leaves a small mark. |  | `aligned` |
+| `bridge_speed` | How fast a bridge (solid infill over air) prints, mm/s. | 1 to 1000 | 25.0 |
+| `bridge_flow` | A bridge's flow as a share of the normal flow: under 1 makes thinner strands that sag less. | 0.5 to 1.5 | 1.0 |
+| `bridge_fan` | The part-cooling fan while a bridge prints, 0 to 255. | 0 to 255 | 255.0 |
+| `support` | Supports under overhangs: off, everywhere, or only those that stand on the plate. |  | `off` |
+| `support_angle` | A surface leaning further than this from vertical, degrees, is held up. | 10 to 89 | 45.0 |
+| `support_density` | How much of the support's area its lines fill, from 0 to 1. | 0.05 to 1 | 0.15 |
+| `support_z_gap` | The space between the top of a support and the part, mm, so it comes away. | 0 to 2 | 0.2 |
+| `support_xy_gap` | The space between a support and the part's walls, mm. | 0 to 5 | 0.6 |
+| `support_interface_layers` | Denser layers at the top of a support, under the part, for a cleaner underside. | 0 to 10 | 2 |
+<!-- settings:end -->

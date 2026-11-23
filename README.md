@@ -27,6 +27,8 @@ target/release/lamina-cli run --cmd slicer_profile         # every setting and i
 target/release/lamina-cli commands                         # every command and its parameters
 ```
 
+The [user guide](docs/USER-GUIDE.md) walks through the window, from a first print to the assistant and every setting.
+
 ## How it is built
 
 Everything is a command. The CLI, scripts, the MCP server and the AI chat all go through one engine, `Session::execute`, so a

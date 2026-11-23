@@ -190,6 +190,11 @@ Priorities:
   (each start, the graphics adapter, panics with a backtrace, a failed start, and each error the status bar shows), a message box
   on Windows when the window cannot open, and after a start that died, the next tries another graphics backend (DirectX 12,
   Vulkan, OpenGL on Windows), keeping the one that stays up.
+- **8.3 User guide.** `docs/USER-GUIDE.md`: installing, the window, the first print, arranging and changing parts, presets of your
+  own, the assistant and its key, sending to a printer, projects and autosave, where Lamina keeps things, and a table of every
+  setting made from `profile::ABOUT`, `LIMITS` and the defaults (`crates/slicer/tests/guide.rs` checks it; `LAMINA_BLESS=1`
+  writes it again). Its pictures are drawn by Lamina's CPU renderer (`docs_pictures`, ignored); a picture of the whole window
+  still needs a machine with a graphics card (docs/QUESTIONS.md).
 
 ## Order of work
 
@@ -282,9 +287,6 @@ DMG, each checked against the SHA-256 digest GitHub gives the asset. The release
 
 **8.2 Benchmarks (P2).** How: ignored tests that time slicing a 100,000-triangle mesh and a boolean of two detailed shapes, printed so
 regressions are seen.
-
-**8.3 User guide (P1).** How: `docs/USER-GUIDE.md` with screenshots from `picture_of_the_window`. Cover the first print, presets, the
-assistant and its key, and what each setting does.
 
 **8.4 Licence (P1).** Decide whether to stay MIT or move to MIT OR Apache-2.0 as BIMCraft is (Apache adds a patent grant). Generate a
 full third-party notice for releases, for example with `cargo about`.

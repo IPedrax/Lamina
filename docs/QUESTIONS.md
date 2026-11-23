@@ -72,4 +72,8 @@ Reads work.
 ## Not run: the picture of the window
 
 - `picture_of_the_window` (apps/lamina) needs a graphics adapter, which the session lacks, so no new screenshot was made of the
-  File menu, the printer connection or the new print settings. `docs/lamina-window.png` is the old one.
+  File menu, the printer connection or the new print settings. `docs/lamina-window.png` is the old one. Installing Mesa's software
+  Vulkan driver to get an adapter was not allowed in this session.
+- So the user guide (8.3) shows pictures from Lamina's own CPU renderer instead: the plate in the 3D view and the 3D G-code preview
+  (`docs/images/`, drawn by `cargo test -p lamina --lib -- --ignored docs_pictures`). A picture of the whole window should be added
+  to it from a machine with a graphics card.
