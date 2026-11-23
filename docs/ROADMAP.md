@@ -169,7 +169,11 @@ Priorities:
 - **4.16 Ironing and fuzzy skin.** `ironing` (with `ironing_flow`, `ironing_spacing`, `ironing_speed`): last on each layer, close
   lines at right angles to the top skin over what no layer above covers, `;TYPE:ironing`. `fuzzy_skin` (`fuzzy_thickness`,
   `fuzzy_spacing`): the outer wall's points resampled and moved across it by a seeded generator, so a slice is the same each time;
-  never on the first layer. Both may be set per object, and are in the window's Surface group. Arc fitting is 4.16b.
+  never on the first layer. Both may be set per object, and are in the window's Surface group. Arc fitting is 4.16b, below.
+- **4.16b Arc fitting.** `arc_fitting` and `arc_tolerance`: the writer turns a run of four or more points on one circle (within
+  the tolerance at the points and at each chord's middle, turning one way, radius 0.5 to 500 mm) into one `G2` or `G3` with
+  `I J`, its plastic the arc's length; a hexagon stays a hexagon. The time planner still walks the points, and the preview's
+  reader draws arcs. A 128-sided rod's G-code is a quarter shorter with the same plastic.
 - **5.1 Process presets.** A third kind in `presets.rs`, setting only the layers and the strength (`PROCESS_FIELDS`): 0.12 mm Fine,
   0.20 mm Standard, 0.28 mm Draft and Strong. `slice` and `slice_check` take `process` (after the printer and the filament, before
   `profile`); `slicer_presets` lists them; the window has a Process picker and Save process, kept in the settings file and the
@@ -302,9 +306,6 @@ what is wrong before adding features.
 ## 4. Slicer
 
 **4.1b Tree supports (P2).** Branches that grow from the plate toward each overhang, using less plastic than the straight columns of 4.1.
-
-**4.16b Arc fitting (P2).** Replace runs of points on a circle with `G2`/`G3` within a tolerance, when the firmware supports it. The
-writer, the time planner and the preview's G-code reader all need to know arcs.
 
 **4.17 Multi-material and sequential printing (P2).** These need tool changes, a purge tower, an extruder per object, and for
 sequential printing a check of the print head's clearance.

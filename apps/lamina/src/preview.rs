@@ -64,10 +64,13 @@ pub fn parse(gcode: &str) -> Vec<Layer> {
         }
         let mut words = line.split(';').next().unwrap_or("").split_whitespace();
         let Some(cmd) = words.next() else { continue };
-        if cmd != "G0" && cmd != "G1" {
-            continue;
-        }
-        let (mut nx, mut ny, mut nz, mut e) = (x, y, z, 0f32);
+        let arc = match cmd {
+            "G0" | "G1" => None,
+            "G2" => Some(false),
+            "G3" => Some(true),
+            _ => continue,
+        };
+        let (mut nx, mut ny, mut nz, mut e, mut ci, mut cj) = (x, y, z, 0f32, 0f32, 0f32);
         for w in words {
             let Some((k, v)) = w.split_at_checked(1) else { continue };
             let Ok(v) = v.parse::<f32>() else { continue };
@@ -76,8 +79,34 @@ pub fn parse(gcode: &str) -> Vec<Layer> {
                 "Y" => ny = v,
                 "Z" => nz = v,
                 "E" => e = v,
+                "I" => ci = v,
+                "J" => cj = v,
                 _ => {}
             }
+        }
+        // An arc, drawn as short straight pieces round its centre (I and J from where it starts).
+        if let (Some(ccw), Some(layer)) = (arc, layers.last_mut()) {
+            let c = [x + ci, y + cj];
+            let r = (ci * ci + cj * cj).sqrt();
+            let (a0, a1) = ((y - c[1]).atan2(x - c[0]), (ny - c[1]).atan2(nx - c[0]));
+            let mut sweep = a1 - a0;
+            if ccw && sweep <= 0.0 {
+                sweep += std::f32::consts::TAU;
+            } else if !ccw && sweep >= 0.0 {
+                sweep -= std::f32::consts::TAU;
+            }
+            if r.is_finite() && r > 0.0 && r < 10_000.0 {
+                let steps = ((sweep.abs() / 0.15).ceil() as usize).clamp(1, 256);
+                let mut from = [x, y];
+                for k in 1..=steps {
+                    let t = a0 + sweep * k as f32 / steps as f32;
+                    let to = if k == steps { [nx, ny] } else { [c[0] + r * t.cos(), c[1] + r * t.sin()] };
+                    layer.moves.push(Move { from, to, extrude: e > 0.0, kind });
+                    from = to;
+                }
+            }
+            (x, y, z) = (nx, ny, nz);
+            continue;
         }
         if let Some(layer) = layers.last_mut() {
             // The layer's height is where the head goes before it prints anything on it; the end G-code's lift is not a layer.
@@ -275,6 +304,19 @@ mod tests {
         assert_eq!(both.len(), 4);
         assert!(both[0].color[0] < 245, "a lower layer is darker");
         assert_eq!(both[3].from[2], f64::from(0.4f32));
+    }
+
+    #[test]
+    fn an_arc_is_drawn_round_its_centre() {
+        // A half circle of radius 10 about (10, 0), counter-clockwise from (0, 0) to (20, 0): through (10, -10).
+        let layers = parse(";LAYER:0\nG1 Z0.2\nG0 X0 Y0\nG3 X20 Y0 I10 J0 E1\n");
+        let arc: Vec<&Move> = layers[0].moves.iter().filter(|m| m.extrude).collect();
+        assert!(arc.len() > 10);
+        assert!(arc.iter().all(|m| ((m.to[0] - 10.0).powi(2) + m.to[1].powi(2)).sqrt() - 10.0 < 0.01));
+        assert!(arc.iter().any(|m| m.to[1] < -9.9), "below, as counter-clockwise from the left goes");
+        assert_eq!(arc.last().unwrap().to, [20.0, 0.0]);
+        let cw = parse(";LAYER:0\nG1 Z0.2\nG0 X0 Y0\nG2 X20 Y0 I10 J0 E1\n");
+        assert!(cw[0].moves.iter().any(|m| m.to[1] > 9.9), "clockwise goes over the top");
     }
 
     #[test]

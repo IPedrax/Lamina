@@ -1395,6 +1395,10 @@ impl App {
             ui.end_row();
             ui.checkbox(&mut p.origin_center, "Zero in the middle (delta)").on_hover_text(hint("origin_center"));
             ui.end_row();
+            ui.checkbox(&mut p.arc_fitting, "Curves as arcs (G2, G3)").on_hover_text(hint("arc_fitting"));
+            ui.end_row();
+            field(ui, "Arc tolerance, mm", "arc_tolerance", &mut p.arc_tolerance, 0.005);
+            ui.end_row();
         });
         egui::CollapsingHeader::new("Start and end G-code").show(ui, |ui| {
             ui.label(

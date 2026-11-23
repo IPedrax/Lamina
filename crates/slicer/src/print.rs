@@ -585,6 +585,56 @@ fn fuzz(pts: &[P2], thickness: f64, spacing: f64, layer: usize) -> Vec<P2> {
     if out.len() < 3 { pts.to_vec() } else { out }
 }
 
+/// The circle through three points: its centre, or none when they lie on a line.
+fn circle(a: P2, b: P2, c: P2) -> Option<P2> {
+    let d = 2.0 * (a[0] * (b[1] - c[1]) + b[0] * (c[1] - a[1]) + c[0] * (a[1] - b[1]));
+    if d.abs() < 1e-12 {
+        return None;
+    }
+    let (a2, b2, c2) = (a[0] * a[0] + a[1] * a[1], b[0] * b[0] + b[1] * b[1], c[0] * c[0] + c[1] * c[1]);
+    Some([
+        (a2 * (b[1] - c[1]) + b2 * (c[1] - a[1]) + c2 * (a[1] - b[1])) / d,
+        (a2 * (c[0] - b[0]) + b2 * (a[0] - c[0]) + c2 * (b[0] - a[0])) / d,
+    ])
+}
+
+/// The longest run from `path[i]` of at least four points that lies on one circle within `tol`, turning one way through less than a
+/// whole turn, its radius from 0.5 to 500 mm: the run's last index, the circle's centre, and whether it turns counter-clockwise.
+fn fit_arc(path: &[P2], i: usize, tol: f64) -> Option<(usize, P2, bool)> {
+    const MAX_RUN: usize = 400;
+    let turn = |k: usize| {
+        let (a, b, c) = (path[k - 1], path[k], path[k + 1]);
+        (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0])
+    };
+    let mut best = None;
+    let mut j = i + 3;
+    while j < path.len() && j - i <= MAX_RUN {
+        let Some(c) = circle(path[i], path[(i + j) / 2], path[j]) else { break };
+        let r = dist(path[i], c);
+        if !(0.5..=500.0).contains(&r) {
+            break;
+        }
+        let on = (i..=j).all(|k| (dist(path[k], c) - r).abs() <= tol);
+        // Every chord's middle within the tolerance too, so a long chord does not cut the corner the arc goes round.
+        let chords = path[i..=j].windows(2).all(|w| (r - dist([(w[0][0] + w[1][0]) / 2.0, (w[0][1] + w[1][1]) / 2.0], c)) <= tol);
+        let ccw = turn(i + 1) > 0.0;
+        let one_way = (i + 1..j).all(|k| (turn(k) > 0.0) == ccw && turn(k).abs() > 1e-12);
+        let swept: f64 = path[i..=j]
+            .windows(2)
+            .map(|w| {
+                let (a, b) = ([w[0][0] - c[0], w[0][1] - c[1]], [w[1][0] - c[0], w[1][1] - c[1]]);
+                (a[0] * b[1] - a[1] * b[0]).atan2(a[0] * b[0] + a[1] * b[1]).abs()
+            })
+            .sum();
+        if !(on && chords && one_way && swept < 2.0 * PI - 0.1) {
+            break;
+        }
+        best = Some((j, c, ccw));
+        j += 1;
+    }
+    best
+}
+
 /// The part of the solid infill `solid` that lies over air (beyond the layer below), without slivers narrower than a line.
 fn bridges(solid: &Region, below: &Region, w: f64) -> Region {
     let over_air = geom::difference(solid, below);
@@ -966,6 +1016,32 @@ impl Writer<'_> {
         self.at = Some(to);
     }
 
+    /// An arc through `run` (its first point where the head is) about `centre`, counter-clockwise when `ccw`: one `G3` or `G2`, its
+    /// plastic the arc's length. The planner still walks the points, which is close enough for the time.
+    fn arc(&mut self, run: &[P2], centre: P2, ccw: bool, per_mm: f64, speed: f64) {
+        let (Some(&start), Some(&end)) = (run.first(), run.last()) else { return };
+        let r = dist(start, centre);
+        let swept: f64 = run
+            .windows(2)
+            .map(|w| {
+                let (a, b) = ([w[0][0] - centre[0], w[0][1] - centre[1]], [w[1][0] - centre[0], w[1][1] - centre[1]]);
+                (a[0] * b[1] - a[1] * b[0]).atan2(a[0] * b[0] + a[1] * b[1]).abs()
+            })
+            .sum();
+        self.unretract();
+        let (m, e) = (self.machine(end), r * swept * per_mm);
+        let (i, j) = (centre[0] - start[0], centre[1] - start[1]);
+        self.line(format!("{} X{:.3} Y{:.3} I{i:.3} J{j:.3} E{e:.5} F{:.0}", if ccw { "G3" } else { "G2" }, m[0], m[1], speed * 60.0));
+        self.filament += e;
+        if let Some(f) = self.feature {
+            *self.by_feature.entry(f.name()).or_default() += e;
+        }
+        for w in run.windows(2) {
+            self.planner.xy(w[0], w[1], speed);
+        }
+        self.at = Some(end);
+    }
+
     /// An extrusion to `to` that also rises to `z` (vase mode).
     fn climb(&mut self, to: P2, z: f64, per_mm: f64, speed: f64) {
         let len = self.at.map_or(0.0, |from| dist(from, to));
@@ -1031,6 +1107,25 @@ impl Writer<'_> {
                 prev = *q;
                 self.climb(*q, from + (to - from) * (done / total), per_mm, s.speed);
             }
+        } else if self.p.arc_fitting {
+            // Runs of points on a circle go out as one arc each; the rest as straight moves.
+            let mut path = s.pts.clone();
+            if s.closed {
+                path.push(*first);
+            }
+            let mut i = 0;
+            while i + 1 < path.len() {
+                match fit_arc(&path, i, self.p.arc_tolerance) {
+                    Some((j, centre, ccw)) => {
+                        self.arc(&path[i..=j], centre, ccw, per_mm, s.speed);
+                        i = j;
+                    }
+                    None => {
+                        self.extrude(path[i + 1], per_mm, s.speed);
+                        i += 1;
+                    }
+                }
+            }
         } else {
             for q in s.pts.iter().skip(1) {
                 self.extrude(*q, per_mm, s.speed);
@@ -1079,6 +1174,36 @@ mod tests {
         // The smallest may not pass the largest.
         let bad = Profile { min_layer_height: 0.3, ..p };
         assert!(gcode(&[(1, ball)], &bad).unwrap_err().contains("min_layer_height"));
+    }
+
+    #[test]
+    fn curves_go_out_as_arcs_with_the_same_plastic() {
+        let rod = vec![(1, Mesh::cylinder(10.0, 4.0, 128))];
+        let arcs = gcode(&rod, &Profile { arc_fitting: true, ..Profile::default() }).unwrap();
+        let lines = gcode(&rod, &Profile::default()).unwrap();
+        let count = |g: &str, p: &str| g.lines().filter(|l| l.starts_with(p)).count();
+        assert!(count(&arcs.gcode, "G3 ") + count(&arcs.gcode, "G2 ") > 20, "the walls are arcs");
+        assert!(
+            arcs.gcode.lines().count() < lines.gcode.lines().count() * 3 / 4,
+            "{} vs {}",
+            arcs.gcode.lines().count(),
+            lines.gcode.lines().count()
+        );
+        assert!((arcs.filament_mm - lines.filament_mm).abs() < 0.01 * lines.filament_mm, "{} vs {}", arcs.filament_mm, lines.filament_mm);
+        assert!((arcs.seconds - lines.seconds).abs() < 0.05 * lines.seconds);
+        // Straight walls stay straight moves.
+        let cube_arcs = gcode(&cube(10.0), &Profile { arc_fitting: true, ..Profile::default() }).unwrap();
+        assert_eq!(count(&cube_arcs.gcode, "G2 ") + count(&cube_arcs.gcode, "G3 "), 0);
+        // A run on a circle fits; a corner breaks it.
+        let ring: Vec<P2> = (0..=12).map(|k| f64::from(k) * 0.05).map(|t| [10.0 * t.cos(), 10.0 * t.sin()]).collect();
+        let (j, c, ccw) = fit_arc(&ring, 0, 0.01).unwrap();
+        assert!(j == 12 && ccw && dist(c, [0.0, 0.0]) < 1e-6, "{j} {c:?}");
+        let mut bent = ring[..6].to_vec();
+        bent.extend([[20.0, 20.0], [25.0, 20.0]]);
+        assert!(fit_arc(&bent, 0, 0.01).is_some_and(|(j, _, _)| j == 5));
+        assert!(fit_arc(&[[0.0, 0.0], [1.0, 0.0], [2.0, 0.0], [3.0, 0.0]], 0, 0.01).is_none(), "a straight line is no arc");
+        let hexagon: Vec<P2> = (0..=6).map(|k| f64::from(k) * PI / 3.0).map(|t| [10.0 * t.cos(), 10.0 * t.sin()]).collect();
+        assert!(fit_arc(&hexagon, 0, 0.02).is_none(), "a hexagon stays a hexagon");
     }
 
     #[test]

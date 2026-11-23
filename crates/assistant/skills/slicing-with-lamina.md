@@ -23,7 +23,8 @@ presets live in the app's settings panel, not in these commands.
   `start_gcode` and `end_gcode` (placeholders like `[bed_temp]`, unknown ones refused, and expressions in braces such as
   `{first_layer_bed_temp - 5}` or `{if(bed_temp > 90, 1, 0)}`), `firmware` (`"marlin"`, `"klipper"`:
   objects marked so one can be cancelled, or `"reprap"`), `firmware_retraction` (G10 and G11), `thumbnail` (pixels; a picture for
-  the printer's screen), `max_acceleration` and `junction_deviation` (for the time estimate). A filament may set
+  the printer's screen), `max_acceleration` and `junction_deviation` (for the time estimate), `arc_fitting` (curves as `G2`/`G3`
+  arcs within `arc_tolerance`; smaller files and smoother circles, but Klipper needs `[gcode_arcs]` in its config). A filament may set
   `pressure_advance`.
 - Quality: `layer_height` from 0.02 mm up to 0.8 times the nozzle (0.12 for fine detail, 0.2 normal, 0.28 draft),
   `first_layer_height`, `perimeters` (2 normal, 3 to 4 for strength), `top_layers` and `bottom_layers` (enough for 0.8 to 1.0 mm of skin).

@@ -151,6 +151,8 @@ The same text is the tooltip in the window. The names are the ones a profile fil
 | `fuzzy_skin` | Roughen the outer wall with small random bumps, for a textured grip that hides layer lines. |  | false |
 | `fuzzy_thickness` | How far a fuzzy skin's bumps stand in or out, mm. | 0.05 to 2 | 0.3 |
 | `fuzzy_spacing` | How far apart a fuzzy skin's bumps are along the wall, mm. | 0.1 to 5 | 0.8 |
+| `arc_fitting` | Write curves as G2 and G3 arcs: a smaller file and smoother circles. Klipper needs [gcode_arcs] in its config. |  | false |
+| `arc_tolerance` | How far an arc may stray from the points it replaces, mm. | 0.001 to 0.5 | 0.02 |
 | `perimeters` | Walls round each layer: more is stronger and slower. | 0 to 10 | 2 |
 | `vase` | Vase mode: above the bottom, one wall that climbs without stopping, with no infill and an open top. |  | false |
 | `top_layers` | Solid layers that close the top of the part. | 0 to 50 | 4 |
