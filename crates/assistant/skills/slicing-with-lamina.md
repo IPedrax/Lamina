@@ -19,7 +19,10 @@ presets live in the app's settings panel, not in these commands.
 `slice_check {profile: {layer_height: 0.16, infill_density: 0.3}}`. A misspelled field is an error, and so is a value out of range.
 
 - Printer: `bed` (x and y, mm), `max_height`, `nozzle`, `filament_diameter`, `origin_center` (true for delta printers),
-  `start_gcode` and `end_gcode` (placeholders like `[bed_temp]`; unknown ones are refused).
+  `start_gcode` and `end_gcode` (placeholders like `[bed_temp]`; unknown ones are refused), `firmware` (`"marlin"`, `"klipper"`:
+  objects marked so one can be cancelled, or `"reprap"`), `firmware_retraction` (G10 and G11), `thumbnail` (pixels; a picture for
+  the printer's screen), `max_acceleration` and `junction_deviation` (for the time estimate). A filament may set
+  `pressure_advance`.
 - Quality: `layer_height` from 0.02 mm up to 0.8 times the nozzle (0.12 for fine detail, 0.2 normal, 0.28 draft),
   `first_layer_height`, `perimeters` (2 normal, 3 to 4 for strength), `top_layers` and `bottom_layers` (enough for 0.8 to 1.0 mm of skin).
 - Strength: `infill_density` from 0 to 1. Use 0.1 to 0.2 for looks and 0.3 to 0.5 for parts that bear load. Walls add more

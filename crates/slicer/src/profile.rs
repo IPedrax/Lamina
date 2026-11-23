@@ -6,6 +6,17 @@ use serde_json::Value;
 
 pub use crate::support::Support;
 
+/// The printer's firmware.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Firmware {
+    #[default]
+    Marlin,
+    Klipper,
+    /// RepRapFirmware (Duet).
+    Reprap,
+}
+
 /// Where a wall loop starts.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -30,6 +41,8 @@ pub struct Profile {
     /// Whether the machine's zero is the middle of the plate (delta printers) rather than its front left corner.
     pub origin_center: bool,
     pub max_height: f64,
+    /// The filament's pressure advance (linear advance on Marlin); 0 leaves the printer's own.
+    pub pressure_advance: f64,
     /// The printer's acceleration, mm/s2, and its junction deviation, mm (Marlin's; for Klipper's square corner velocity `scv`,
     /// `scv^2 x 0.414 / acceleration`): what the time estimate plans moves with.
     pub max_acceleration: f64,
@@ -39,6 +52,12 @@ pub struct Profile {
     /// G-code before and after the print. `[name]` is replaced by a setting (see `PLACEHOLDERS`); any other `[..]` is an error.
     pub start_gcode: String,
     pub end_gcode: String,
+    /// The printer's firmware: Klipper gets object markers, and each its own pressure advance command.
+    pub firmware: Firmware,
+    /// Retract with the firmware's G10 and G11 instead of moving the filament in the G-code.
+    pub firmware_retraction: bool,
+    /// A picture of the plate this many pixels square in the G-code, for the printer's screen; 0 for none.
+    pub thumbnail: u32,
     // Process
     pub layer_height: f64,
     pub first_layer_height: f64,
@@ -125,12 +144,16 @@ impl Default for Profile {
             bed: [220.0, 220.0],
             origin_center: false,
             max_height: 250.0,
+            pressure_advance: 0.0,
             max_acceleration: 1500.0,
             junction_deviation: 0.013,
             nozzle: 0.4,
             filament_diameter: 1.75,
             start_gcode: "M140 S[first_layer_bed_temp]\nM104 S[first_layer_nozzle_temp]\nG28\nM190 S[first_layer_bed_temp]\nM109 S[first_layer_nozzle_temp]".into(),
             end_gcode: "M104 S0\nM140 S0\nM107\nG91\nG1 Z10 F600\nG90\nM84".into(),
+            firmware: Firmware::Marlin,
+            firmware_retraction: false,
+            thumbnail: 0,
             layer_height: 0.2,
             first_layer_height: 0.2,
             perimeters: 2,
@@ -196,6 +219,10 @@ impl Profile {
         within("bed", self.bed[0].min(self.bed[1]), 10.0, 2000.0)?;
         within("bed", self.bed[0].max(self.bed[1]), 10.0, 2000.0)?;
         within("max_height", self.max_height, 1.0, 2000.0)?;
+        within("pressure_advance", self.pressure_advance, 0.0, 2.0)?;
+        if self.thumbnail != 0 {
+            within("thumbnail", f64::from(self.thumbnail), 16.0, 512.0)?;
+        }
         within("max_acceleration", self.max_acceleration, 10.0, 100_000.0)?;
         within("junction_deviation", self.junction_deviation, 0.0, 1.0)?;
         within("nozzle", self.nozzle, 0.1, 2.0)?;

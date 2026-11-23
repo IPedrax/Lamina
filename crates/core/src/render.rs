@@ -239,7 +239,13 @@ fn edge(a: [f64; 3], b: [f64; 3], p: [f64; 2]) -> f64 {
 /// Each object of `scene` alone (no plate), seen from the front and above, framed to fill a square of `size` pixels on a clear
 /// background: the thumbnail a printer's screen shows.
 pub fn thumbnail(scene: &Scene, size: usize) -> Picture {
-    let bounds = scene.objects.iter().filter_map(|o| o.bounds()).reduce(|(alo, ahi), (blo, bhi)| {
+    let worlds: Vec<crate::Mesh> = scene.objects.iter().map(|o| o.world()).collect();
+    thumbnail_of(&worlds, size)
+}
+
+/// The same for meshes where they stand.
+pub fn thumbnail_of(meshes: &[crate::Mesh], size: usize) -> Picture {
+    let bounds = meshes.iter().filter_map(|m| m.bounds()).reduce(|(alo, ahi), (blo, bhi)| {
         ([alo[0].min(blo[0]), alo[1].min(blo[1]), alo[2].min(blo[2])], [ahi[0].max(bhi[0]), ahi[1].max(bhi[1]), ahi[2].max(bhi[2])])
     });
     let mut camera = Camera { azimuth: -60.0, elevation: 30.0, ..Camera::default() };
@@ -253,12 +259,11 @@ pub fn thumbnail(scene: &Scene, size: usize) -> Picture {
     let n = size * size;
     let mut r =
         Raster { w: size, h: size, pix: vec![[0, 0, 0, 0]; n], depth: vec![0.0; n], ids: vec![0; n], tris: vec![0; n], tri: 0, light };
-    for o in &scene.objects {
-        let world = o.world();
+    for (k, world) in meshes.iter().enumerate() {
         for i in 0..world.triangles.len() {
             if let Some(t) = world.tri(i) {
                 r.tri = i as u32;
-                r.shaded(&camera, t, MODEL, o.id);
+                r.shaded(&camera, t, MODEL, k as u32 + 1);
             }
         }
     }

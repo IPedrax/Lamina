@@ -131,6 +131,11 @@ Priorities:
 - **4.11 Vase mode.** `vase`: the bottom layers as usual, then each layer's outer wall alone, its points rising in proportion to
   the way round from the last layer's height to its own (`G1 X Y Z E`), so z never stops; no infill, no top, no layer-change
   retraction. A warning with several objects. A golden square vase.
+- **4.12 Firmware details.** `firmware` (marlin, klipper, reprap): Klipper gets `EXCLUDE_OBJECT_DEFINE` (each object's box) and
+  `EXCLUDE_OBJECT_START`/`END` round each object's moves on each layer, the skirt and brim outside them. `pressure_advance` (a
+  filament field) as `M900 K`, `SET_PRESSURE_ADVANCE ADVANCE=` or `M572 D0 S`. `firmware_retraction` uses `G10` and `G11`.
+  `thumbnail`: a PNG of the plate drawn by `lamina_core::render`, base64 in a `; thumbnail begin` comment block; the Klipper
+  presets set 300 pixels.
 - **4.13 Feature types in the G-code.** Every stroke has a kind, written as `;TYPE:outer-wall` (inner-wall, solid-infill,
   sparse-infill, skirt, brim, support, support-interface, raft) before it, again after each layer change. `slice_check` returns
   the filament of each kind (`features`), so the assistant can count them.
@@ -194,12 +199,6 @@ the AI's skills what is not possible.
 a quarter line, is printed as single lines along its centre. Find the centreline with a straight skeleton or a Voronoi diagram:
 `boostvoronoi` is BSL-1.0 and permissive, BIMCraft has a straight skeleton (`skeleton.rs`). Vary the flow by width. Full
 variable-width walls (as in the public Arachne paper) are P2.
-
-**4.12 Firmware details (P1).**
-- Klipper: object markers (`EXCLUDE_OBJECT` lines) so one failed object can be cancelled.
-- Thumbnails: comment blocks of a small PNG drawn by the existing CPU rasterizer, which Klipper's front ends and some firmwares show.
-- Pressure advance: `M900` (Marlin), `SET_PRESSURE_ADVANCE` (Klipper) or `M572` (RepRapFirmware), from a filament field.
-- RepRapFirmware: `G10` firmware retraction.
 
 **4.14 Per-object settings (P1).** How: an optional map of profile fields on each object, set by `set_object_settings {id, profile}`.
 The slicer lays it over the plate's profile for that object only: infill, walls, layers. Modifier meshes (settings for a region inside

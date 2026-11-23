@@ -24,6 +24,9 @@ pub const PRINTER_FIELDS: &[&str] = &[
     "max_height",
     "max_acceleration",
     "junction_deviation",
+    "firmware",
+    "firmware_retraction",
+    "thumbnail",
     "nozzle",
     "filament_diameter",
     "start_gcode",
@@ -32,7 +35,8 @@ pub const PRINTER_FIELDS: &[&str] = &[
     "retract_speed",
     "travel_speed",
 ];
-pub const FILAMENT_FIELDS: &[&str] = &["nozzle_temp", "first_layer_nozzle_temp", "bed_temp", "first_layer_bed_temp", "fan_speed"];
+pub const FILAMENT_FIELDS: &[&str] =
+    &["nozzle_temp", "first_layer_nozzle_temp", "bed_temp", "first_layer_bed_temp", "fan_speed", "pressure_advance"];
 
 const KLIPPER_START: &str = "PRINT_START BED=[first_layer_bed_temp] EXTRUDER=[first_layer_nozzle_temp]";
 
@@ -56,13 +60,15 @@ pub static PRINTERS: &[Preset] = &[
         name: "Generic 300 mm, Klipper",
         about: "300 x 300 x 300 mm, 0.4 mm nozzle; the printer's config must define PRINT_START and PRINT_END macros",
         fields: r#"{"bed": [300, 300], "max_height": 300, "nozzle": 0.4, "retract_length": 0.6, "retract_speed": 40, "travel_speed": 250,
-                   "max_acceleration": 3000, "junction_deviation": 0.0035, "start_gcode": "KLIPPER_START", "end_gcode": "PRINT_END"}"#,
+                   "max_acceleration": 3000, "junction_deviation": 0.0035, "firmware": "klipper", "thumbnail": 300,
+                   "start_gcode": "KLIPPER_START", "end_gcode": "PRINT_END"}"#,
     },
     Preset {
         name: "Generic 350 mm, Klipper",
         about: "350 x 350 x 340 mm, 0.4 mm nozzle; the printer's config must define PRINT_START and PRINT_END macros",
         fields: r#"{"bed": [350, 350], "max_height": 340, "nozzle": 0.4, "retract_length": 0.6, "retract_speed": 40, "travel_speed": 250,
-                   "max_acceleration": 3000, "junction_deviation": 0.0035, "start_gcode": "KLIPPER_START", "end_gcode": "PRINT_END"}"#,
+                   "max_acceleration": 3000, "junction_deviation": 0.0035, "firmware": "klipper", "thumbnail": 300,
+                   "start_gcode": "KLIPPER_START", "end_gcode": "PRINT_END"}"#,
     },
     Preset {
         name: "Delta 200 mm, centred",
