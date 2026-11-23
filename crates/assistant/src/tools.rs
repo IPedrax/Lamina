@@ -11,6 +11,10 @@ use crate::{Call, MAX_RESULT, MAX_TODO_TEXT, MAX_TODOS, clip};
 
 /// The tool that writes the checklist the user watches. It changes nothing in the scene: the chat keeps what it says.
 pub const TODO: &str = "todo_write";
+/// The tool that draws the plate for the model to look at.
+pub const PREVIEW: &str = "preview";
+/// The size of its picture, pixels: enough to judge shapes and proportions, small enough to send again with each request.
+pub const PICTURE: [usize; 2] = [640, 448];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Status {
@@ -85,6 +89,16 @@ pub fn all() -> Vec<Tool> {
             schema: json!({"type": "object", "properties": {"name": {"type": "string", "description": "a skill's name, from the list"}}}),
         },
         Tool {
+            name: PREVIEW,
+            about: "A picture of the plate as it is now, which you can see: use it to check a part against the user's photo or description. \
+                    The camera looks at all the objects from `azimuth` degrees round from east (default -60, from the front right) and \
+                    `elevation` degrees up (default 30; 89 looks straight down). Picked objects are not marked.",
+            schema: json!({"type": "object", "properties": {
+                "azimuth": {"type": "number", "description": "degrees counter-clockwise from east, -360 to 360"},
+                "elevation": {"type": "number", "description": "degrees up from level, -89 to 89"},
+            }}),
+        },
+        Tool {
             name: TODO,
             about: "Show the user your checklist for a request of three or more steps: the whole list each time, with exactly one item in_progress. \
                     Call it again as each step finishes. It changes nothing in the scene.",
@@ -113,6 +127,50 @@ pub fn to_text(v: &Value) -> String {
 
 fn exec(session: &mut Session, command: &str, params: Value, access: Access) -> Result<Value, String> {
     bridge::run(session, &Request::Execute { command: command.into(), params }, access)
+}
+
+/// The picture `preview` draws, as a PNG in base64, and what is said with it. `Err` is what the model is told is wrong with the
+/// arguments.
+pub fn picture(session: &Session, args: &Value) -> Result<(String, String), String> {
+    let args = match args {
+        Value::Object(m) => m.clone(),
+        Value::Null => serde_json::Map::new(),
+        _ => return Err("the arguments of `preview` must be a JSON object".into()),
+    };
+    if let Some(k) = args.keys().find(|k| *k != "azimuth" && *k != "elevation") {
+        return Err(format!("`preview` takes `azimuth` and `elevation`, not `{}`", clip(k, 40)));
+    }
+    let number = |name: &str, default: f64, range: (f64, f64)| -> Result<f64, String> {
+        match args.get(name) {
+            None | Some(Value::Null) => Ok(default),
+            Some(v) => v
+                .as_f64()
+                .filter(|x| x.is_finite() && (range.0..=range.1).contains(x))
+                .ok_or_else(|| format!("`{name}` is a number from {} to {}", range.0, range.1)),
+        }
+    };
+    let (azimuth, elevation) = (number("azimuth", -60.0, (-360.0, 360.0))?, number("elevation", 30.0, (-89.0, 89.0))?);
+    // The plate the window shows, from the print settings it gave the session; a plain 220 mm one otherwise.
+    let bed = session.print["profile"]["bed"]
+        .as_array()
+        .and_then(|b| Some([b.first()?.as_f64()?, b.get(1)?.as_f64()?]))
+        .filter(|b| b.iter().all(|x| x.is_finite() && (10.0..=2000.0).contains(x)))
+        .unwrap_or([220.0, 220.0]);
+    let bounds = session.scene.objects.iter().filter_map(|o| o.bounds()).reduce(|(alo, ahi), (blo, bhi)| {
+        ([alo[0].min(blo[0]), alo[1].min(blo[1]), alo[2].min(blo[2])], [ahi[0].max(bhi[0]), ahi[1].max(bhi[1]), ahi[2].max(bhi[2])])
+    });
+    let mut camera = lamina_core::render::Camera { azimuth, elevation, ..Default::default() };
+    camera.frame_all(bounds.unwrap_or(([-bed[0] / 2.0, -bed[1] / 2.0, 0.0], [bed[0] / 2.0, bed[1] / 2.0, 0.0])));
+    let drawn = lamina_core::render::draw(&session.scene, &[], &camera, bed, PICTURE);
+    let png = lamina_core::base64::encode(&lamina_core::render::png(&drawn));
+    let what = match session.scene.objects.len() {
+        0 => "the plate is empty".to_string(),
+        n => format!("{n} object(s), framed"),
+    };
+    Ok((
+        format!("A picture of the plate, {}x{} pixels, from azimuth {azimuth} and elevation {elevation}: {what}.", PICTURE[0], PICTURE[1]),
+        png,
+    ))
 }
 
 /// Runs a call on the session. `Err` is what the model is told went wrong.
@@ -155,6 +213,10 @@ pub fn run(session: &mut Session, call: &Call, access: Access) -> Result<Value, 
         "inspect_scene" => exec(session, "info", json!({}), access),
         "read_skill" => crate::skills::read(args["name"].as_str()),
         TODO => todos(&args).map(|_| json!("checklist shown")),
-        other => Err(format!("unknown tool `{}`: execute, list_commands, inspect_scene, read_skill or todo_write", clip(other, 40))),
+        // The chat sends the picture itself; asked here (an agent, a test), the words are what there is.
+        PREVIEW => picture(session, &args).map(|(text, _)| json!(text)),
+        other => {
+            Err(format!("unknown tool `{}`: execute, list_commands, inspect_scene, read_skill, preview or todo_write", clip(other, 40)))
+        }
     }
 }

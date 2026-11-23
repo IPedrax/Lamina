@@ -12,8 +12,9 @@ A picture has no scale and hides its back. Treat what you build as a blockout, n
    proportion.
 3. Build the biggest shape first and the rest after it, checking `inspect_scene` as you go that the sizes are in the ratios you
    read off the picture.
-4. Compare with the picture on proportions only: which part is taller, wider, further out. Say which parts you guessed because
-   they are hidden, and which details the shapes cannot show.
+4. Look at what you built with `preview {}`, from about where the photo was taken (`preview {azimuth: -90, elevation: 10}` is
+   from the front, low). Compare with the photo on proportions only: which part is taller, wider, further out. Say which parts you
+   guessed because they are hidden, and which details the shapes cannot show.
 5. Report the shapes you chose, the dimensions you assumed and what is missing, and offer to adjust a proportion.
 
 Join parts that touch with `union` so they print as one solid, and cut openings with `difference`. Parts that only sit near each other

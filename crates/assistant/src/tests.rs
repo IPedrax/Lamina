@@ -14,8 +14,8 @@ use crate::attach::base64;
 use crate::net::{Net, Request, Ureq, allowed};
 use crate::testing::Fake;
 use crate::{
-    Attached, Body, Call, Chat, Done, Line, MAX_FILES, MAX_FILES_TOTAL, Msg, Provider, Status, Usage, anthropic, clip, complete, gemini,
-    key_ok, model_ok, openai, tools,
+    Attached, Body, Call, Chat, Done, Line, MAX_FILES, MAX_FILES_TOTAL, Msg, Provider, Reply, Status, Usage, anthropic, clip, complete,
+    gemini, key_ok, model_ok, openai, tools,
 };
 
 const KEY: &str = "sk-test-0123456789abcdef";
@@ -53,7 +53,7 @@ fn anthropic_reads_one_tool_call_and_sends_its_answer_back_by_id() {
     let r = anthropic::parse(200, &anthropic_reply(content.clone(), "tool_use")).unwrap();
     assert_eq!(r.text, "Adding.");
     assert_eq!(r.calls, vec![Call { id: "toolu_01".into(), name: "execute".into(), args: serde_json::from_str(BOX).unwrap() }]);
-    let done = Done { id: "toolu_01".into(), name: "execute".into(), text: "{\"id\":1}".into(), error: false };
+    let done = Done { id: "toolu_01".into(), name: "execute".into(), text: "{\"id\":1}".into(), error: false, image: None };
     let sent = anthropic::request("claude-sonnet-5-5", KEY, &[Msg::user("a box"), Msg::Assistant(r), Msg::Results(vec![done])]);
     let body: Value = serde_json::from_str(&sent.body).unwrap();
     assert_eq!(body["model"], "claude-sonnet-5-5");
@@ -125,7 +125,7 @@ fn openai_reads_a_tool_call_and_replays_only_what_can_be_replayed() {
     ]);
     let r = openai::parse(200, &openai_reply(output, "completed")).unwrap();
     assert_eq!(r.calls, vec![Call { id: "call_1".into(), name: "execute".into(), args: serde_json::from_str(BOX).unwrap() }]);
-    let done = Done { id: "call_1".into(), name: "execute".into(), text: "ok".into(), error: false };
+    let done = Done { id: "call_1".into(), name: "execute".into(), text: "ok".into(), error: false, image: None };
     let sent = openai::request("gpt-6-astra", KEY, &[Msg::user("a box"), Msg::Assistant(r), Msg::Results(vec![done])]);
     let body: Value = serde_json::from_str(&sent.body).unwrap();
     assert_eq!((&body["store"], &body["model"]), (&json!(false), &json!("gpt-6-astra")));
@@ -186,8 +186,8 @@ fn gemini_reads_a_tool_call_and_sends_back_its_signature_and_an_answer_by_id() {
     let parts = json!([{"functionCall": {"name": "execute", "args": serde_json::from_str::<Value>(BOX).unwrap(), "id": "c1"}, "thoughtSignature": "sig"}]);
     let r = gemini::parse(200, &gemini_reply(parts, "STOP")).unwrap();
     assert_eq!(r.calls, vec![Call { id: "c1".into(), name: "execute".into(), args: serde_json::from_str(BOX).unwrap() }]);
-    let done = vec![Done { id: "c1".into(), name: "execute".into(), text: "ok".into(), error: false }];
-    let nameless = vec![Done { id: String::new(), name: "inspect_scene".into(), text: "boom".into(), error: true }];
+    let done = vec![Done { id: "c1".into(), name: "execute".into(), text: "ok".into(), error: false, image: None }];
+    let nameless = vec![Done { id: String::new(), name: "inspect_scene".into(), text: "boom".into(), error: true, image: None }];
     let sent =
         gemini::request("gemini-3.8-flash", KEY, &[Msg::user("a box"), Msg::Assistant(r), Msg::Results(done), Msg::Results(nameless)]);
     let body: Value = serde_json::from_str(&sent.body).unwrap();
@@ -449,7 +449,10 @@ fn plain(schema: &Value) -> bool {
 #[test]
 fn the_tools_offered_are_these_and_their_schemas_are_plain_json_types() {
     let all = tools::all();
-    assert_eq!(all.iter().map(|t| t.name).collect::<Vec<_>>(), ["execute", "list_commands", "inspect_scene", "read_skill", "todo_write"]);
+    assert_eq!(
+        all.iter().map(|t| t.name).collect::<Vec<_>>(),
+        ["execute", "list_commands", "inspect_scene", "read_skill", "preview", "todo_write"]
+    );
     for t in &all {
         assert!(plain(&t.schema), "{}: {}", t.name, t.schema);
     }
@@ -1150,4 +1153,73 @@ fn provider_replies_and_sealed_keys_never_panic() {
             let _ = crate::seal::open(&text);
         }
     }
+}
+
+// ---------- pictures ----------
+
+#[test]
+fn preview_draws_the_plate_as_a_png_and_refuses_odd_arguments() {
+    let mut s = Session::new();
+    run(&mut s, "execute", serde_json::from_str(BOX).unwrap()).unwrap();
+    let (text, png) = tools::picture(&s, &json!({"azimuth": 30, "elevation": 60})).unwrap();
+    assert!(text.contains("1 object") && text.contains("640x448"), "{text}");
+    let bytes = lamina_core::base64::decode(&png).unwrap();
+    assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
+    assert!(tools::picture(&Session::new(), &json!({})).unwrap().0.contains("empty"));
+    for bad in [json!({"elevation": 95}), json!({"azimuth": "east"}), json!({"zoom": 2}), json!([1])] {
+        assert!(tools::picture(&s, &bad).is_err(), "{bad}");
+    }
+    // Asked as an ordinary tool (an agent, say), it says what it drew; a session that may only read may look.
+    let said = tools::run(&mut s, &Call { id: "p".into(), name: "preview".into(), args: json!({}) }, Access::Read).unwrap();
+    assert!(said.as_str().unwrap().contains("A picture of the plate"));
+}
+
+fn with_picture() -> Vec<Msg> {
+    let call = Call { id: "p1".into(), name: "preview".into(), args: json!({}) };
+    let reply =
+        Reply { thinking: String::new(), text: String::new(), calls: vec![call.clone()], raw: json!([]), usage: Default::default() };
+    let done = Done { image: Some("iVBORw0KGgo=".into()), ..Done::text(&call, "A picture of the plate.".into(), false) };
+    vec![Msg::user("does it look like my photo?"), Msg::Assistant(reply), Msg::Results(vec![done])]
+}
+
+#[test]
+fn a_picture_goes_to_each_provider_in_its_own_form() {
+    let history = with_picture();
+    // Anthropic: in the tool's answer, beside its words.
+    let body: Value = serde_json::from_str(&anthropic::request("claude-sonnet-5-5", KEY, &history).body).unwrap();
+    let result = &body["messages"][2]["content"][0];
+    assert_eq!(result["type"], "tool_result");
+    assert_eq!(result["content"][0]["text"], "A picture of the plate.");
+    assert_eq!(result["content"][1]["source"], json!({"type": "base64", "media_type": "image/png", "data": "iVBORw0KGgo="}));
+    // OpenAI: the output in words, then a user message with the picture.
+    let body: Value = serde_json::from_str(&openai::request("gpt-6-astra", KEY, &history).body).unwrap();
+    let input = body["input"].as_array().unwrap();
+    let at = input.iter().position(|i| i["type"] == "function_call_output").unwrap();
+    assert_eq!(input[at]["output"], "A picture of the plate.");
+    assert_eq!(input[at + 1]["role"], "user");
+    assert_eq!(input[at + 1]["content"][1], json!({"type": "input_image", "image_url": "data:image/png;base64,iVBORw0KGgo="}));
+    // Gemini: the response in words, then a user turn with the picture.
+    let body: Value = serde_json::from_str(&gemini::request("gemini-3.8-flash", KEY, &history).body).unwrap();
+    let contents = body["contents"].as_array().unwrap();
+    assert!(contents[contents.len() - 2]["parts"][0]["functionResponse"].is_object());
+    assert_eq!(contents[contents.len() - 1]["parts"][1], json!({"inlineData": {"mimeType": "image/png", "data": "iVBORw0KGgo="}}));
+    // The picture counts with the files a conversation may carry.
+    assert_eq!(history[2].file_bytes(), "iVBORw0KGgo=".len());
+}
+
+#[test]
+fn a_preview_call_in_a_turn_sends_the_model_the_picture() {
+    let net = Arc::new(
+        Fake::default()
+            .reply(200, tool_reply(&[("a", "execute", BOX), ("b", "preview", r#"{"elevation": 45}"#)]))
+            .reply(200, text_reply("It is a box.")),
+    );
+    let (mut chat, mut s) = (chat_on(&net), Session::new());
+    chat.send("make a box and look at it", KEY);
+    drive(&mut chat, &mut s);
+    let second: Value = serde_json::from_str(&net.seen()[1].body).unwrap();
+    let results = &second["messages"][2]["content"];
+    assert_eq!(results[1]["tool_use_id"], "b");
+    let png = results[1]["content"][1]["source"]["data"].as_str().unwrap();
+    assert_eq!(&lamina_core::base64::decode(png).unwrap()[..4], b"\x89PNG");
 }

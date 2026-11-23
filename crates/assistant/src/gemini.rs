@@ -12,21 +12,36 @@ use crate::{Call, Msg, Reply, SYSTEM, Usage, api_error, clip, count, json_body, 
 pub fn request(model: &str, key: &str, history: &[Msg]) -> Request {
     let contents: Vec<Value> = history
         .iter()
-        .map(|m| match m {
-            Msg::User(text, files) => json!({"role": "user", "parts": user_parts(
+        .flat_map(|m| match m {
+            Msg::User(text, files) => vec![json!({"role": "user", "parts": user_parts(
                 text,
                 files,
                 |t| json!({"text": t}),
                 |mime, b64| json!({"inlineData": {"mimeType": mime, "data": b64}}),
-            )}),
-            Msg::Assistant(reply) => reply.raw.clone(),
-            Msg::Results(done) => json!({"role": "user", "parts": done.iter().map(|d| {
-                let mut call = json!({"name": d.name, "response": if d.error { json!({"error": d.text}) } else { json!({"result": d.text}) }});
-                if !d.id.is_empty() {
-                    call["id"] = json!(d.id);
+            )})],
+            Msg::Assistant(reply) => vec![reply.raw.clone()],
+            Msg::Results(done) => {
+                let answers = json!({"role": "user", "parts": done.iter().map(|d| {
+                    let mut call = json!({"name": d.name, "response": if d.error { json!({"error": d.text}) } else { json!({"result": d.text}) }});
+                    if !d.id.is_empty() {
+                        call["id"] = json!(d.id);
+                    }
+                    json!({"functionResponse": call})
+                }).collect::<Vec<_>>()});
+                // A function's response is words: its pictures follow in a turn of the user's.
+                let pictures: Vec<Value> = done
+                    .iter()
+                    .filter_map(|d| d.image.as_ref())
+                    .map(|png| json!({"inlineData": {"mimeType": "image/png", "data": png}}))
+                    .collect();
+                if pictures.is_empty() {
+                    vec![answers]
+                } else {
+                    let mut parts = vec![json!({"text": crate::PICTURES})];
+                    parts.extend(pictures);
+                    vec![answers, json!({"role": "user", "parts": parts})]
                 }
-                json!({"functionResponse": call})
-            }).collect::<Vec<_>>()}),
+            }
         })
         .collect();
     let declarations: Vec<Value> = tools::all()

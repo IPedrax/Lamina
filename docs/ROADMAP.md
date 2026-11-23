@@ -200,6 +200,11 @@ Priorities:
   whole tree, every platform's crates), and writes THIRD-PARTY-NOTICES.txt: every crate with its licence and repository, then each
   distinct licence text once with the crates that ship it. Each release job writes it, and the MSI, the AppImage, the tarball and
   the DMG carry it. Written in Rust rather than with `cargo about`, so the release needs no tool installed.
+- **9.1 A picture the model can see.** The assistant's `preview {azimuth?, elevation?}` tool draws the plate with
+  `lamina_core::render` (640 by 448 pixels, framed on the objects) and the model gets the PNG: inside the tool result for
+  Anthropic, in a user message after the results for OpenAI and Gemini. Tested on the fake network, each provider's request
+  carrying its image part. The picture skill uses it to compare a part with the user's photo, and the chat panel gains Attach (and
+  takes a picture dropped on the window), so a photo can go with a message.
 
 ## Order of work
 
@@ -294,11 +299,6 @@ DMG, each checked against the SHA-256 digest GitHub gives the asset. The release
 regressions are seen.
 
 ## 9. The assistant
-
-**9.1 A picture the model can see (P1).** It lets the AI compare its part with a photo, as the OpenSCAD and CadQuery skills do. How:
-add a `preview {azimuth?, elevation?}` tool in `crates/assistant/src/tools.rs`. It draws the scene with the desktop's CPU rasterizer,
-so move `view3d::draw` and `Camera` into core or a small shared crate, and returns a PNG. Anthropic accepts images in tool results.
-For OpenAI and Gemini, send the image in a follow-up user message. Test with the fake network: the request carries an image part.
 
 **9.2 More skills (P1).** Troubleshooting (stringing, warping, layer shift), calibration (flow, temperature, retraction), materials,
 and supports once 4.1 exists. Each is a Markdown file in `crates/assistant/skills/`, and the existing test checks every command it

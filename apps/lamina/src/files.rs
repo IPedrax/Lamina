@@ -191,9 +191,18 @@ impl App {
             self.request(Pending::Open(path.to_path_buf()));
         } else if is_mesh(path) {
             self.import(path);
+        } else if lamina_assistant::attach::image_mime(&path.to_string_lossy()).is_some() {
+            // A picture goes to the assistant, with the next message.
+            self.chat.chat.attach(path);
+            self.status = "The picture goes to the assistant with your next message.".into();
         } else {
-            (self.failed, self.status) =
-                (true, format!("{}: Lamina opens .lamina projects and imports .stl, .3mf, .obj, .gltf and .glb meshes", path.display()));
+            (self.failed, self.status) = (
+                true,
+                format!(
+                    "{}: Lamina opens .lamina projects, imports .stl, .3mf, .obj, .gltf and .glb meshes, and gives pictures to the assistant",
+                    path.display()
+                ),
+            );
         }
     }
 

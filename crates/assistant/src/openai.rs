@@ -33,7 +33,18 @@ pub fn request(model: &str, key: &str, history: &[Msg]) -> Request {
                     .cloned(),
             ),
             Msg::Results(done) => {
-                input.extend(done.iter().map(|d| json!({"type": "function_call_output", "call_id": d.id, "output": d.text})))
+                input.extend(done.iter().map(|d| json!({"type": "function_call_output", "call_id": d.id, "output": d.text})));
+                // A function's output is words: its pictures follow in a message of the user's.
+                let pictures: Vec<Value> = done
+                    .iter()
+                    .filter_map(|d| d.image.as_ref())
+                    .map(|png| json!({"type": "input_image", "image_url": format!("data:image/png;base64,{png}")}))
+                    .collect();
+                if !pictures.is_empty() {
+                    let mut content = vec![json!({"type": "input_text", "text": crate::PICTURES})];
+                    content.extend(pictures);
+                    input.push(json!({"role": "user", "content": content}));
+                }
             }
         }
     }

@@ -1884,6 +1884,14 @@ mod tests {
         assert_eq!(h.state().selected.len(), 2);
         drop_file(&mut h, dir.path().join("notes.txt"));
         assert!(h.state().failed && h.state().status.contains(".lamina"), "{}", h.state().status);
+        // A picture goes to the assistant, listed above the message box with a button to take it off.
+        let photo = dir.path().join("my part.png");
+        std::fs::write(&photo, lamina_core::render::png_rgba([2, 2], &[[200, 100, 50, 255]; 4])).unwrap();
+        drop_file(&mut h, photo);
+        assert_eq!(h.state().chat.chat.attached.len(), 1, "{}", h.state().status);
+        h.get_by_label_contains("my part.png (picture");
+        press(&mut h, "x");
+        assert!(h.state().chat.chat.attached.is_empty());
     }
 
     #[test]

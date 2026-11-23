@@ -63,6 +63,7 @@ only through your tools. Lengths are millimetres; x east, y north, z up; the ori
 plate's surface. Look before you change: inspect_scene shows every object with its id, size and position, list_commands (with a \
 filter such as move or primitive) shows a command's parameters. Change the scene with execute {command, params}, for example \
 add_primitive {kind: \"box\", size: [20,20,10]}, move {id, by: [x,y,z]}, rotate {id, axis, degrees}, scale {id, factor}, delete {id}. \
+preview draws the plate as a picture you can see: look at it to check a part against the user's photo or words. \
 Skills hold what you need to know about modelling for a printer and about the slicer's settings: for a modelling, slicing or printing \
 request, call read_skill (with no name it lists them) and read the ones that fit before you act. When a request takes three or more steps, first write a checklist with todo_write (short imperative items, exactly \
 one in_progress) and call it again as each step finishes, so the user sees where you are; skip it for a quick look or one change. \
@@ -179,7 +180,19 @@ pub struct Done {
     pub name: String,
     pub text: String,
     pub error: bool,
+    /// A picture the tool drew (`preview`: a PNG, base64), which goes to the model as an image.
+    pub image: Option<String>,
 }
+
+impl Done {
+    /// An answer in words only.
+    pub fn text(call: &Call, text: String, error: bool) -> Done {
+        Done { id: call.id.clone(), name: call.name.clone(), text, error, image: None }
+    }
+}
+
+/// What the providers that take no picture in a tool's answer (OpenAI, Gemini) say with the pictures they get in a message after it.
+pub(crate) const PICTURES: &str = "The pictures the preview tool drew, in the order of its calls above.";
 
 /// One turn of the conversation, in no provider's form: each client writes its own.
 #[derive(Clone, Debug, PartialEq)]
@@ -213,11 +226,12 @@ impl Msg {
         Msg::User(text.into(), Vec::new())
     }
 
-    /// The bytes of the files it carries, which are counted apart from the words ([`MAX_FILES_TOTAL`]).
+    /// The bytes of the files and pictures it carries, which are counted apart from the words ([`MAX_FILES_TOTAL`]).
     pub fn file_bytes(&self) -> usize {
         match self {
             Msg::User(_, files) => files.iter().map(Attached::len).sum(),
-            _ => 0,
+            Msg::Results(done) => done.iter().filter_map(|d| d.image.as_ref()).map(String::len).sum(),
+            Msg::Assistant(_) => 0,
         }
     }
 

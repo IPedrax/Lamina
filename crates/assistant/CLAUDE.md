@@ -46,6 +46,10 @@ What comes from the network is hostile, and what goes out is the user's:
   written for Lamina's commands, not borrowed: tests check its header, its size, and that every `command {params}` it shows exists in
   the real catalog (the slicer's included, as a dev dependency). Add a skill by adding a file and a line in `FILES`.
 - `todo_write` (`tools::TODO`) is answered by `tools::run` but its list is kept by the chat (`Chat::todos`), not logged as a call.
+- `preview` (`tools::PREVIEW`, `tools::picture`) draws the plate with `lamina_core::render` (`PICTURE` pixels) and the chat puts
+  the PNG in `Done::image`. Anthropic takes it inside the `tool_result`; OpenAI and Gemini take words only in a function's answer,
+  so their clients add a user message (or turn) with the pictures after the answers (`PICTURES`). Pictures count with the files a
+  conversation may carry (`Msg::file_bytes`), as every request sends them again.
 - Look at `tools::all()`'s schemas when adding a tool: plain types only (Gemini takes a subset of OpenAPI; `gemini::schema` writes a
   free-form object as text that the tool reads back). A test checks it.
 - Not here, on purpose: saved chats (roadmap 9.5, now that projects exist) and a chat shared between windows. Add them with their own tests.

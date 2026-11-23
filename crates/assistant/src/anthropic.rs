@@ -26,8 +26,16 @@ pub fn request(model: &str, key: &str, history: &[Msg]) -> Request {
                 |mime, b64| json!({"type": "image", "source": {"type": "base64", "media_type": mime, "data": b64}}),
             )}),
             Msg::Assistant(reply) => json!({"role": "assistant", "content": reply.raw}),
+            // A picture goes in the tool's answer itself, beside its words.
             Msg::Results(done) => json!({"role": "user", "content": done.iter().map(|d| {
-                json!({"type": "tool_result", "tool_use_id": d.id, "content": d.text, "is_error": d.error})
+                let content = match &d.image {
+                    Some(png) => json!([
+                        {"type": "text", "text": d.text},
+                        {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": png}},
+                    ]),
+                    None => json!(d.text),
+                };
+                json!({"type": "tool_result", "tool_use_id": d.id, "content": content, "is_error": d.error})
             }).collect::<Vec<_>>()}),
         })
         .collect();

@@ -269,6 +269,20 @@ impl ChatPanel {
                 }
             });
         ui.separator();
+        // The files that go with the next message, each with a button to take it off.
+        let mut off = None;
+        for (i, a) in self.chat.attached.iter().enumerate() {
+            ui.horizontal(|ui| {
+                let kind = if a.image { "picture" } else { "text" };
+                ui.label(RichText::new(format!("{} ({kind}, {} KB)", a.name, a.size.div_ceil(1024))).small());
+                if ui.small_button("x").on_hover_text("Do not send this file").clicked() {
+                    off = Some(i);
+                }
+            });
+        }
+        if let Some(i) = off {
+            self.chat.detach(i);
+        }
         let edit =
             ui.add(TextEdit::multiline(&mut self.input).desired_rows(2).desired_width(f32::INFINITY).hint_text("Message (Enter sends)"));
         let enter = edit.has_focus() && ui.input(|i| i.key_pressed(Key::Enter) && !i.modifiers.shift);
@@ -283,6 +297,17 @@ impl ChatPanel {
             }
             if ui.add_enabled(!busy, egui::Button::new("Clear")).clicked() {
                 self.chat.clear();
+            }
+            let attach = ui.add_enabled(!busy, egui::Button::new("Attach...")).on_hover_text(
+                "Send a photo or sketch of the part (or a text note) with the next message; dropping a picture on the window does too",
+            );
+            if attach.clicked()
+                && let Some(path) = rfd::FileDialog::new()
+                    .add_filter("Picture", &["png", "jpg", "jpeg", "gif", "webp"])
+                    .add_filter("Text", &["txt", "md"])
+                    .pick_file()
+            {
+                self.chat.attach(&path);
             }
         });
     }

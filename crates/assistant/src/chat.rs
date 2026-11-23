@@ -278,9 +278,9 @@ impl Chat {
         }
         // The turn is one undo step: this reply's calls are one transaction, merged with the turn's earlier ones.
         let label = self.turn.as_ref().map(|t| t.label.clone()).unwrap_or_else(|| "assistant".into());
-        let done = session.transaction(&label, |s| Ok(batch(s, &calls, access))).unwrap_or_else(|e| {
-            calls.iter().map(|c| Done { id: c.id.clone(), name: c.name.clone(), text: e.clone(), error: true }).collect()
-        });
+        let done = session
+            .transaction(&label, |s| Ok(batch(s, &calls, access)))
+            .unwrap_or_else(|e| calls.iter().map(|c| Done::text(c, e.clone(), true)).collect());
         session.merge_steps(&label, &label);
         for (call, d) in calls.iter().zip(&done) {
             // The checklist is drawn as a list, not as a call in the log; one that was refused is shown, so the user sees why it is not.
@@ -331,16 +331,19 @@ fn batch(session: &mut Session, calls: &[Call], access: Access) -> Vec<Done> {
         .iter()
         .enumerate()
         .map(|(i, call)| {
-            let result = if i < MAX_CALLS {
-                tools::run(session, call, access)
-            } else {
-                Err(format!("only {MAX_CALLS} tool calls are run in one reply: ask again for the rest"))
-            };
-            let (text, error) = match result {
-                Ok(v) => (to_text(&v), false),
-                Err(e) => (e, true),
-            };
-            Done { id: call.id.clone(), name: call.name.clone(), text, error }
+            if i >= MAX_CALLS {
+                return Done::text(call, format!("only {MAX_CALLS} tool calls are run in one reply: ask again for the rest"), true);
+            }
+            if call.name == tools::PREVIEW {
+                return match tools::picture(session, &call.args) {
+                    Ok((text, png)) => Done { image: Some(png), ..Done::text(call, text, false) },
+                    Err(e) => Done::text(call, e, true),
+                };
+            }
+            match tools::run(session, call, access) {
+                Ok(v) => Done::text(call, to_text(&v), false),
+                Err(e) => Done::text(call, e, true),
+            }
         })
         .collect()
 }

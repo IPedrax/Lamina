@@ -70,7 +70,8 @@ it but does not protect it from anyone who has Lamina; with a passphrase it is e
 once a session. A key in `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `GEMINI_API_KEY` is used instead of any typed one.
 
 The assistant can model (shapes, outlines extruded into parts, booleans, cuts, arranging), set up and check a slice, and read notes
-on design for FDM and on slicer settings. It cannot touch files, so it cannot open, save or export anything or send to a printer,
+on design for FDM and on slicer settings. It can look at the plate too: it draws a picture of it to compare a part with a photo you
+attached (Attach, under the message box, or drop the picture on the window) or with what you described. It cannot touch files, so it cannot open, save or export anything or send to a printer,
 and it cannot start a new plate. Each of its turns is one undo step.
 
 ## Sending to a printer

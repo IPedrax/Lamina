@@ -71,7 +71,7 @@ mod tests {
         let mut session = Session::new();
         session.register(lamina_slicer::COMMANDS);
         session.register(lamina_csg::COMMANDS);
-        let tools = ["execute", "list_commands", "inspect_scene", "todo_write", "read_skill"];
+        let tools: Vec<&str> = crate::tools::all().iter().map(|t| t.name).collect();
         let mut seen = 0;
         for s in all() {
             // Code spans are the odd pieces between backticks; `name {params}` is a call.
