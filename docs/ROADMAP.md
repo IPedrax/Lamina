@@ -110,6 +110,9 @@ Priorities:
 - **4.4 Seam placement.** `seam`: `aligned` (the default: each loop starts nearest the seam below that is nearest it, the first
   layer at the rear), `rear` (greatest y, the leftmost of ties), `sharpest` (the sharpest inside corner, else the sharpest corner,
   rearmost of near ties) or `nearest` (where the head is, as before). Skirt and brim loops follow the same rule.
+- **4.13 Feature types in the G-code.** Every stroke has a kind, written as `;TYPE:outer-wall` (inner-wall, solid-infill,
+  sparse-infill, skirt, brim, support, support-interface, raft) before it, again after each layer change. `slice_check` returns
+  the filament of each kind (`features`), so the assistant can count them.
 - **6.1 Send to Moonraker** and **6.2 Send to OctoPrint.** `crates/printer`: one multipart upload to the address the user typed
   (`/server/files/upload` with `root` and `print`, or `/api/files/local` with `select` and `print` and the key in `X-Api-Key`),
   no redirects, the reply read up to 1 MB, the address checked (http or https, no credentials, query or fragment). The
@@ -205,9 +208,6 @@ to add and popular.
 - Thumbnails: comment blocks of a small PNG drawn by the existing CPU rasterizer, which Klipper's front ends and some firmwares show.
 - Pressure advance: `M900` (Marlin), `SET_PRESSURE_ADVANCE` (Klipper) or `M572` (RepRapFirmware), from a filament field.
 - RepRapFirmware: `G10` firmware retraction.
-
-**4.13 Feature types in the G-code (P1).** How: write a comment before each kind of move (outer wall, inner wall, solid, sparse,
-skirt, support). The 3D preview colours by it (7.3), and the AI can count them.
 
 **4.14 Per-object settings (P1).** How: an optional map of profile fields on each object, set by `set_object_settings {id, profile}`.
 The slicer lays it over the plate's profile for that object only: infill, walls, layers. Modifier meshes (settings for a region inside

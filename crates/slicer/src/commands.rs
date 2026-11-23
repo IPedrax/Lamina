@@ -24,7 +24,7 @@ pub static COMMANDS: &[Command] = &[
     },
     Command {
         id: "slice_check",
-        params: "{ids?, printer?, filament?, profile?} the same slice as `slice`, with no file written: what would print and whether it can. Returns {layers, filament_mm, print_seconds, print_time, warnings}, or an error saying what does not fit the plate (off it, below it, too tall) or what a setting must be. Use it to check a model before the user exports it",
+        params: "{ids?, printer?, filament?, profile?} the same slice as `slice`, with no file written: what would print and whether it can. Returns {layers, filament_mm, print_seconds, print_time, warnings, features (filament mm by kind: outer-wall, inner-wall, solid-infill, sparse-infill, skirt, brim, support, support-interface, raft)}, or an error saying what does not fit the plate (off it, below it, too tall) or what a setting must be. Use it to check a model before the user exports it",
         run: slice_check,
         undoable: false,
         files: Files::None,
@@ -119,9 +119,11 @@ fn clock(seconds: f64) -> String {
 }
 
 fn summary(out: &print::Output) -> Value {
+    let features: serde_json::Map<String, Value> =
+        out.features.iter().map(|(k, v)| (k.to_string(), json!((v * 10.0).round() / 10.0))).collect();
     json!({
         "layers": out.layers, "filament_mm": out.filament_mm, "print_seconds": out.seconds.round(),
-        "print_time": clock(out.seconds), "warnings": out.warnings,
+        "print_time": clock(out.seconds), "warnings": out.warnings, "features": features,
     })
 }
 

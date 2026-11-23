@@ -44,6 +44,8 @@ presets live in the app's settings panel, not in these commands.
 
 ## Reading the result
 
+- `features` splits the filament by kind (walls, infill, support, brim, raft): if support is a large share, the part may print
+  better turned another way.
 - `print_time` and `filament_mm` are lower bounds. Time is distance over speed with no acceleration, so expect longer. A metre of
   1.75 mm filament is about 2.4 cm3, roughly 3 g of PLA.
 - A warning that a mesh is not closed means parts of it may be missing from the print. Tell the user, and do not call the slice good.
