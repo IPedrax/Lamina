@@ -13,6 +13,7 @@ pub mod project;
 pub mod render;
 pub mod repair;
 pub mod scene;
+pub mod simplify;
 pub mod sketch;
 pub mod stl;
 pub mod threemf;

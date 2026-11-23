@@ -137,6 +137,8 @@ pub struct App {
     axis: usize,
     degrees: f64,
     factor: f64,
+    /// The share of a heavy mesh's triangles Simplify keeps, %.
+    keep: f64,
     pub chat: chat::ChatPanel,
     /// The presets last applied, as labels, and the ones the user saved.
     pub printer: Option<String>,
@@ -207,6 +209,7 @@ impl App {
             axis: 2,
             degrees: 90.0,
             factor: 1.5,
+            keep: 25.0,
             chat: chat::ChatPanel::new(net),
             printer: None,
             filament: None,
@@ -944,6 +947,31 @@ impl App {
                 self.boolean("cut", json!({ "id": id, "z": self.cut_z }));
             }
         });
+        // A heavy mesh (a scan, say) can be given fewer triangles; on a thread, as it can take seconds.
+        let triangles = self.session.scene.get(id).map_or(0, |o| o.mesh.triangles.len());
+        if triangles > 1000 {
+            ui.horizontal(|ui| {
+                ui.add(egui::DragValue::new(&mut self.keep).speed(1.0).range(1.0..=99.0).suffix(" %"))
+                    .on_hover_text("The share of its triangles to keep");
+                if ui
+                    .button("Simplify")
+                    .on_hover_text(format!("{triangles} triangles now; its shape is kept as well as it can be"))
+                    .clicked()
+                {
+                    let params = json!({ "id": id, "ratio": self.keep / 100.0 });
+                    self.start(
+                        "simplify",
+                        true,
+                        move |s| s.execute("simplify", &params).map(work::Done::Value),
+                        move |app, done| {
+                            if let Ok(work::Done::Value(v)) = done {
+                                app.status = format!("Simplified from {} to {} triangles.", v["before"], v["triangles"]);
+                            }
+                        },
+                    );
+                }
+            });
+        }
         ui.horizontal(|ui| {
             if ui.button("Duplicate").on_hover_text("A copy beside it; the plate is laid out again").clicked()
                 && let Some(v) = self.run("duplicate", json!({ "id": id }))
@@ -1467,6 +1495,20 @@ mod tests {
         app.wait();
         assert_eq!(app.session.scene.objects.len(), 3, "nothing lost and nothing applied");
         assert!(app.failed && app.status.contains("plate changed"), "{}", app.status);
+    }
+
+    #[test]
+    fn a_heavy_mesh_is_simplified_from_its_panel() {
+        let mut h = window();
+        h.state_mut().run("add_primitive", json!({"kind": "sphere", "radius": 20, "segments": 96}));
+        h.state_mut().selected = vec![1];
+        h.run();
+        let before = h.state().session.scene.get(1).unwrap().mesh.triangles.len();
+        press(&mut h, "Simplify");
+        let after = h.state().session.scene.get(1).unwrap().mesh.triangles.len();
+        assert!(after <= before / 4 + 1, "{before} to {after}: {}", h.state().status);
+        assert!(h.state().status.starts_with("Simplified"), "{}", h.state().status);
+        assert_eq!(h.state().session.undo_label(), Some("simplify"));
     }
 
     #[test]

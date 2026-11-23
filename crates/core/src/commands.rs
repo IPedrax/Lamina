@@ -68,6 +68,13 @@ pub static ALL: &[Command] = &[
         Files::None,
     ),
     cmd(
+        "simplify",
+        "{id, triangles? (4 or more) | ratio? (0 to 1, the share of triangles kept)} gives a heavy mesh (a scan) fewer triangles, keeping its shape: edges collapsed cheapest first by quadric error, never turning a face over or opening a closed mesh. Give one of the two. Returns {before, triangles, watertight}",
+        simplify,
+        true,
+        Files::None,
+    ),
+    cmd(
         "repair",
         "{id} mends an object's mesh: doubled faces and skins dropped, faces wound like their neighbours and each shell outward, cracks closed and small holes filled. Returns {dropped, flipped, holes_filled, watertight}; a mesh that is still open has a hole too big to fill without guessing",
         repair,
@@ -644,6 +651,34 @@ fn repair(s: &mut Session, p: &Value) -> Result<Value, String> {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct Simplify {
+    id: u32,
+    triangles: Option<usize>,
+    ratio: Option<f64>,
+}
+
+fn simplify(s: &mut Session, p: &Value) -> Result<Value, String> {
+    let a: Simplify = parse(p)?;
+    let mesh = std::sync::Arc::clone(&s.scene.get(a.id)?.mesh);
+    let before = mesh.triangles.len();
+    let target = match (a.triangles, a.ratio) {
+        (Some(t), None) if t >= 4 => t,
+        (None, Some(r)) if r.is_finite() && r > 0.0 && r < 1.0 => ((before as f64 * r).round() as usize).max(4),
+        (Some(_), None) => return Err("`triangles` is 4 or more".into()),
+        (None, Some(_)) => return Err("`ratio` is a number between 0 and 1".into()),
+        _ => return Err("give `triangles` or `ratio`, one of them".into()),
+    };
+    if target >= before {
+        return Err(format!("object {} has {before} triangles, no more than the {target} asked for: nothing to do", a.id));
+    }
+    let out = crate::simplify::simplify(&mesh, target)?;
+    let (triangles, watertight) = (out.triangles.len(), out.is_watertight());
+    s.scene_mut().get_mut(a.id)?.mesh = std::sync::Arc::new(out);
+    Ok(json!({"before": before, "triangles": triangles, "watertight": watertight}))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Arrange {
     ids: Option<Vec<u32>>,
     gap: Option<f64>,
@@ -1104,6 +1139,30 @@ mod tests {
         run(&mut s, "undo", json!({})).unwrap();
         assert!(!s.scene.get(1).unwrap().mesh.is_watertight());
         assert!(run(&mut s, "repair", json!({"id": 7})).is_err());
+    }
+
+    #[test]
+    fn simplify_takes_a_heavy_mesh_down_as_one_undo_step() {
+        let mut s = Session::new();
+        run(&mut s, "add_primitive", json!({"kind": "sphere", "radius": 20, "segments": 128})).unwrap();
+        let before = s.scene.get(1).unwrap().mesh.triangles.len();
+        let r = run(&mut s, "simplify", json!({"id": 1, "ratio": 0.1})).unwrap();
+        assert_eq!(r["before"], before);
+        assert!(r["triangles"].as_u64().unwrap() as usize <= before / 10 && r["watertight"] == true, "{r}");
+        run(&mut s, "simplify", json!({"id": 1, "triangles": 200})).unwrap();
+        assert!(s.scene.get(1).unwrap().mesh.triangles.len() <= 200);
+        run(&mut s, "undo", json!({})).unwrap();
+        run(&mut s, "undo", json!({})).unwrap();
+        assert_eq!(s.scene.get(1).unwrap().mesh.triangles.len(), before);
+        for bad in [
+            json!({"id": 1}),
+            json!({"id": 1, "ratio": 1.5}),
+            json!({"id": 1, "triangles": 2}),
+            json!({"id": 1, "triangles": 10, "ratio": 0.5}),
+        ] {
+            assert!(run(&mut s, "simplify", bad.clone()).is_err(), "{bad}");
+        }
+        assert!(run(&mut s, "simplify", json!({"id": 1, "triangles": before * 2})).unwrap_err().contains("nothing to do"));
     }
 
     #[test]

@@ -71,6 +71,10 @@ Priorities:
   inside another (a void). `import_mesh` repairs on the way in and says what it did; `repair {id}` mends an object, as one undo step.
 - **2.3 Report problems clearly.** `info` gives `open_edges`, `nonmanifold_edges` and `flipped_faces` for each object; the plate
   panel shows a warning sign with the problems on hover, and a Repair button for the picked object.
+- **2.4 Simplify heavy meshes.** `crates/core/src/simplify.rs`: quadric edge collapse written from Garland and Heckbert's paper,
+  with the link condition (the surface stays manifold), a check that no face turns over or shrinks to nothing, and heavy planes
+  along open borders so holes do not grow. `simplify {id, triangles | ratio}` is one undo step; the object panel offers it for a
+  mesh over 1000 triangles, on a thread. About 164,000 triangles go to 8,000 in under a second; a closed mesh stays closed.
 - **3.1 Rotate and scale handles.** The gizmo has a ring per axis (a circle about the middle, square to the axis) and a corner
   square. A drag on a ring turns by the angle the pointer sweeps round the middle on screen, the way the axis is seen, snapped to 5
   degrees; a drag on the square scales by how much farther the pointer is from the middle, snapped to 0.05. The picked objects are
@@ -250,10 +254,6 @@ what is wrong before adding features.
 ## 1. Files and projects
 
 ## 2. Meshes
-
-**2.4 Simplify heavy meshes (P2).** Imported scans can have millions of triangles. How: quadric edge collapse (Garland and Heckbert's
-public algorithm) in `crates/core/src/simplify.rs`, behind a `simplify {id, triangles}` command. The `meshopt` crate is C++ through
-FFI, so this would be our own implementation.
 
 ## 3. Modelling
 

@@ -63,7 +63,8 @@ rebuilt where it stands.
 4. Check with numbers before you describe it. `inspect_scene` gives size, min, max, volume and whether the mesh is closed. The
    size must match what was asked, `watertight` must be true, and the object must sit on the plate (min z = 0). An imported mesh
    is mended on the way in; if `open_edges`, `nonmanifold_edges` or `flipped_faces` is still above 0, run `repair {id}` and read
-   what it says. A mesh that stays open has a hole too big to fill without guessing: tell the user.
+   what it says. A mesh that stays open has a hole too big to fill without guessing: tell the user. An imported scan of hundreds of
+   thousands of triangles slices and draws slowly: `simplify {id, ratio: 0.2}` keeps its shape with a fifth of them.
 5. `slice_check` says whether it fits the plate and how long it will take. A model that fails it is not done.
 6. Report in this order: what is on the plate; the values you chose, one per line, so a wrong one is easy to spot; anything the
    request needed that Lamina cannot do yet. Then stop and let the user correct you.
