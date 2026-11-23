@@ -359,8 +359,8 @@ sequential printing a check of the print head's clearance.
 
 ## 6. Printers
 
-**6.4b More printers still (P2).** Bambu over the LAN (MQTT and FTPS, now limited by Bambu's own authorization), its own module in
-`crates/printer` if it is ever done.
+**6.4b Bambu over the LAN (P2).** Left out for now, and why, in [QUESTIONS.md](QUESTIONS.md): MQTT over TLS and implicit FTPS,
+which Bambu's 2025 authorization keeps to Bambu Connect or a printer in Developer Mode. Its own module in `crates/printer` if done.
 
 ## 7. Desktop
 

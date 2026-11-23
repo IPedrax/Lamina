@@ -98,6 +98,28 @@ to `main` as they were. Nothing is left to do here.
   closing the window stops the print. The status shows how far the stream has got, not the printer's temperatures.
 - Upload only (to the printer's SD card with `M28`) is not offered: Send to printer is greyed out for a USB cable.
 
+## Bambu over the LAN: left out (roadmap 6.4b)
+
+- What it would take, from Bambu's public page of network ports: MQTT over TLS on port 8883 (user `bblp`, the printer's access
+  code as the password) to start a print, and implicit FTPS on port 990 to upload the file.
+- Why it is left out, rather than done badly:
+  - Authorization. Since Bambu's January 2025 firmware, a printer on Bambu's cloud takes prints from other programs only through
+    Bambu Connect, Bambu's own closed middleware. Direct MQTT works only in LAN-only mode with Developer Mode on, which Bambu's wiki
+    says opens MQTT, the camera stream and FTP to the network and which Bambu does not support. Lamina would have to ask users to
+    turn their printer's protection off, or imitate Bambu Connect's signed commands with a key Bambu never gave out. Neither is
+    honest.
+  - Trust. The printers present a certificate from Bambu's own authority, not a public one. Checking it needs Bambu's CA
+    certificate, which this run found only inside Bambu's AGPL slicer (Lamina copies nothing from it); not checking it would send
+    the access code to whatever answers at the address.
+  - The file. Bambu printers expect their own start G-code, and usually a 3MF plate package. Lamina has no Bambu printer profile,
+    so a plain upload would print with the wrong start sequence.
+  - Testing. Only local fakes: MQTT over TLS and implicit FTPS (whose data channel the printers are reported to want on the same
+    TLS session) would be written blind.
+- Options: leave it out; or support Developer Mode only, pinning the printer's certificate the first time and asking the user to
+  confirm it, after Bambu printer profiles exist; or apply to Bambu's program for Bambu Connect.
+- Taken: left out. Say if Developer Mode support is wanted: it needs a Bambu printer in Developer Mode to test against, and a
+  decision on trusting its certificate.
+
 ## P2 items not started, and why
 
 Every P0 and P1 item is done except 0.2 (below). Of P2, these were left for a decision or a machine this session did not have:

@@ -117,6 +117,9 @@ sends only to that address (or port), and only when you press Send.
 | Duet | `192.168.1.40` | the board's password, if it has one | a board running RepRapFirmware on its own, or one run by a single-board computer (DuetSoftwareFramework): Lamina asks which answers |
 | USB cable | the port: `/dev/ttyUSB0` or `/dev/ttyACM0` on Linux, `/dev/cu.usbmodem...` on macOS, `COM3` on Windows | none; pick the Baud rate instead (115200 for most, 250000 for some) | Lamina streams the G-code while it prints, so only Send and print works, and the window must stay open until the print is done. Cancel stops it and turns the heaters off |
 
+Bambu Lab printers are not offered: their firmware takes prints from other programs only through Bambu's own software, or in
+Developer Mode, and Lamina has no Bambu printer profile yet.
+
 Tick Show what it is doing to see the printer's state, file, progress and temperatures, asked every five seconds (for a printer on a
 USB cable, how far the print Lamina is streaming has got: the port is never opened just to ask, as that restarts many boards). The key or
 password is kept like the assistant's key: in memory, or sealed in the settings file when Remember is ticked.
