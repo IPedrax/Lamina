@@ -36,6 +36,8 @@ pub const PRINTER_FIELDS: &[&str] = &[
     "travel_speed",
     "extruders",
     "toolchange_gcode",
+    "clearance_radius",
+    "gantry_height",
 ];
 /// The fields a process preset may set: the layers and the strength, never the machine or the filament.
 pub const PROCESS_FIELDS: &[&str] = &[

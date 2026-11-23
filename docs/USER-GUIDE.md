@@ -72,6 +72,7 @@ all, set the environment variable `LAMINA_NO_UPDATE_CHECK=1`: the menu items and
   several, Union, Subtract and Intersect. A boolean that cannot give a sound solid says so and changes nothing.
 - **This object's settings** lets one object print differently from the rest: its own walls, infill, seam, speeds or supports,
   or its own extruder.
+- **Undo** takes back a whole step, a drag or a chat turn alike; Edit, History goes back several at once.
 
 ## Several extruders
 
@@ -84,7 +85,15 @@ with Tower x and y (from the middle of the plate) and Tower size, clear of every
 last change so it stays solid. The slice says so when the tower is off the plate, over an object, or too small for the purges of
 one layer. The tool change G-code, in the Start and end G-code group, runs before each `T`. The firmware applies each tool's
 offset; on Klipper, `T0`, `T1` and so on are macros in your printer's config.
-- **Undo** takes back a whole step, a drag or a chat turn alike; Edit, History goes back several at once.
+
+## One object at a time
+
+Tick Print each object whole, in the One at a time group, to finish each object before the next starts, the shortest first, so
+one that fails spoils none of the others. The print head must not touch what is already printed, so set its size in the same
+group: Head clearance radius is how far it reaches round the nozzle, and Gantry height how far above the nozzle's tip the bar
+that carries it runs. The slice refuses, naming the objects, when two stand closer than the radius, or when an object other
+than the tallest is taller than the gantry. Between objects the head lifts above everything printed before it moves across.
+All the objects print with one extruder.
 
 ## Cutting a part into pieces
 
@@ -269,4 +278,7 @@ The same text is the tooltip in the window. The names are the ones a profile fil
 | `tower_y` | Where the purge tower's middle stands, mm north of the plate's middle. | -1000 to 1000 | 60.0 |
 | `tower_size` | The side of the purge tower, a square each tool change purges on, mm; it prints on every layer up to the last change. | 5 to 200 | 20.0 |
 | `purge_volume` | Plastic each tool change lays on the purge tower, mm3, so the new nozzle prints clean. | 0 to 1000 | 20.0 |
+| `sequential` | Print each object whole before the next, the shortest first, so a failed one spoils no other; the head needs room round each. |  | false |
+| `clearance_radius` | How far the print head reaches round the nozzle, mm: objects printed one at a time stand at least this far apart. | 1 to 500 | 35.0 |
+| `gantry_height` | How far above the nozzle's tip the gantry that carries the head runs, mm: only the last object printed one at a time may be taller. | 1 to 2000 | 20.0 |
 <!-- settings:end -->

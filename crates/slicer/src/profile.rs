@@ -165,6 +165,12 @@ pub struct Profile {
     pub tower_y: f64,
     pub tower_size: f64,
     pub purge_volume: f64,
+    // One object at a time
+    /// Print each object whole before the next, the shortest first. The head reaches `clearance_radius` mm round the nozzle, and
+    /// the gantry runs `gantry_height` mm above its tip: objects must stand that far apart, and only the last may be taller.
+    pub sequential: bool,
+    pub clearance_radius: f64,
+    pub gantry_height: f64,
 }
 
 /// The most extruders a printer may have.
@@ -268,6 +274,9 @@ impl Default for Profile {
             tower_y: 60.0,
             tower_size: 20.0,
             purge_volume: 20.0,
+            sequential: false,
+            clearance_radius: 35.0,
+            gantry_height: 20.0,
         }
     }
 }
@@ -333,6 +342,8 @@ pub const LIMITS: &[(&str, f64, f64)] = &[
     ("tower_y", -1000.0, 1000.0),
     ("tower_size", 5.0, 200.0),
     ("purge_volume", 0.0, 1000.0),
+    ("clearance_radius", 1.0, 500.0),
+    ("gantry_height", 1.0, 2000.0),
 ];
 
 /// A number field's range, from [`LIMITS`].
@@ -435,6 +446,18 @@ pub const ABOUT: &[(&str, &str)] = &[
     ("tower_y", "Where the purge tower's middle stands, mm north of the plate's middle."),
     ("tower_size", "The side of the purge tower, a square each tool change purges on, mm; it prints on every layer up to the last change."),
     ("purge_volume", "Plastic each tool change lays on the purge tower, mm3, so the new nozzle prints clean."),
+    (
+        "sequential",
+        "Print each object whole before the next, the shortest first, so a failed one spoils no other; the head needs room round each.",
+    ),
+    (
+        "clearance_radius",
+        "How far the print head reaches round the nozzle, mm: objects printed one at a time stand at least this far apart.",
+    ),
+    (
+        "gantry_height",
+        "How far above the nozzle's tip the gantry that carries the head runs, mm: only the last object printed one at a time may be taller.",
+    ),
 ];
 
 /// What a setting does, from [`ABOUT`]; empty for a name that is not a setting.
@@ -605,6 +628,12 @@ mod tests {
             json!({"tower_x": 1e9}),
             json!({"purge_volume": -1}),
             json!({"standby_temp_delta": 1e9}),
+            json!({"sequential": "yes"}),
+            json!({"sequential": true, "clearance_radius": 0}),
+            json!({"sequential": true, "clearance_radius": -35}),
+            json!({"sequential": true, "gantry_height": 1e12}),
+            json!({"sequential": true, "gantry_height": null}),
+            json!({"gantry_hieght": 20}),
         ] {
             assert!(Profile::from_json(&bad).is_err(), "{bad}");
         }

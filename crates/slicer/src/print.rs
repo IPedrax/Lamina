@@ -155,9 +155,13 @@ pub fn gcode_each(objects: &[(u32, Mesh)], own: &[Option<Profile>], p: &Profile)
             warnings.push(format!("object {id} is not a closed mesh: parts of it may be missing from the print"));
         }
     }
-    if p.vase && objects.len() > 1 {
+    if p.vase && objects.len() > 1 && !p.sequential {
         warnings.push("vase mode climbs one wall without stopping: with several objects the head stops at each, so print one".into());
     }
+    // Each object's extruder, from 0 as `T` counts them.
+    let tools: Vec<usize> =
+        (0..objects.len()).map(|i| own.get(i).and_then(Option::as_ref).unwrap_or(p).extruder.saturating_sub(1) as usize).collect();
+    let sequence = if p.sequential { Some(one_at_a_time(objects, &tools, p)?) } else { None };
     let w = p.line_width();
     // Adaptive layers are the plate's, chosen from every object's surfaces, so the objects' layers stay level with each other.
     let tops = if p.adaptive_layers {
@@ -173,9 +177,6 @@ pub fn gcode_each(objects: &[(u32, Mesh)], own: &[Option<Profile>], p: &Profile)
         .map(|(i, (_, m))| plan(m, own.get(i).and_then(Option::as_ref).unwrap_or(p), w, tops.as_deref()))
         .collect::<Result<_, _>>()?;
     let count = plans.iter().map(|(_, l)| l.len()).max().unwrap_or(0);
-    // Each object's extruder, from 0 as `T` counts them.
-    let tools: Vec<usize> =
-        (0..objects.len()).map(|i| own.get(i).and_then(Option::as_ref).unwrap_or(p).extruder.saturating_sub(1) as usize).collect();
     // Each layer's extruders in the order they print (the one in use first, then the rest from the lowest, so each changes once a
     // layer), how many tool changes each layer has, and the last layer each extruder prints on.
     let mut orders: Vec<Vec<usize>> = Vec::with_capacity(count);
@@ -318,8 +319,9 @@ pub fn gcode_each(objects: &[(u32, Mesh)], own: &[Option<Profile>], p: &Profile)
     let mut layer = |g: &mut Writer, plans: &mut [ObjectPlan], k: usize, label: usize, which: &[usize]| -> Result<(), String> {
         lamina_core::cancel::check()?;
         g.line(format!(";LAYER:{label}"));
-        // The fan: off for the first layer, then up a step a layer to full at `fan_full_layer`.
-        let fan = fan_at(p, label);
+        // The fan: off for the first layer, then up a step a layer to full at `fan_full_layer`; for each object again when they print
+        // one at a time.
+        let fan = fan_at(p, k + below);
         if (fan - g.fan).abs() > 0.5 {
             g.line(format!("M106 S{fan:.0}"));
             (g.fan, g.fan_now) = (fan, fan);
@@ -409,24 +411,88 @@ pub fn gcode_each(objects: &[(u32, Mesh)], own: &[Option<Profile>], p: &Profile)
         }
         Ok(())
     };
-    for k in 0..count {
-        let mut which: Vec<usize> = (0..plans.len()).collect();
-        if let Some(order) = orders.get(k).filter(|_| last_change.is_some()) {
-            // Each extruder's objects together, in the order the extruders print.
-            which.sort_by_key(|&i| order.iter().position(|&t| t == tools[i]).unwrap_or(usize::MAX));
+    let layers = match sequence {
+        // One object at a time: each whole, then up above everything printed, across at that height, and down only inside the next
+        // one's own footprint, where the head's clearance keeps it off the others.
+        Some(order) => {
+            let mut label = below;
+            let mut top = 0.0f64;
+            for (n, &i) in order.iter().enumerate() {
+                if n > 0 {
+                    g.set_z((top + SEQUENTIAL_LIFT).min(p.max_height));
+                    if let Some(at) = plans[i].1.iter().flat_map(|(_, _, s, _)| s).find_map(|s| s.pts.first().copied()) {
+                        g.travel(at);
+                    }
+                }
+                for k in 0..plans[i].1.len() {
+                    layer(&mut g, &mut plans, k, label, &[i])?;
+                    label += 1;
+                }
+                top = top.max(plans[i].1.last().map_or(0.0, |l| l.0) + lift);
+            }
+            label
         }
-        layer(&mut g, &mut plans, k, k + below, &which)?;
-    }
+        None => {
+            for k in 0..count {
+                let mut which: Vec<usize> = (0..plans.len()).collect();
+                if let Some(order) = orders.get(k).filter(|_| last_change.is_some()) {
+                    // Each extruder's objects together, in the order the extruders print.
+                    which.sort_by_key(|&i| order.iter().position(|&t| t == tools[i]).unwrap_or(usize::MAX));
+                }
+                layer(&mut g, &mut plans, k, k + below, &which)?;
+            }
+            count + below
+        }
+    };
     g.retract();
     g.line(p.expand(&p.end_gcode)?);
-    Ok(Output {
-        gcode: g.out,
-        layers: count + below,
-        filament_mm: g.filament,
-        seconds: g.planner.seconds(),
-        warnings,
-        features: g.by_feature,
-    })
+    Ok(Output { gcode: g.out, layers, filament_mm: g.filament, seconds: g.planner.seconds(), warnings, features: g.by_feature })
+}
+
+/// Between objects printed one at a time, the head travels this far above the tallest printed, mm.
+const SEQUENTIAL_LIFT: f64 = 2.0;
+
+/// The order objects print one at a time, the shortest first so the tallest is last, or why they cannot: they use more than one
+/// extruder, two stand closer than the head's `clearance_radius`, or one that is not last is taller than the `gantry_height`.
+/// Objects are taken by their bounding boxes.
+fn one_at_a_time(objects: &[(u32, Mesh)], tools: &[usize], p: &Profile) -> Result<Vec<usize>, String> {
+    let boxes: Vec<([f64; 3], [f64; 3])> = objects.iter().map(|(_, m)| m.bounds()).collect::<Option<_>>().ok_or("an object is empty")?;
+    if let Some(i) = (1..tools.len()).find(|&i| tools[i] != tools[0]) {
+        return Err(format!(
+            "objects {} and {} print with different extruders, and one at a time takes one extruder: give them the same, or print \
+             them together",
+            objects[0].0, objects[i].0
+        ));
+    }
+    for a in 0..boxes.len() {
+        for b in a + 1..boxes.len() {
+            let ((alo, ahi), (blo, bhi)) = (boxes[a], boxes[b]);
+            let gap = (blo[0] - ahi[0]).max(alo[0] - bhi[0]).max(0.0).hypot((blo[1] - ahi[1]).max(alo[1] - bhi[1]).max(0.0));
+            if gap < p.clearance_radius {
+                return Err(format!(
+                    "objects {} and {} are {gap:.1} mm apart, closer than the print head's clearance (`clearance_radius`, {} mm): \
+                     move them apart to print them one at a time",
+                    objects[a].0, objects[b].0, p.clearance_radius
+                ));
+            }
+        }
+    }
+    let top = |i: usize| boxes[i].1[2] + raft_height(p);
+    let mut order: Vec<usize> = (0..objects.len()).collect();
+    order.sort_by(|&a, &b| top(a).total_cmp(&top(b)));
+    if let Some((&last, rest)) = order.split_last()
+        && let Some(&tall) = rest.iter().find(|&&i| top(i) > p.gantry_height)
+    {
+        return Err(format!(
+            "object {} is {:.1} mm tall, more than the gantry's {} mm (`gantry_height`), and only the last object printed one at a \
+             time may be (object {}, the tallest): make it shorter or print them together",
+            objects[tall].0,
+            top(tall),
+            p.gantry_height,
+            objects[last].0
+        ));
+    }
+    Ok(order)
 }
 
 /// The purge tower's square, or why it cannot stand there: off the plate, or over an object (by the object's bounding box).
@@ -2036,6 +2102,58 @@ mod tests {
         let alone = gcode_each(&[(1, Mesh::cuboid([10.0, 10.0, 4.0]))], &[Some(own)], &two).unwrap().gcode;
         assert_eq!(alone.lines().filter(|l| l.starts_with('T')).collect::<Vec<_>>(), ["T1"]);
         assert!(alone.contains("M104 T0 S0\nT1\nM109 T1 S215") && !alone.contains("purge"));
+    }
+
+    /// A box 10 mm square and `h` tall, its middle at `x`.
+    fn block(x: f64, h: f64) -> Mesh {
+        Mesh::cuboid([10.0, 10.0, h]).transformed(&lamina_core::Transform::translate([x, 0.0, 0.0]))
+    }
+
+    #[test]
+    fn one_at_a_time_prints_each_object_whole_shortest_first_and_travels_above_them() {
+        let p = Profile { sequential: true, ..Profile::default() };
+        let out = gcode(&[(1, block(-25.0, 6.0)), (2, block(25.0, 2.0))], &p).unwrap();
+        assert_eq!(out.layers, 40, "ten layers, then thirty");
+        let layers: Vec<&str> = out.gcode.split(";LAYER:").skip(1).collect();
+        let xs = |l: &str| -> Vec<f64> {
+            l.lines()
+                .filter(|l| l.starts_with("G1 X") && l.contains(" E") && !l.contains(" E-"))
+                .filter_map(|l| l[4..].split(' ').next()?.parse().ok())
+                .collect()
+        };
+        // Past the first layer (whose skirt goes round both), each layer on one object: the short one (x 135 on the machine) first.
+        assert!(layers[1..10].iter().flat_map(|l| xs(l)).all(|x| x > 125.0));
+        assert!(layers[10..].iter().flat_map(|l| xs(l)).all(|x| x < 95.0));
+        // Between them: up 2 mm above the short one, across at that height, and only then down to the tall one's first layer.
+        let g = &out.gcode;
+        let lift = g.find("G1 Z4.000 F1200\n").expect("a lift above the short object");
+        let down = lift + g[lift..].find(";LAYER:10\n").unwrap();
+        let across = &g[lift..down];
+        assert!(across.lines().skip(1).all(|l| l.starts_with("G0 X")) && across.lines().count() == 2, "{across}");
+        let to: f64 = across.lines().nth(1).unwrap()[4..].split(' ').next().unwrap().parse().unwrap();
+        assert!((80.0..=90.0).contains(&to), "over the tall one: {across}");
+        let first_move = g[down..].lines().find(|l| l.starts_with("G0") || l.starts_with("G1")).unwrap();
+        assert!(first_move.starts_with("G1 Z0.200"), "{first_move}");
+        assert!(g[..lift].lines().last().unwrap().starts_with("G1 E-"), "retracted before it lifts");
+        // The fan starts off again for the second object's first layer.
+        assert!(layers[10].starts_with("10\nM106 S0\n"), "{}", &layers[10][..100]);
+    }
+
+    #[test]
+    fn one_at_a_time_refuses_objects_the_head_or_the_gantry_would_hit() {
+        let p = Profile { sequential: true, ..Profile::default() };
+        let two = [(1, block(-25.0, 6.0)), (2, block(25.0, 2.0))];
+        let close = gcode(&two, &Profile { clearance_radius: 45.0, ..p.clone() }).unwrap_err();
+        assert!(close.contains("objects 1 and 2 are 40.0 mm apart") && close.contains("`clearance_radius`, 45 mm"), "{close}");
+        assert!(gcode(&two, &Profile { clearance_radius: 45.0, ..Profile::default() }).is_ok(), "printed together, they may be close");
+        // Only the last printed may pass the gantry: the tall one alone may, both may not.
+        assert!(gcode(&two, &Profile { gantry_height: 5.0, ..p.clone() }).is_ok());
+        let tall = gcode(&two, &Profile { gantry_height: 1.5, ..p.clone() }).unwrap_err();
+        assert!(tall.contains("object 2 is 2.0 mm tall") && tall.contains("(object 1, the tallest)"), "{tall}");
+        // One extruder for them all.
+        let mixed = Profile { extruders: 2, ..p.clone() };
+        let e = gcode_each(&two, &[None, Some(Profile { extruder: 2, ..mixed.clone() })], &mixed).unwrap_err();
+        assert!(e.contains("objects 1 and 2 print with different extruders"), "{e}");
     }
 
     #[test]

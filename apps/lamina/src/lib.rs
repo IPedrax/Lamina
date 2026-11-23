@@ -1553,6 +1553,12 @@ impl App {
             field(ui, "Tower size, mm", "tower_size", &mut p.tower_size, 0.5);
             field(ui, "Purge, mm3", "purge_volume", &mut p.purge_volume, 1.0);
         });
+        group(ui, "One at a time", &mut |ui| {
+            ui.checkbox(&mut p.sequential, "Print each object whole, one after another").on_hover_text(hint("sequential"));
+            ui.end_row();
+            field(ui, "Head clearance radius, mm", "clearance_radius", &mut p.clearance_radius, 1.0);
+            field(ui, "Gantry height, mm", "gantry_height", &mut p.gantry_height, 1.0);
+        });
         group(ui, "Machine", &mut |ui| {
             field(ui, "Nozzle, mm", "nozzle", &mut p.nozzle, 0.05);
             field(ui, "Filament, mm", "filament_diameter", &mut p.filament_diameter, 0.05);
@@ -2068,6 +2074,7 @@ mod tests {
             ("Cooling", "Shortest layer, s"),
             ("Support details", "Gap above, mm"),
             ("Extruders", "Purge, mm3"),
+            ("One at a time", "Gantry height, mm"),
             ("Machine", "Junction deviation, mm"),
         ] {
             press(&mut h, group);

@@ -204,6 +204,13 @@ Priorities:
   extruder slices as before (the golden files are unchanged). In the window: an Extruders group, the tool change G-code, and
   Extruder in This object's settings. Tool offsets are left to the firmware (Marlin `M218`, RepRapFirmware `G10 P X Y`, a
   Klipper macro).
+- **4.17b Sequential printing.** `sequential` prints each object whole, the shortest first, with the print head's clearance
+  (`clearance_radius` round the nozzle, `gantry_height` above its tip, printer preset fields). It refuses, naming them, two
+  objects whose bounding boxes stand closer than the radius, an object other than the tallest that is taller than the gantry, and
+  objects on different extruders. Between objects the head retracts, rises 2 mm above the tallest printed (at most to
+  `max_height`), travels to the next object's first point at that height and only then goes down, so the low moves stay inside
+  the next object's own reach. The skirt and brim go round everything on the first object's first layer; the fan starts off again
+  on each object's first layer. A One at a time group in the window.
 - **5.1 Process presets.** A third kind in `presets.rs`, setting only the layers and the strength (`PROCESS_FIELDS`): 0.12 mm Fine,
   0.20 mm Standard, 0.28 mm Draft and Strong. `slice` and `slice_check` take `process` (after the printer and the filament, before
   `profile`); `slicer_presets` lists them; the window has a Process picker and Save process, kept in the settings file and the
@@ -373,8 +380,6 @@ what is wrong before adding features.
 
 ## 4. Slicer
 
-**4.17b Sequential printing (P2).** One object at a time, with a check of the print head's clearance.
-
 ## 5. Profiles and settings
 
 ## 6. Printers
@@ -405,4 +410,6 @@ through it.
 - Tool changes are for a nozzle per extruder: a single nozzle fed several filaments (a multi-material unit, with its ramming and
   long purges) is not handled. The purge tower is checked against each object's bounding box, not its outline, and the time
   estimate leaves out the wait for a tool to heat. None of it has run on a printer with two extruders.
+- Printing one object at a time takes the head as a cylinder of `clearance_radius` and the gantry as a bar across the whole
+  plate, and each object as its bounding box, so it may refuse an arrangement a real head would clear. It takes one extruder.
 - Nothing has been printed on real hardware.
