@@ -538,6 +538,15 @@ impl App {
             if ui.button("Frame all").clicked() {
                 self.frame_all();
             }
+            if ui.button("Arrange").on_hover_text("Lay every object out on the plate, none touching").clicked() {
+                let bed = self.profile.bed;
+                if let Some(v) = self.run("arrange", json!({ "bed": bed })) {
+                    if v["fits"] == false {
+                        (self.failed, self.status) = (true, "They do not all fit the plate: some stand off it.".into());
+                    }
+                    self.frame_all();
+                }
+            }
             ui.separator();
             ui.selectable_value(&mut self.tab, Tab::Prepare, "Prepare");
             ui.selectable_value(&mut self.tab, Tab::Preview, "Preview");
@@ -698,6 +707,12 @@ impl App {
             }
         });
         ui.horizontal(|ui| {
+            if ui.button("Duplicate").on_hover_text("A copy beside it; the plate is laid out again").clicked()
+                && let Some(v) = self.run("duplicate", json!({ "id": id }))
+                && let Some(copy) = v["ids"][0].as_u64()
+            {
+                self.selected = vec![copy as u32];
+            }
             if ui.button("Drop to plate").clicked() {
                 self.run("drop_to_bed", json!({ "id": id }));
             }

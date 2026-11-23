@@ -63,6 +63,20 @@ pub static ALL: &[Command] = &[
     cmd("drop_to_bed", "{id} lowers or raises an object so its lowest point touches the plate", drop_to_bed, true, Files::None),
     cmd("delete", "{id} removes an object", delete, true, Files::None),
     cmd(
+        "arrange",
+        "{ids?, gap? (mm between footprints, default 5), bed?:[x,y] (default the project's plate, else 220 x 220)} lays the objects (all, or `ids`) out on the plate in rows, tallest footprints first, the whole centred, none touching. Returns {fits}: false when they do not all fit the plate",
+        arrange,
+        true,
+        Files::None,
+    ),
+    cmd(
+        "duplicate",
+        "{id, count? (1..100, default 1), arrange? (default true)} copies an object; with `arrange` the plate is laid out again so nothing overlaps. Returns {ids, fits}",
+        duplicate,
+        true,
+        Files::None,
+    ),
+    cmd(
         "info",
         "{} every object: id, name, triangles, size, min, max, volume_mm3, watertight (a slicer can only fill a closed mesh), and its problems: open_edges (holes), nonmanifold_edges (edges of three or more faces), flipped_faces; `repair` mends what it can",
         info,
@@ -452,6 +466,96 @@ fn repair(s: &mut Session, p: &Value) -> Result<Value, String> {
         s.scene_mut().get_mut(a.id)?.mesh = std::sync::Arc::new(mesh);
     }
     Ok(json!({"dropped": r.dropped, "flipped": r.flipped, "holes_filled": r.holes_filled, "watertight": r.closed}))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Arrange {
+    ids: Option<Vec<u32>>,
+    gap: Option<f64>,
+    bed: Option<[f64; 2]>,
+}
+
+/// The plate from the project's print settings, else the default 220 mm one.
+fn plate(s: &Session) -> [f64; 2] {
+    s.print["profile"]["bed"].as_array().and_then(|b| Some([b.first()?.as_f64()?, b.get(1)?.as_f64()?])).unwrap_or([220.0, 220.0])
+}
+
+/// Lays `ids` out in rows inside `bed` (a shelf packer: the deepest footprints first, each row as deep as its deepest), `gap` apart,
+/// and centres the whole on the plate. Returns whether it all fits.
+fn lay_out(s: &mut Session, ids: &[u32], gap: f64, bed: [f64; 2]) -> Result<bool, String> {
+    let mut boxes: Vec<(u32, P3, P3)> =
+        ids.iter().map(|&id| s.scene.get(id).and_then(size_of).map(|(lo, hi)| (id, lo, hi))).collect::<Result<_, _>>()?;
+    boxes.sort_by(|a, b| (b.2[1] - b.1[1]).total_cmp(&(a.2[1] - a.1[1])).then(a.0.cmp(&b.0)));
+    // Where each footprint's front left corner goes, from the plate's front left corner.
+    let (mut x, mut y, mut row) = (0.0f64, 0.0f64, 0.0f64);
+    let mut width = 0.0f64;
+    let mut placed = Vec::with_capacity(boxes.len());
+    for &(id, lo, hi) in &boxes {
+        let (w, d) = (hi[0] - lo[0], hi[1] - lo[1]);
+        if x > 0.0 && x + w > bed[0] {
+            (x, y, row) = (0.0, y + row + gap, 0.0);
+        }
+        placed.push((id, lo, [x, y]));
+        width = width.max(x + w);
+        row = row.max(d);
+        x += w + gap;
+    }
+    let depth = y + row;
+    let shift = [-width / 2.0, -depth / 2.0];
+    for (id, lo, at) in placed {
+        let by = [at[0] + shift[0] - lo[0], at[1] + shift[1] - lo[1], 0.0];
+        let o = s.scene_mut().get_mut(id)?;
+        o.xf = o.xf.then(&Transform::translate(by));
+    }
+    Ok(width <= bed[0] + 1e-9 && depth <= bed[1] + 1e-9)
+}
+
+fn arrange(s: &mut Session, p: &Value) -> Result<Value, String> {
+    let a: Arrange = parse(p)?;
+    let gap = match a.gap {
+        None => 5.0,
+        Some(g) if g.is_finite() && (0.0..=100.0).contains(&g) => g,
+        Some(g) => return Err(format!("`gap` is from 0 to 100 mm, not {g}")),
+    };
+    let bed = match a.bed {
+        None => plate(s),
+        Some(b) => [positive("bed", b[0], 10_000.0)?, positive("bed", b[1], 10_000.0)?],
+    };
+    let ids = a.ids.unwrap_or_else(|| s.scene.objects.iter().map(|o| o.id).collect());
+    if ids.is_empty() {
+        return Err("nothing to arrange: the plate is empty".into());
+    }
+    Ok(json!({"fits": lay_out(s, &ids, gap, bed)?}))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Duplicate {
+    id: u32,
+    count: Option<u32>,
+    arrange: Option<bool>,
+}
+
+fn duplicate(s: &mut Session, p: &Value) -> Result<Value, String> {
+    let a: Duplicate = parse(p)?;
+    let count = a.count.unwrap_or(1);
+    if !(1..=100).contains(&count) {
+        return Err("`count` is from 1 to 100".into());
+    }
+    let o = s.scene.get(a.id)?.clone();
+    let mut ids = Vec::with_capacity(count as usize);
+    for _ in 0..count {
+        // The mesh is an `Arc`: a copy shares it and costs nothing.
+        ids.push(s.scene_mut().add_shared(&o.name, std::sync::Arc::clone(&o.mesh), o.xf)?);
+    }
+    let fits = if a.arrange.unwrap_or(true) {
+        let all: Vec<u32> = s.scene.objects.iter().map(|o| o.id).collect();
+        lay_out(s, &all, 5.0, plate(s))?
+    } else {
+        true
+    };
+    Ok(json!({"ids": ids, "fits": fits}))
 }
 
 fn delete(s: &mut Session, p: &Value) -> Result<Value, String> {
@@ -878,6 +982,52 @@ mod tests {
         let back = crate::project::read(&crate::project::write(&s.scene, &serde_json::Value::Null)).unwrap();
         assert!(back.scene.get(2).unwrap().xf.det() < 0.0 && back.scene.get(2).unwrap().world().is_watertight());
         assert!(run(&mut s, "mirror", json!({"id": 2, "axis": "w"})).is_err());
+    }
+
+    /// Whether two footprints overlap (touching edges do not).
+    fn overlap(a: (P3, P3), b: (P3, P3)) -> bool {
+        a.0[0] < b.1[0] - 1e-9 && b.0[0] < a.1[0] - 1e-9 && a.0[1] < b.1[1] - 1e-9 && b.0[1] < a.1[1] - 1e-9
+    }
+
+    #[test]
+    fn arrange_lays_objects_out_on_the_plate_without_overlap() {
+        let mut s = Session::new();
+        for (kind, extra) in
+            [("box", json!({"size": [40, 30, 10]})), ("cylinder", json!({"radius": 12, "height": 30})), ("sphere", json!({"radius": 9}))]
+        {
+            for _ in 0..3 {
+                let mut p = extra.clone();
+                p["kind"] = json!(kind);
+                run(&mut s, "add_primitive", p).unwrap(); // all in the middle of the plate, on top of each other
+            }
+        }
+        let r = run(&mut s, "arrange", json!({})).unwrap();
+        assert_eq!(r["fits"], true);
+        let boxes: Vec<(P3, P3)> = s.scene.objects.iter().map(|o| o.bounds().unwrap()).collect();
+        for (i, a) in boxes.iter().enumerate() {
+            assert!(a.0[0] >= -110.0 && a.1[0] <= 110.0 && a.0[1] >= -110.0 && a.1[1] <= 110.0, "on the plate: {a:?}");
+            for b in &boxes[i + 1..] {
+                assert!(!overlap(*a, *b), "{a:?} {b:?}");
+            }
+        }
+        // A plate too small says so, and the layout is still made.
+        assert_eq!(run(&mut s, "arrange", json!({"bed": [60, 60]})).unwrap()["fits"], false);
+        assert!(run(&mut s, "arrange", json!({"gap": -1})).is_err());
+        run(&mut s, "undo", json!({})).unwrap();
+    }
+
+    #[test]
+    fn duplicate_copies_an_object_sharing_its_mesh_and_lays_the_plate_out() {
+        let mut s = Session::new();
+        run(&mut s, "add_primitive", json!({"kind": "cylinder", "radius": 10, "height": 5})).unwrap();
+        let r = run(&mut s, "duplicate", json!({"id": 1, "count": 3})).unwrap();
+        assert_eq!((r["ids"].clone(), r["fits"].clone()), (json!([2, 3, 4]), json!(true)));
+        assert!(std::sync::Arc::ptr_eq(&s.scene.get(1).unwrap().mesh, &s.scene.get(4).unwrap().mesh));
+        let boxes: Vec<(P3, P3)> = s.scene.objects.iter().map(|o| o.bounds().unwrap()).collect();
+        assert!(boxes.iter().enumerate().all(|(i, a)| boxes[i + 1..].iter().all(|b| !overlap(*a, *b))));
+        run(&mut s, "undo", json!({})).unwrap();
+        assert_eq!(s.scene.objects.len(), 1, "one undo takes the copies back");
+        assert!(run(&mut s, "duplicate", json!({"id": 1, "count": 0})).is_err());
     }
 
     #[test]

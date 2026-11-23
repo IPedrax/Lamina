@@ -69,9 +69,20 @@ impl Scene {
 
     /// Adds a mesh with the transform that places it, and returns its id.
     pub fn add_transformed(&mut self, name: &str, mesh: Mesh, xf: Transform) -> Result<u32, String> {
-        let id = self.add_placed(name, mesh)?;
-        self.get_mut(id)?.xf = xf;
-        Ok(id)
+        self.add_shared(name, Arc::new(mesh), xf)
+    }
+
+    /// Adds an object sharing a mesh another already holds (a copy costs a pointer), and returns its id.
+    pub fn add_shared(&mut self, name: &str, mesh: Arc<Mesh>, xf: Transform) -> Result<u32, String> {
+        if self.objects.len() >= MAX_OBJECTS {
+            return Err(format!("the plate holds at most {MAX_OBJECTS} objects"));
+        }
+        if mesh.bounds().is_none() {
+            return Err("the mesh is empty".into());
+        }
+        self.next_id += 1;
+        self.objects.push(Object { id: self.next_id, name: name.to_string(), mesh, xf });
+        Ok(self.next_id)
     }
 
     /// A scene of objects read from a project, keeping their ids: each must be unique, and the next new object gets one above them all.

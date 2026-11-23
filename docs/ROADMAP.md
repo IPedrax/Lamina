@@ -68,6 +68,9 @@ Priorities:
   inside another (a void). `import_mesh` repairs on the way in and says what it did; `repair {id}` mends an object, as one undo step.
 - **2.3 Report problems clearly.** `info` gives `open_edges`, `nonmanifold_edges` and `flipped_faces` for each object; the plate
   panel shows a warning sign with the problems on hover, and a Repair button for the picked object.
+- **3.4 Arrange** and **3.5 Duplicate.** `arrange {ids?, gap?, bed?}` lays footprints out in rows (a shelf packer, deepest first),
+  centred on the plate, and says whether they fit; `duplicate {id, count?, arrange?}` adds copies sharing the mesh and lays the
+  plate out. Arrange and Duplicate buttons in the window.
 - **3.8 More shapes.** `add_primitive` kinds `cone` (and frustum, with `radius_top`), `prism`, `pyramid`, `tube` (built directly),
   `torus` and `rounded_box` (each face's grid pushed out from the box shrunk by the radius, so edges are quarter cylinders and
   corners eighths of a sphere). Each is tested closed with its volume; the window has a More shapes menu.
@@ -140,12 +143,6 @@ transaction moves each object.
 **3.3 Lay flat on a face (P1).** How: make `Picture` keep a triangle index per pixel beside the object id. A "lay flat" click then
 gives a face, whose world normal `n` is turned to point down (axis `n x (0,0,-1)`, angle `acos(-n.z)`). Add a core command
 `lay_flat {id, face}` that rotates and drops the object to the plate.
-
-**3.4 Arrange (P1).** How: an `arrange {gap?}` command in core. Take each object's footprint rectangle, sort by height, and pack them
-in rows (a shelf packer) inside the plate, centred. Test: no two footprints overlap and all stay on the plate.
-
-**3.5 Duplicate (P1).** How: `duplicate {id, count?}` in core. It clones the object with a new id (the mesh `Arc` is shared, so it
-costs nothing), then runs `arrange` on the copies.
 
 **3.6 Cut with a plane (P1).** How: `cut {id, z}` first, a general plane later. Make two booleans with a box larger than the object,
 one above the plane and one below, and replace the object with both halves. This reuses `lamina-csg`, so the halves are closed.

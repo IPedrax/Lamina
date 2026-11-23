@@ -20,6 +20,8 @@ with `move {id, by: [x, y, 0]}`.
 - Place and reshape: `move`, `rotate` (about the object's centre, then it is set back on the plate), `scale` (positive factors,
   one per axis with `by`, so a sphere can become an ellipsoid and a cylinder a disc), `mirror {id, axis}` (a left part from a right
   one), `drop_to_bed`, `delete`, `undo`, `redo`.
+- Several parts: `duplicate {id, count?}` makes copies and lays the plate out; `arrange {}` lays every object out in rows, none
+  touching, and says whether they fit the plate.
 - Opening and saving files is the user's job in the app. You cannot read or write files.
 
 ## Joining and cutting
@@ -52,7 +54,7 @@ the result stands, as one undo step. The result keeps the first object's name un
 
 ## Mistakes to avoid
 
-- Overlapping objects without joining them: they print twice. `union` them, or keep them apart.
+- Overlapping objects without joining them: they print twice. `union` them, or keep them apart (`arrange` does).
 - Stacking objects to make a taller one. A taller single shape is one `scale` away.
 - Moving something below z = 0. `drop_to_bed` puts it back.
 - Calling a result ready to print. Nothing here has been tested on a printer. Say what was checked (closed mesh, fits the plate,
