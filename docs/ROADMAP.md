@@ -230,6 +230,11 @@ Priorities:
   (each start, the graphics adapter, panics with a backtrace, a failed start, and each error the status bar shows), a message box
   on Windows when the window cannot open, and after a start that died, the next tries another graphics backend (DirectX 12,
   Vulkan, OpenGL on Windows), keeping the one that stays up.
+- **8.2 Benchmarks.** Ignored tests that print their times: `crates/slicer/tests/bench.rs` (about 100,000 triangles, three ways)
+  and `crates/csg/tests/bench.rs` (a 5,120-triangle sphere with a 384-triangle cylinder, each boolean), plus
+  `simplify::tests::heavy`. First run, on the session's machine in a dev build: slicing 6.1 s with the defaults, 9.4 s with gyroid
+  and supports, 8.1 s with adaptive layers; difference 13.1 s, intersect 11.9 s, and the union refused after 16.8 s (the engine's
+  glancing-curve limit, see Known limits).
 - **8.3 User guide.** `docs/USER-GUIDE.md`: installing, the window, the first print, arranging and changing parts, presets of your
   own, the assistant and its key, sending to a printer, projects and autosave, where Lamina keeps things, and a table of every
   setting made from `profile::ABOUT`, `LIMITS` and the defaults (`crates/slicer/tests/guide.rs` checks it; `LAMINA_BLESS=1`
@@ -320,9 +325,6 @@ through it.
 DMG, each checked against the SHA-256 digest GitHub gives the asset. The release names in `release.yml` are what it would look for.
 
 ## 8. Quality and infrastructure
-
-**8.2 Benchmarks (P2).** How: ignored tests that time slicing a 100,000-triangle mesh and a boolean of two detailed shapes, printed so
-regressions are seen.
 
 ## 9. The assistant
 
