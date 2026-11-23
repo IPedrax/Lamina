@@ -247,11 +247,22 @@ clear licence (see [RESEARCH.md](RESEARCH.md)).
 1. **Flat faces go in whole.** Triangles that share an edge and lie exactly in one axis-square plane (a box's face, an upright
    cylinder's cap) go to the BSP as one polygon, because every inner edge is a place to split and a cap fanned from its centre is a ring
    of slivers. Only exactly flat patches: csgrs splits a polygon that is off its own plane by more than 1e-8 forever, until the stack
-   overflows, which aborts the process. (Moving tilted corners onto their plane was tried and measured worse.)
-2. **The whole shapes go through the BSP.** csgrs' own `union` and `difference` set aside faces whose boxes miss the other shape's
-   box, and a shape wholly inside the other then has nothing to be clipped against. `combine` uses its public `Node` directly.
+   overflows, which aborts the process. (Moving tilted corners onto their plane was tried and measured worse.) A fold, a triangle
+   facing against its neighbour where a repair turned a sliver over, is left out: csgrs trusts each polygon's facing across its whole
+   plane, and a fold of a few square microns in a part's top, high in the tree, made everything above the part its inside.
+2. **The whole shapes go through the BSP, on trees of our own.** csgrs' own `union` and `difference` set aside faces whose boxes
+   miss the other shape's box, and a shape wholly inside the other then has nothing to be clipped against, so `combine` uses its
+   public `Node` directly. The trees are built by `build`, not csgrs' `Node::build`. csgrs takes a point as on a plane when an
+   orient3d determinant over the plane's three points is under 1e-8, so a sliver's plane takes in everything for millimetres round it
+   (1e-8 divided by twice the sliver's area), and csgrs' choice of splitting plane, which counts the polygons a plane splits, likes it
+   best of all. A node on it held every polygon below it as coplanar, and a cell came out inside or outside by chance. `build` drops
+   polygons that span no plane and takes a sliver's plane only when nothing better is left. Clipping (`clip`) passes over a polygon
+   outside the other shape's box, keeping it whole (or dropping it whole against an inverted tree): csgrs splits every polygon by
+   every plane of the other tree, and those planes reach across the part, so a cut at one end shredded the walls of a hole at the
+   other into slivers, T-junctions and fans for the next boolean to stumble on.
 3. **The result is repaired** (`lamina_core::repair::close_with`, shared with import), in passes until it is closed or nothing changes: vertices are welded (a point within a micron of one
-   already there is that one); triangles are split at vertices lying on their edges (T-junctions); pairs of identical triangles facing
+   already there is that one); triangles are split at vertices lying within two microns of their edges (T-junctions; five took the
+   corners of a curved rim into the chord beside them, and the split turned slivers over); pairs of identical triangles facing
    opposite ways, skins of no thickness where the shapes' surfaces coincide, are dropped; fins under 0.01 mm2 on edges three faces share
    are dropped; vertices on open edges within 50 microns are snapped together, which closes the slivers along the intersection curve;
    and holes are filled with a fan when they have 16 edges or fewer, or are flat and convex (a face the BSP lost). Every step iterates in
@@ -263,17 +274,33 @@ The sphere primitive is geodesic (a subdivided icosahedron, poles on z): a UV sp
 
 Measured on random pairs with round-number offsets (`success_matrix`, 200 cases each way; `curved_score` takes the curved pairs alone):
 
-| | Before the repair work | With the repair | Flat faces found in each object's own frame |
+| | Before the repair work | With the repair | Flat faces found in each object's own frame | Own trees, far polygons skipped, folds left out |
+|---|---|---|---|---|
+| Upright shapes, all pairs and operations | 307 of 400 (77%) | 199 of 200 | 199 of 200 | 199 of 200 |
+| Tilted shapes | 276 of 400 (69%) | 180 of 200 (90%) | 198 of 200 (99%) | 200 of 200 |
+| Curved pairs only, union and difference | 66 of 160 | 144 of 160 (90%) | 159 of 160 | 160 of 160 |
+
+Booleans of booleans' results were what a real design hit (a soapstone mould: pits cut in a base, then a slab joined on; lettering
+cut into the joined mould; a joined pendant used as the tool; a block cut five times over), and `chain_score` measures them: 120
+chains of 4 to 6 booleans, each on the last one's result, of boxes, upright cylinders, extrudes and lettering, pockets and holes cut
+and bosses joined at round or random positions. A step counts only when its result is closed and its volume agrees with an
+intersection of the same two shapes by inclusion and exclusion, so a closed but wrong result is a failure too.
+
+| | Chains clean | Steps clean | Closed but wrong (the gate let it through) |
 |---|---|---|---|
-| Upright shapes, all pairs and operations | 307 of 400 (77%) | 199 of 200 | 199 of 200 |
-| Tilted shapes | 276 of 400 (69%) | 180 of 200 (90%) | 198 of 200 (99%) |
-| Curved pairs only, union and difference | 66 of 160 | 144 of 160 (90%) | 159 of 160 |
+| Before (csgrs' trees, every polygon clipped, five-micron T-junctions) | 30 of 120 | 324 of 414 (78%) | 5 |
+| Now | 73 of 120 | 458 of 505 (91%) | 0 |
+
+Before, 37 of the 90 failures were at the second step, the first on an earlier result; now 9 are, and 12 of the 47 left are steps
+whose own result came back but whose checking intersection was refused. Taking any one part out, measured
+the same way: csgrs' own trees 47 chains (and 4 closed but wrong), five-micron T-junctions 51, every polygon clipped 57, folds kept 70
+(and the mould's lettering and the block cut many times are refused). Merging the flat patches of a face with holes into convex
+polygons was tried as well: 68 chains against 73, and the mould's lettering refused, so it is not done. The four cases are tests in `commands.rs`.
 
 Tilted cylinders were the weak spot (crossing each other 50%, joined to a box 71%): a tilted cap, stored as f32 after the transform, is
 flat only to f32's rounding and could not be merged into one polygon. `boolean_placed` takes each object's own mesh and transform,
 merges flat patches in the object's frame, where the cap is exactly flat, and moves the corners where they stand in f64, flat to
-f64's rounding, far inside csgrs' 1e-8. Upright, every cell is 100% but cylinder with sphere union (95%); tilted, every cell but sphere
-with sphere union (2 of 4). What is refused is refused with advice; nothing broken is returned. If csgrs ever recursed without end on some input, the stack overflow would abort the process: so the desktop and the CLI run
+f64's rounding, far inside csgrs' 1e-8. Upright, every cell is 100% but sphere with sphere union (6 of 7); tilted, every cell is. What is refused is refused with advice; nothing broken is returned. If csgrs ever recursed without end on some input, the stack overflow would abort the process: so the desktop and the CLI run
 each boolean in a copy of themselves (`child.rs`, `--boolean-child`, ported from BIMCraft's DWG reader), and a child that aborts or
 runs past two minutes is an error the app carries on from. Tests, and apps that do not ask, run booleans in the process.
 

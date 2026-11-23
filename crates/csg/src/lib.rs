@@ -115,34 +115,39 @@ fn sound(op: Op, a: &Mesh, b: &Mesh, r: &Mesh) -> Result<(), String> {
 
 /// The classic BSP booleans over the whole of both shapes. csgrs' own `union` and `difference` first set aside the faces whose
 /// boxes miss the other shape's box, which is quick, but a shape lying wholly inside the other then has nothing to be clipped
-/// against: a union of nested boxes keeps both, and a box cut by a bigger box comes back whole. Using its `Node` directly has no such gap.
-fn combine(op: Op, a: &[Polygon<()>], b: &[Polygon<()>]) -> Vec<Polygon<()>> {
-    let (mut a, mut b) = (Node::from_polygons(a), Node::from_polygons(b));
+/// against: a union of nested boxes keeps both, and a box cut by a bigger box comes back whole. So both trees are built from every
+/// polygon ([`build`]), and only the clipping ([`clip`]) passes over a polygon far from the other shape. The last argument of each
+/// `clip` says whether the tree it clips against has been inverted.
+fn combine(op: Op, pa: &[Polygon<()>], pb: &[Polygon<()>]) -> Vec<Polygon<()>> {
+    let (near_a, near_b) = (reach(pa), reach(pb));
+    let (mut a, mut b) = (Node::new(), Node::new());
+    build(&mut a, pa.to_vec());
+    build(&mut b, pb.to_vec());
     match op {
         Op::Union => {
-            a.clip_to(&b);
-            b.clip_to(&a);
+            clip(&mut a, &b, &near_b, false);
+            clip(&mut b, &a, &near_a, false);
             b.invert();
-            b.clip_to(&a);
+            clip(&mut b, &a, &near_a, false);
             b.invert();
             a.build(&b.all_polygons());
         }
         Op::Difference => {
             a.invert();
-            a.clip_to(&b);
-            b.clip_to(&a);
+            clip(&mut a, &b, &near_b, false);
+            clip(&mut b, &a, &near_a, true);
             b.invert();
-            b.clip_to(&a);
+            clip(&mut b, &a, &near_a, true);
             b.invert();
             a.build(&b.all_polygons());
             a.invert();
         }
         Op::Intersect => {
             a.invert();
-            b.clip_to(&a);
+            clip(&mut b, &a, &near_a, true);
             b.invert();
-            a.clip_to(&b);
-            b.clip_to(&a);
+            clip(&mut a, &b, &near_b, true);
+            clip(&mut b, &a, &near_a, true);
             a.build(&b.all_polygons());
             a.invert();
         }
@@ -150,11 +155,96 @@ fn combine(op: Op, a: &[Polygon<()>], b: &[Polygon<()>]) -> Vec<Polygon<()>> {
     a.all_polygons()
 }
 
+/// The box a shape's polygons fill, widened by ten times [`WELD`]: a polygon outside it cannot touch the shape.
+type Reach = ([f64; 3], [f64; 3]);
+
+fn reach(polys: &[Polygon<()>]) -> Reach {
+    let mut r = ([f64::MAX; 3], [f64::MIN; 3]);
+    for v in polys.iter().flat_map(|p| &p.vertices) {
+        for k in 0..3 {
+            r.0[k] = r.0[k].min(v.pos[k] - 10.0 * WELD);
+            r.1[k] = r.1[k].max(v.pos[k] + 10.0 * WELD);
+        }
+    }
+    r
+}
+
+/// `node.clip_to(by)`, except that a polygon outside `by`'s reach is not split by its planes. csgrs splits every polygon by every plane
+/// of the other tree, and its planes reach across the whole part: a peg's top cut the walls of a hole at the far end into slivers,
+/// T-junctions and fans, which the next boolean then stumbled on. A polygon that misses the other shape's box is wholly outside that
+/// shape, so it is kept whole, or dropped whole when `by` has been inverted (its inside is then the shape's outside). The tree that
+/// decides is still built from every polygon, so a shape inside the other is clipped as before.
+fn clip(node: &mut Node<()>, by: &Node<()>, near: &Reach, inverted: bool) {
+    let (n, far): (Vec<_>, Vec<_>) = std::mem::take(&mut node.polygons).into_iter().partition(|p| {
+        (0..3).all(|k| p.vertices.iter().any(|v| v.pos[k] >= near.0[k]) && p.vertices.iter().any(|v| v.pos[k] <= near.1[k]))
+    });
+    node.polygons = by.clip_polygons(&n);
+    if !inverted {
+        node.polygons.extend(far);
+    }
+    if let Some(f) = node.front.as_deref_mut() {
+        clip(f, by, near, inverted);
+    }
+    if let Some(b) = node.back.as_deref_mut() {
+        clip(b, by, near, inverted);
+    }
+}
+
+/// Twice the area of the triangle that spans a polygon's plane: csgrs takes a point as on the plane when the determinant over that
+/// triangle and the point is under 1e-8, so the plane takes in points up to 1e-8 / this many millimetres off it.
+fn span(p: &Polygon<()>) -> f64 {
+    let q = &p.plane;
+    (q.point_b - q.point_a).cross(&(q.point_c - q.point_a)).norm()
+}
+
+/// Below this [`span`] a polygon's plane takes in points more than a tenth of a micron off it: a splitting plane only when nothing
+/// better is left. (Never one, dropping such polygons instead, measured worse.)
+const THIN: f64 = 1e-4;
+/// Below this csgrs gives the plane no normal at all (its own `EPSILON`): such a polygon is dropped.
+const FLAT: f64 = 1e-8;
+
+/// csgrs' `Node::build`, except that a polygon whose corners span no plane is dropped and a sliver's plane is never the splitting
+/// plane while a better one is left. A sliver's plane takes in everything for millimetres round it ([`span`]), so csgrs' own choice,
+/// which scores a plane by the polygons it splits and how evenly it parts the rest, likes it best of all: it splits nothing. A node on
+/// it then holds every polygon that reaches it as coplanar, and a cell below it comes out inside or outside by chance. Splitting
+/// leaves such slivers wherever a plane passes near a corner, the more the more corners a mesh has: an earlier boolean's result.
+/// (Measured on a pocket cut into a block that already had two holes: a node 43 deep on a fragment of 7e-11 mm2 held 107 polygons
+/// as coplanar, and a corner of the pocket's floor came out outside the block.)
+fn build(node: &mut Node<()>, polygons: Vec<Polygon<()>>) {
+    let (mut list, thin): (Vec<_>, Vec<_>) = polygons.into_iter().filter(|p| span(p) > FLAT).partition(|p| span(p) >= THIN);
+    let good = list.len();
+    list.extend(thin);
+    if list.is_empty() {
+        return;
+    }
+    let plane = if good > 0 {
+        node.pick_best_splitting_plane(&list[..good])
+    } else {
+        let Some(widest) = list.iter().max_by(|x, y| span(x).total_cmp(&span(y))) else { return };
+        widest.plane.clone()
+    };
+    node.plane = Some(plane.clone());
+    let (mut front, mut back) = (Vec::new(), Vec::new());
+    for p in &list {
+        let (on_front, on_back, f, b) = plane.split_polygon(p);
+        node.polygons.extend(on_front);
+        node.polygons.extend(on_back);
+        front.extend(f);
+        back.extend(b);
+    }
+    if !front.is_empty() {
+        build(node.front.get_or_insert_with(|| Box::new(Node::new())), front);
+    }
+    if !back.is_empty() {
+        build(node.back.get_or_insert_with(|| Box::new(Node::new())), back);
+    }
+}
+
 /// The mesh as BSP polygons. Triangles that share an edge and a plane become one polygon when together they make an exactly flat,
 /// convex outline (a box's face, an upright cylinder's cap), because every extra edge inside a face is one more place for the BSP
 /// to split, and a cap fanned from its centre is a ring of slivers.
 fn to_csg(m: &Mesh, xf: &Transform) -> Vec<Polygon<()>> {
-    let normals: Vec<Option<Vector3<f64>>> = (0..m.triangles.len())
+    let mut normals: Vec<Option<Vector3<f64>>> = (0..m.triangles.len())
         .map(|i| {
             let t = m.tri(i)?;
             let n = Vector3::new(t[1][0] - t[0][0], t[1][1] - t[0][1], t[1][2] - t[0][2]).cross(&Vector3::new(
@@ -184,6 +274,16 @@ fn to_csg(m: &Mesh, xf: &Transform) -> Vec<Polygon<()>> {
     }
     let mut pairs: Vec<(usize, usize)> = by_edge.values().filter(|v| v.len() == 2).map(|v| (v[0], v[1])).collect();
     pairs.sort_unstable();
+    // A fold: two triangles on one edge that face opposite ways, where a repair turned a sliver over. The mesh is still closed, but
+    // csgrs trusts each polygon's facing across its whole plane: a fold of a few square microns in a part's top, high in the tree,
+    // made everything above the part its inside. The smaller of the two is left out; the gap it leaves is that small.
+    for &(i, j) in &pairs {
+        if let (Some(ni), Some(nj)) = (normals[i], normals[j])
+            && ni.dot(&nj) < -0.99
+        {
+            normals[if repair::triangle_area(m, i) < repair::triangle_area(m, j) { i } else { j }] = None;
+        }
+    }
     for (i, j) in pairs {
         let (Some(ni), Some(nj)) = (normals[i], normals[j]) else { continue };
         let pi = m.vertices[m.triangles[i][0] as usize].map(f64::from);
@@ -328,9 +428,11 @@ fn from_csg(polys: &[Polygon<()>]) -> Result<Mesh, String> {
 }
 
 /// Repairs what the BSP leaves (`lamina_core::repair::close_with`): T-junctions split, skins and fins dropped, slivers snapped,
-/// small holes filled, in passes until the mesh is closed or a pass changes nothing.
+/// small holes filled, in passes until the mesh is closed or a pass changes nothing. A vertex within two welds of an edge is on it:
+/// the weld moves a point by up to one. Five, as before, took the corners of a curved rim into the chord beside them, and the split
+/// turned slivers over (folds, see [`to_csg`]): `chain_score` gave 51 clean chains of 120 with five, 73 with two.
 fn close(m: Mesh) -> Result<Mesh, String> {
-    repair::close_with(m, 4, 5.0 * WELD).map(|(m, _)| m)
+    repair::close_with(m, 4, 2.0 * WELD).map(|(m, _)| m)
 }
 
 #[cfg(test)]
@@ -736,6 +838,102 @@ mod measure {
             for (k, (n, good)) in &table {
                 println!("  {k:18} n {n:3} ok {good:3} ({:3.0}%)", 100.0 * f64::from(*good) / f64::from(*n));
             }
+        }
+    }
+
+    /// A mesh as the commands put it on the plate: its box's middle at (`x`, `y`), its bottom at `z`.
+    fn placed(m: Mesh, x: f64, y: f64, z: f64) -> (Mesh, Transform) {
+        let Some((lo, hi)) = m.bounds() else { return (m, Transform::IDENTITY) };
+        let xf = Transform::translate([x - (lo[0] + hi[0]) / 2.0, y - (lo[1] + hi[1]) / 2.0, z - lo[2]]);
+        (m, xf)
+    }
+
+    /// A part's own shape: a box, an upright cylinder, a rounded plate (with a round hole, sometimes) or a word, `h` mm tall.
+    fn chain_shape(r: &mut Rng, size: f64, h: f64) -> (Mesh, char) {
+        use lamina_core::sketch;
+        let (w, d) = (r.range(0.3, 1.0) * size, r.range(0.3, 1.0) * size);
+        match (r.next() * 4.0) as u32 {
+            0 => (Mesh::cuboid([w, d, h]), 'B'),
+            1 => (Mesh::cylinder(w.min(d) / 2.0, h, r.pick(&[16, 24, 32, 48])), 'C'),
+            2 => {
+                let outline = sketch::rounded_rect(w, d, r.range(0.0, 0.45) * w.min(d), 8);
+                let holes = if r.next() < 0.3 { vec![sketch::circle(0.0, 0.0, w.min(d) / 5.0, 32)] } else { vec![] };
+                (sketch::extrude(&outline, &holes, h).unwrap_or_else(|_| Mesh::cuboid([w, d, h])), 'E')
+            }
+            _ => {
+                let word = r.pick(&["LAMINA", "Thor", "ÅB 12", "rune", "x7", "MOULD"]);
+                let c = lamina_core::text::contours(word, (0.3 * size).clamp(3.0, 8.0), 1.0).unwrap_or_default();
+                (sketch::extrude_contours(&c, h).unwrap_or_else(|_| Mesh::cuboid([w, d, h])), 'T')
+            }
+        }
+    }
+
+    /// Chains of 4 to 6 booleans, each taking the last one's result: a part cut with pockets, holes and lettering and given bosses,
+    /// as a design is built, the tools at round or random positions. A step is clean when it gives a closed solid whose volume agrees
+    /// with inclusion and exclusion (checked against an intersection of the same two shapes), so a closed but wrong result counts
+    /// as a failure too. `cargo test -p lamina-csg --release -- --ignored chain_score --nocapture`
+    #[test]
+    #[ignore = "slow: run by hand when changing the engine or the repair"]
+    fn chain_score() {
+        let mut r = Rng(0x0BAD_5EED_CAFE_F00D);
+        let (chains, mut clean, mut steps, mut good) = (120, 0, 0, 0);
+        let mut why: BTreeMap<String, u32> = BTreeMap::new();
+        for _ in 0..chains {
+            let h = r.range(6.0, 14.0);
+            let (m, xf) = {
+                let (m, _) = chain_shape(&mut r, 60.0, h);
+                placed(m, 0.0, 0.0, 0.0)
+            };
+            let mut part = m.transformed(&xf);
+            let mut ok = true;
+            for n in 0..r.pick(&[4, 5, 6]) {
+                let Some((lo, hi)) = part.bounds() else { break };
+                let op = r.pick(&[Op::Difference, Op::Difference, Op::Union]);
+                // Holes go through; pockets and lettering sink into the top; bosses stand on it, overlapping by a hair or more.
+                let through = op == Op::Difference && r.next() < 0.3;
+                let th = if through { hi[2] - lo[2] + 2.0 } else { r.range(1.0, 8.0) };
+                let (tool, kind) = chain_shape(&mut r, 20.0, th);
+                let (x, y) = (r.range(lo[0], hi[0]), r.range(lo[1], hi[1]));
+                let (x, y) = (r.pick(&[x, x.round(), (2.0 * x).round() / 2.0]), r.pick(&[y, y.round()]));
+                let z = match op {
+                    _ if through => lo[2] - 1.0,
+                    Op::Difference => hi[2] - r.pick(&[0.5, 0.7, 1.0, th * 0.6]),
+                    _ => hi[2] - r.pick(&[0.05, 0.3, 1.0]),
+                };
+                let (tool, txf) = placed(tool, x, y, z);
+                steps += 1;
+                let step = boolean_placed(op, (&part, Transform::IDENTITY), (&tool, txf));
+                let both = boolean_placed(Op::Intersect, (&part, Transform::IDENTITY), (&tool, txf));
+                let (va, vb) = (part.volume(), tool.transformed(&txf).volume());
+                let verdict = match (&step, &both) {
+                    (Err(e), _) => {
+                        Err(format!("{kind} {op:?} refused: {}", e.split('(').nth(1).and_then(|x| x.split(')').next()).unwrap_or("other")))
+                    }
+                    (Ok(_), Err(_)) => Err("intersection refused, so unchecked".to_string()),
+                    (Ok(m), Ok(i)) => {
+                        let want = if op == Op::Union { va + vb - i.volume() } else { va - i.volume() };
+                        if (m.volume() - want).abs() <= 1e-4 * (va + vb) + 0.01 {
+                            Ok(())
+                        } else {
+                            Err(format!("{kind} {op:?} closed but wrong"))
+                        }
+                    }
+                };
+                match verdict {
+                    Ok(()) => good += 1,
+                    Err(e) => {
+                        *why.entry(format!("step {}: {e}", n + 1)).or_default() += 1;
+                        ok = false;
+                        break;
+                    }
+                }
+                part = step.unwrap_or_default();
+            }
+            clean += usize::from(ok);
+        }
+        println!("chain score: {clean} of {chains} chains clean, {good} of {steps} steps");
+        for (k, c) in &why {
+            println!("  {c:3} x {k}");
         }
     }
 }

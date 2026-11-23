@@ -378,6 +378,8 @@ through it.
   columns' does, and with `from_plate` a branch left out can leave a corner of it over air.
 - The skirt is an outline of the first layer, not a hull. The time estimate has not been checked against a real print.
 - A mesh whose holes are too big to fill without guessing stays open, and prints with parts missing, with a warning. STL, 3MF, OBJ and glTF in; STL and 3MF out.
-- Booleans refuse about 1 in 100 random pairs (the rest of a sphere-with-sphere union mostly), and a boolean of a boolean's result
-  works on its world mesh, so its tilted faces are flat only to f32.
+- Booleans refuse about 1 in 100 random pairs (the rest of a sphere-with-sphere union mostly). Booleans of earlier results are
+  refused more often: 9 steps in 10 come through in `chain_score` (73 of 120 chains of 4 to 6 booleans clean), and what fails is
+  refused, never wrong. A boolean's result keeps the repair's slivers and fans, and works on its world mesh, so its tilted faces are
+  flat only to f32.
 - Nothing has been printed on real hardware.

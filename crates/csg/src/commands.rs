@@ -266,6 +266,204 @@ mod tests {
         assert_eq!(s.scene.objects.len(), 2);
     }
 
+    /// Runs a command that makes one object and gives its id.
+    fn make(s: &mut Session, command: &str, p: Value) -> u32 {
+        let r = s.execute(command, &p).unwrap_or_else(|e| panic!("{command} {p}: {e}"));
+        r["id"].as_u64().unwrap() as u32
+    }
+
+    /// Moves an object so the middle of its box is at (`x`, `y`) and its bottom at `z`, as the build scripts place parts.
+    fn place(s: &mut Session, id: u32, x: f64, y: f64, z: f64) {
+        let (lo, hi) = s.scene.get(id).unwrap().bounds().unwrap();
+        let by = [x - (lo[0] + hi[0]) / 2.0, y - (lo[1] + hi[1]) / 2.0, z - lo[2]];
+        s.execute("move", &json!({"id": id, "by": by})).unwrap();
+    }
+
+    fn volume(s: &Session, id: u32) -> f64 {
+        s.scene.get(id).unwrap().world().volume()
+    }
+
+    /// A boolean that must work: its result is closed and has the volume asked for, within `tol` mm3.
+    fn must(s: &mut Session, command: &str, p: Value, want: f64, tol: f64) -> u32 {
+        let r = s.execute(command, &p).unwrap_or_else(|e| panic!("{command} {p}: {e}"));
+        let id = r["id"].as_u64().unwrap() as u32;
+        let m = s.scene.get(id).unwrap().world();
+        assert!(m.is_watertight(), "{command} {p}: not closed");
+        assert!((m.volume() - want).abs() <= tol, "{command} {p}: {} mm3, not {want}", m.volume());
+        id
+    }
+
+    type P2 = [f64; 2];
+
+    /// The outlines of the Trendgarden mould's build script: Mjolnir, the rune thurisaz and its hole, a cross pattee, mm.
+    fn hammer() -> Vec<P2> {
+        let bezier = |p0: P2, p1: P2, p2: P2, n: usize| -> Vec<P2> {
+            (0..=n)
+                .map(|i| {
+                    let t = i as f64 / n as f64;
+                    let u = 1.0 - t;
+                    [u * u * p0[0] + 2.0 * u * t * p1[0] + t * t * p2[0], u * u * p0[1] + 2.0 * u * t * p1[1] + t * t * p2[1]]
+                })
+                .collect()
+        };
+        let right = bezier([13.0, -16.0], [4.5, -9.0], [3.3, 4.8], 14);
+        let mut out = right.clone();
+        out.extend([[2.2, 6.0], [2.2, 11.6], [-2.2, 11.6], [-2.2, 6.0]]);
+        out.extend(right.iter().rev().map(|p| [-p[0], p[1]]));
+        out.extend((1..16).map(|i| {
+            let a = std::f64::consts::PI * f64::from(i) / 16.0;
+            [-13.0 * a.cos(), -16.0 - 1.6 * a.sin()]
+        }));
+        out
+    }
+
+    const THURS: [P2; 7] = [[-0.7, -6.0], [0.7, -6.0], [0.7, -2.4], [4.3, 0.4], [0.7, 3.2], [0.7, 6.0], [-0.7, 6.0]];
+    const THURS_HOLE: [P2; 3] = [[0.72, -0.75], [2.55, 0.4], [0.72, 1.55]];
+    const CROSS: [P2; 12] = [
+        [4.5, 10.0],
+        [-4.5, 10.0],
+        [-2.2, 2.2],
+        [-11.0, 4.5],
+        [-11.0, -4.5],
+        [-2.2, -2.2],
+        [-4.5, -15.0],
+        [4.5, -15.0],
+        [2.2, -2.2],
+        [11.0, -4.5],
+        [11.0, 4.5],
+        [2.2, 2.2],
+    ];
+
+    fn mirrored(p: &[P2]) -> Vec<P2> {
+        p.iter().map(|q| [-q[0], q[1]]).collect()
+    }
+
+    fn shifted(p: &[P2], dx: f64, dy: f64) -> Vec<P2> {
+        p.iter().map(|q| [q[0] + dx, q[1] + dy]).collect()
+    }
+
+    fn circle(x: f64, y: f64, r: f64, n: u32) -> Vec<P2> {
+        lamina_core::sketch::circle(x, y, r, n)
+    }
+
+    /// The mould's base (88 x 62 x 11.25 mm, its middle at y = 35) with, when `pits`, the rune's and the boss's pits cut 0.7 mm into
+    /// its top, then a pin unioned in each loop. Returns the base's id and its volume as it should be.
+    fn mould_base(s: &mut Session, pits: bool) -> (u32, f64) {
+        let base = make(s, "extrude", json!({"height": 11.25, "shape": "rounded_rect", "size": [88, 62], "corner": 4}));
+        place(s, base, 0.0, 35.0, 0.0);
+        let (mut id, mut want) = (base, volume(s, base));
+        if pits {
+            let pit = make(s, "extrude", json!({"height": 1.0, "outline": mirrored(&THURS), "holes": [mirrored(&THURS_HOLE)]}));
+            place(s, pit, -20.0, 35.0 - 1.2 - 8.1, 10.55);
+            want -= volume(s, pit) * 0.7;
+            id = must(s, "difference", json!({"id": id, "minus": [pit]}), want, 0.5);
+            let pit = make(s, "add_primitive", json!({"kind": "cylinder", "radius": 2.0, "height": 1.0, "segments": 24}));
+            place(s, pit, 20.0, 34.0, 10.55);
+            want -= volume(s, pit) * 0.7;
+            id = must(s, "difference", json!({"id": id, "minus": [pit]}), want, 0.5);
+        }
+        for (x, y, r) in [(-20.0, 13.8, 2.5), (20.0, 11.8, 2.2)] {
+            let pin = make(s, "add_primitive", json!({"kind": "cylinder", "radius": r, "height": 3.0, "segments": 24}));
+            place(s, pin, x, 35.0 + y, 10.95);
+            want += volume(s, pin) * 2.7 / 3.0;
+            id = must(s, "union", json!({"ids": [id, pin]}), want, 0.5);
+        }
+        (id, want)
+    }
+
+    /// The mould's top: an 88 x 62 x 2.8 mm slab whose six holes are the two pendants' cavities, their loops and the pour channels,
+    /// overlapping the base by 0.05 mm. Returns its id and the volume it adds to the base.
+    fn mould_slab(s: &mut Session) -> (u32, f64) {
+        let (hx, hy, cx, cy) = (-20.0, -1.2, 20.0, -1.0);
+        let rect = |x0: f64, y0: f64, x1: f64, y1: f64| vec![[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+        let holes = vec![
+            shifted(&hammer(), hx, hy),
+            circle(hx, hy + 15.0, 5.0, 32),
+            rect(hx - 1.5, hy + 18.0, hx + 1.5, 33.0),
+            shifted(&CROSS, cx, cy),
+            circle(cx, cy + 12.8, 4.2, 32),
+            rect(cx - 1.5, cy + 14.8, cx + 1.5, 33.0),
+        ];
+        let slab = make(s, "extrude", json!({"height": 2.8, "shape": "rounded_rect", "size": [88, 62], "corner": 4, "holes": holes}));
+        place(s, slab, 0.0, 35.0, 11.2);
+        (slab, volume(s, slab) * 2.75 / 2.8)
+    }
+
+    /// Case 1 of the chained booleans that failed: the slab unioned onto a base whose top has had two pits cut into it.
+    #[test]
+    fn a_slab_joins_a_base_that_has_pits_cut_in_it() {
+        let mut s = session();
+        let (base, want) = mould_base(&mut s, true);
+        let (slab, adds) = mould_slab(&mut s);
+        must(&mut s, "union", json!({"ids": [base, slab]}), want + adds, 1.0);
+    }
+
+    /// Case 2: lettering engraved into the finished mould, itself the result of three unions.
+    #[test]
+    fn text_engraves_a_part_made_by_unions() {
+        let mut s = session();
+        let (base, want) = mould_base(&mut s, false);
+        let (slab, adds) = mould_slab(&mut s);
+        let mould = must(&mut s, "union", json!({"ids": [base, slab]}), want + adds, 1.0);
+        let want = volume(&s, mould);
+        let word = make(&mut s, "text", json!({"text": "TRENDGÅRDEN", "height": 5, "depth": 1.2}));
+        place(&mut s, word, 0.0, 10.0, 14.0 - 0.7);
+        let gone = volume(&s, word) * 0.7 / 1.2;
+        must(&mut s, "difference", json!({"id": mould, "minus": [word]}), want - gone, 0.5);
+    }
+
+    /// Case 3: a pendant made by two unions used as the tool that presses its shape into a plain box.
+    #[test]
+    fn a_part_made_by_unions_cuts_a_box() {
+        let mut s = session();
+        let body = make(&mut s, "extrude", json!({"height": 3, "outline": hammer()}));
+        place(&mut s, body, 0.0, 0.0, 0.0);
+        let body_area = volume(&s, body) / 3.0;
+        let (lo, hi) = s.scene.get(body).unwrap().bounds().unwrap();
+        // The sketch's origin, where the build script put the loop and the rune.
+        let (ox, oy) = (0.0, (lo[1] + hi[1]) / 2.0 - (11.6 + -17.6) / 2.0);
+        let ring = make(&mut s, "add_primitive", json!({"kind": "tube", "radius": 5, "inner": 2.5, "height": 2.96, "segments": 24}));
+        place(&mut s, ring, ox, oy + 15.0, 0.02);
+        let pendant = s.execute("union", &json!({"ids": [body, ring]})).unwrap()["id"].as_u64().unwrap() as u32;
+        let rune = make(&mut s, "extrude", json!({"height": 2.7, "outline": THURS, "holes": [THURS_HOLE]}));
+        place(&mut s, rune, ox, oy - 8.1, 1.0);
+        let pendant = s.execute("union", &json!({"ids": [pendant, rune]})).unwrap()["id"].as_u64().unwrap() as u32;
+        // Seen from above, the pendant is the hammer and the loop: the loop's ring with the hammer's neck in it.
+        let ring_outline = [circle(ox, oy + 15.0, 5.0, 24), circle(ox, oy + 15.0, 2.5, 24).into_iter().rev().collect()];
+        let mut seen = vec![shifted(&hammer(), 0.0, oy)];
+        seen.extend(ring_outline);
+        let footprint = lamina_core::sketch::extrude_contours(&seen, 1.0).unwrap().volume();
+        let block = make(&mut s, "add_primitive", json!({"kind": "box", "size": [60, 60, 10]}));
+        place(&mut s, block, 0.0, oy - 3.0, -8.0);
+        // The box's top is 2 mm above the pendant's bottom: all of the hammer up to there, and the loop from 0.02 mm.
+        let want = volume(&s, block) - body_area * 2.0 - (footprint - body_area) * 1.98;
+        must(&mut s, "difference", json!({"id": block, "minus": [pendant]}), want, 0.5);
+    }
+
+    /// Case 4: a block cut again and again, each cut taking the last one's result.
+    #[test]
+    fn a_block_takes_many_cuts_in_a_row() {
+        let mut s = session();
+        let mut block = make(&mut s, "extrude", json!({"height": 12, "shape": "rounded_rect", "size": [60, 40], "corner": 4}));
+        place(&mut s, block, 0.0, 0.0, 0.0);
+        let mut want = volume(&s, block);
+        let tools: Vec<(&str, Value, [f64; 3], f64)> = vec![
+            ("add_primitive", json!({"kind": "cylinder", "radius": 3, "height": 16}), [-22.0, -12.0, -2.0], 12.0 / 16.0),
+            ("add_primitive", json!({"kind": "cylinder", "radius": 3, "height": 16}), [22.0, -12.0, -2.0], 12.0 / 16.0),
+            ("extrude", json!({"height": 5, "shape": "rounded_rect", "size": [24, 10], "corner": 2}), [0.0, 10.0, 9.0], 3.0 / 5.0),
+            ("text", json!({"text": "LAMINA", "height": 6, "depth": 1}), [0.0, -10.0, 11.4], 0.6),
+            ("add_primitive", json!({"kind": "box", "size": [6, 20, 4]}), [-24.0, 6.0, 10.0], 0.5),
+            ("add_primitive", json!({"kind": "cylinder", "radius": 2, "height": 16, "segments": 32}), [24.0, 12.0, -2.0], 0.75),
+            ("extrude", json!({"height": 4, "shape": "slot", "size": [14, 4]}), [5.0, -17.0, 10.0], 0.5),
+        ];
+        for (command, p, [x, y, z], share) in tools {
+            let tool = make(&mut s, command, p);
+            place(&mut s, tool, x, y, z);
+            want -= volume(&s, tool) * share;
+            block = must(&mut s, "difference", json!({"id": block, "minus": [tool]}), want, 0.5);
+        }
+    }
+
     #[test]
     fn a_union_slices() {
         let mut s = session();
