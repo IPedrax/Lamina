@@ -8,6 +8,30 @@ use std::sync::Arc;
 
 use lamina_desktop::{App, session, startup};
 
+const USAGE: &str = "USAGE: lamina [FILE]... [--control PORT]
+  FILE       a .lamina project to open, or a mesh to put on the plate: .stl, .3mf, .obj, .gltf or .glb
+  --control  let agents work on this window's plate (`lamina-cli mcp --connect`); 0 takes any free port. Only this computer can
+             connect, with the token the window writes beside its settings
+  --version  the release
+  --help     this text";
+
+/// What the arguments ask for before any window opens: the usage (`--help`, or an option the program does not know, which is an
+/// error), or nothing, and the window starts.
+fn before_window(args: &[String]) -> Option<(String, bool)> {
+    let mut rest = args.iter();
+    while let Some(a) = rest.next() {
+        match a.as_str() {
+            "--help" | "-h" => return Some((USAGE.to_string(), true)),
+            "--control" => {
+                rest.next();
+            }
+            other if other.starts_with('-') => return Some((format!("lamina: unknown option `{other}`\n\n{USAGE}"), false)),
+            _ => {}
+        }
+    }
+    None
+}
+
 fn main() -> ExitCode {
     // Started as the child that runs one boolean: do that and nothing else, with no window.
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -18,6 +42,15 @@ fn main() -> ExitCode {
     if args.first().map(String::as_str) == Some("--version") {
         println!("lamina {}", env!("CARGO_PKG_VERSION"));
         return ExitCode::SUCCESS;
+    }
+    if let Some((text, ok)) = before_window(&args) {
+        return if ok {
+            println!("{text}");
+            ExitCode::SUCCESS
+        } else {
+            eprintln!("{text}");
+            ExitCode::FAILURE
+        };
     }
     // Every boolean runs in a copy of this program, so a crash in the engine is an error in the window and not the end of it.
     if let Ok(exe) = std::env::current_exe() {
@@ -89,5 +122,23 @@ fn main() -> ExitCode {
             startup::tell(&e.to_string(), files.as_ref());
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(a: &[&str]) -> Vec<String> {
+        a.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn help_and_unknown_options_print_the_usage_instead_of_opening_a_window() {
+        assert!(before_window(&args(&["--help"])).is_some_and(|(t, ok)| ok && t.starts_with("USAGE")));
+        assert!(before_window(&args(&["part.stl", "-h"])).is_some_and(|(_, ok)| ok));
+        assert!(before_window(&args(&["--frobnicate"])).is_some_and(|(t, ok)| !ok && t.contains("`--frobnicate`")));
+        assert_eq!(before_window(&args(&["part.stl", "--control", "0"])), None);
+        assert_eq!(before_window(&args(&[])), None);
     }
 }
