@@ -8,6 +8,10 @@
 2. It runs under `catch_unwind`. A panic, an error, or a scene that fails `Scene::check` restores the scene as it was.
 3. A successful change that is `undoable` becomes an undo step (200 kept; a step is an `Arc` of the old scene, so it costs a pointer).
 
+`Session::transaction(label, f)` runs several commands as one step, all or nothing, and `merge_steps(from, to)` joins the steps of
+one name on top of the history: the chat names each reply's transaction after its turn and merges after each reply, so a turn is
+one undo step however many replies it takes, and the window's group delete is one step.
+
 `bridge::run` sits on top for agents (the MCP server and the AI chat). It adds `Access::Read`, which refuses any command that
 changes the scene or its history, and the ones in `bridge::REPLACES` (`new`, `open`), which put another plate in the user's place.
 
@@ -210,6 +214,4 @@ trimmed bridge and a rewritten tool list rather than a rewrite.
 
 - **Booleans.** `manifold3d` is the robust mesh boolean, but it builds C++ with cmake. `csgrs` is pure Rust and its robustness is
   unverified. Decide before the CSG commands. See [RESEARCH.md](RESEARCH.md).
-- **Undo per chat turn.** The chat runs each command as its own undo step. BIMCraft merges a turn into one step
-  (`Session::transaction`, `merge_steps`); Lamina's core needs the same.
 - **Licence.** MIT today. BIMCraft is MIT OR Apache-2.0; dual-license if you want the patent grant.

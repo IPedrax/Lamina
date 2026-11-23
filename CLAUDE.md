@@ -37,7 +37,7 @@ cargo test --workspace
 ## Module map
 
 - `crates/core`: `mesh.rs` (triangle mesh, primitives, `Transform`), `stl.rs` (read and write), `scene.rs` (objects on the plate),
-  `engine.rs` (`Session`: execute, undo, script, catalog, the project's print settings), `commands.rs` (the built-in commands),
+  `engine.rs` (`Session`: execute, undo, transactions, script, catalog, the project's print settings), `commands.rs` (the built-in commands),
   `project.rs` (`.lamina` files: `save`, `open`, `new`), `repair.rs` (mesh repair shared by import and the booleans, and the
   problems `info` reports), `threemf.rs` and `zip.rs` (3MF in and out), `base64.rs`.
   `bridge.rs` (what an agent may ask: execute, script, catalog; read-only access; `REPLACES`, the commands that replace the plate).

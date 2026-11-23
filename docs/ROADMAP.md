@@ -20,6 +20,10 @@ Priorities:
 - The AI chat, with three providers, skills, `slice_check`, and a key that can be remembered sealed.
 - The desktop app: a 3D view with orbit, picking and a move gizmo; the objects' tools; print settings and presets; slicing with a layer
   preview; G-code export; the assistant panel; a settings file.
+- **0.3 One undo step per chat turn, and for group actions.** `Session::transaction(label, f)` runs several commands as one undo
+  step, all or nothing, and `merge_steps` joins steps of one name (as BIMCraft's engine does). The chat runs each reply's calls in
+  a transaction named for its turn and merges the turn's steps, so one undo takes back a whole turn over all its replies. The
+  window's group delete (the Delete key, and Delete all for several picked objects) is one step.
 - **1.1 Project files.** `crates/core/src/project.rs`: `.lamina` JSON with `format: 1`, each object's id, name, transform and local
   mesh (base64 little-endian arrays), and the print settings and preset labels (`Session::print`, which the slicer lays under what a
   slice is given). `save`, `open` and `new` commands; `open` and `new` start a new history, are in `bridge::REPLACES` (refused to a
@@ -65,7 +69,7 @@ The P0 items, in the order that unblocks the most:
 3. Mesh repair on import, and 3MF import (2.2, 2.3, 1.4). Done.
 4. Supports and brim (4.1, 4.2). Done.
 5. Connected infill and seam placement (4.3, 4.4). Done.
-6. One undo step per chat turn (0.3), and continuous integration (8.1).
+6. One undo step per chat turn (0.3, done), and continuous integration (8.1).
 7. Send to Moonraker and OctoPrint (6.1, 6.2).
 
 After those, the P1 items below, roughly top to bottom within each area.
@@ -77,12 +81,6 @@ After those, the P1 items below, roughly top to bottom within each area.
 **0.2 Real test prints (P0).** How: export a 20 mm calibration cube, a 0.4 mm single-wall box and a bridge test with `lamina-cli slice`.
 Print each on one Marlin and one Klipper printer. Measure with calipers. Write the results, with photos, in `docs/PRINT-TESTS.md`. Fix
 what is wrong before adding features.
-
-**0.3 One undo step per chat turn, and for group actions (P0).** Today every command the assistant runs is its own undo step, and so is
-each object in a group delete. How: add `Session::transaction(label, f)` to `crates/core/src/engine.rs`, which runs several commands
-and pushes one step holding the scene from before the first. BIMCraft's `engine.rs` has `transaction` and `merge_steps` to follow. Use
-it in `crates/assistant/src/chat.rs` around each turn, and in the desktop for group delete and moving several objects. Test: a turn of
-three commands is taken back by one `undo`.
 
 **0.4 Booleans in a child process (P1).** csgrs recurses, and if it ever recursed without end the stack overflow would abort the whole app
 instead of returning an error. How: run each boolean in a child process. Start the app's own binary with a hidden `--boolean-child`
@@ -126,7 +124,7 @@ polyline of points around the object's centre. A drag on a ring turns by the cha
 centre, snapped to 5 degrees, and on release runs `rotate`. Add a corner handle for uniform scale: the ratio of the pointer's distances
 from the centre, run as `scale` on release. Test: the same drag-and-assert tests as the move gizmo.
 
-**3.2 Move several objects (P1).** Needs 0.3. How: the gizmo stands at the middle of the selection's bounds, and on release one
+**3.2 Move several objects (P1).** How: the gizmo stands at the middle of the selection's bounds, and on release one
 transaction moves each object.
 
 **3.3 Lay flat on a face (P1).** How: make `Picture` keep a triangle index per pixel beside the object id. A "lay flat" click then

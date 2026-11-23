@@ -331,6 +331,28 @@ impl App {
         }
     }
 
+    /// Runs several commands as one undo step, as a button does: all of them or none.
+    pub fn run_all(&mut self, label: &str, commands: Vec<(&str, Value)>) -> bool {
+        let result = self.session.transaction(label, |s| commands.iter().try_for_each(|(c, p)| s.execute(c, p).map(|_| ())));
+        self.prune();
+        match result {
+            Ok(()) => {
+                (self.failed, self.status) = (false, String::new());
+                true
+            }
+            Err(e) => {
+                (self.failed, self.status) = (true, e);
+                false
+            }
+        }
+    }
+
+    /// Deletes every picked object, as one undo step.
+    pub fn delete_selected(&mut self) {
+        let commands = self.selected.iter().map(|&id| ("delete", json!({ "id": id }))).collect();
+        self.run_all("delete", commands);
+    }
+
     fn prune(&mut self) {
         let alive: Vec<u32> = self.session.scene.objects.iter().map(|o| o.id).collect();
         self.selected.retain(|id| alive.contains(id));
@@ -450,9 +472,7 @@ impl App {
             self.run("redo", json!({}));
         }
         if delete {
-            for id in self.selected.clone() {
-                self.run("delete", json!({ "id": id }));
-            }
+            self.delete_selected();
         }
     }
 
@@ -572,6 +592,9 @@ impl App {
                         self.boolean("intersect", json!({ "ids": ids }));
                     }
                 });
+                if ui.button("Delete all").on_hover_text("Delete the picked objects, as one undo step").clicked() {
+                    self.delete_selected();
+                }
             }
         }
         ui.separator();
@@ -828,6 +851,20 @@ mod tests {
         h.key_press(Key::Delete);
         h.run();
         assert!(h.state().session.scene.objects.is_empty());
+    }
+
+    #[test]
+    fn deleting_several_objects_is_one_undo_step() {
+        let mut h = window();
+        press(&mut h, "Add box");
+        press(&mut h, "Add cylinder");
+        press(&mut h, "Add sphere");
+        h.state_mut().selected = vec![1, 3];
+        h.run();
+        press(&mut h, "Delete all");
+        assert_eq!(h.state().session.scene.objects.len(), 1);
+        press(&mut h, "Undo");
+        assert_eq!(h.state().session.scene.objects.len(), 3, "one undo brings both back");
     }
 
     #[test]

@@ -516,23 +516,29 @@ fn a_message_that_adds_a_box_adds_it_and_undo_takes_it_back() {
 }
 
 #[test]
-fn each_command_of_a_message_is_its_own_undo_step_across_replies() {
-    // The core has no way yet to merge a turn's steps into one: this is what the user gets, and what a change there would change.
+fn a_whole_turn_is_one_undo_step_across_replies() {
     let net = Arc::new(
         Fake::default()
-            .reply(200, tool_reply(&[("a", "execute", BOX), ("b", "inspect_scene", "{}")]))
-            .reply(200, tool_reply(&[("c", "execute", BOX)]))
-            .reply(200, text_reply("Two boxes.")),
+            .reply(200, tool_reply(&[("a", "execute", BOX), ("b", "inspect_scene", "{}"), ("c", "execute", BOX)]))
+            .reply(200, tool_reply(&[("d", "execute", BOX)]))
+            .reply(200, text_reply("Three boxes."))
+            .reply(200, tool_reply(&[("e", "execute", BOX)]))
+            .reply(200, text_reply("A fourth.")),
     );
     let (mut chat, mut s) = (chat_on(&net), Session::new());
-    chat.send("two boxes", KEY);
+    chat.send("three boxes", KEY);
     drive(&mut chat, &mut s);
-    assert_eq!(objects(&mut s), 2);
+    assert_eq!(objects(&mut s), 3);
+    assert!(s.undo_label().is_some_and(|l| l.starts_with("assistant: three boxes")), "{:?}", s.undo_label());
+    // A second turn is a step of its own.
+    chat.send("one more", KEY);
+    drive(&mut chat, &mut s);
+    assert_eq!(objects(&mut s), 4);
     s.execute("undo", &json!({})).unwrap();
-    assert_eq!(objects(&mut s), 1);
+    assert_eq!(objects(&mut s), 3, "undo takes back the second turn");
     s.execute("undo", &json!({})).unwrap();
-    assert_eq!(objects(&mut s), 0);
-    assert!(s.execute("undo", &json!({})).is_err(), "inspecting made no step");
+    assert_eq!(objects(&mut s), 0, "and then the whole first turn, over both its replies");
+    assert!(s.execute("undo", &json!({})).is_err());
 }
 
 #[test]

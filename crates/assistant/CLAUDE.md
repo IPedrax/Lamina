@@ -31,7 +31,8 @@ What comes from the network is hostile, and what goes out is the user's:
   reasoning items and thought signatures are valid only in the conversation that made them. So a chat that holds a model turn is not
   continued on another provider (`Chat::send` says so; the user clears it).
 - The turn runs in `Chat::poll`, once a frame: the request is on a thread, its reply is taken in the frame, and the tools run on the
-  session there. Each command is its own undo step: the core has no way yet to merge a turn's steps into one. The network stays behind
+  session there. A whole turn is one undo step: each reply's calls run in `Session::transaction` under a label unique to the turn, and
+  `merge_steps` joins the turn's steps after each reply (a step the user makes in between keeps them apart). The network stays behind
   `Net` (`testing::Fake`), so no test reaches a provider.
 - `attach.rs`: the files sent with a message (a part's photo, a text note). A picked file is copied into a `TempDir` that is the chat's
   (gone on `clear`, `reset` and drop), read back as text (UTF-8, `MAX_FILE_TEXT`) or a picture (`MAX_FILE_IMAGE`, base64 by

@@ -1,6 +1,7 @@
 //! The chat: a conversation with a model that works on a [`Session`]. The window calls [`Chat::poll`] once a frame. A request to
 //! the provider runs on a thread of its own (never the window's), and its reply is taken in the frame, where the tool calls in it
-//! run on the window's session, as a command from a button does. Each command a call runs is an undo step of its own.
+//! run on the window's session, as a command from a button does. A whole turn, over all its replies, is one undo step: each reply's
+//! calls run in a [`Session::transaction`] named for the turn, and the steps of the turn are merged as they come.
 
 use std::fs;
 use std::path::Path;
@@ -47,6 +48,8 @@ struct Turn {
     provider: Provider,
     model: String,
     rounds: usize,
+    /// The name of the turn's undo step, unique to the turn, so two turns in a row stay two steps.
+    label: String,
 }
 
 pub struct Chat {
@@ -70,6 +73,8 @@ pub struct Chat {
     unreported: Usage,
     /// The provider the conversation the model has was made with: its reasoning and calls mean nothing to another.
     with: Option<Provider>,
+    /// Turns sent so far, which names each turn's undo step.
+    turns: u64,
 }
 
 impl Chat {
@@ -89,6 +94,7 @@ impl Chat {
             staged: 0,
             unreported: Usage::default(),
             with: None,
+            turns: 0,
         }
     }
 
@@ -188,7 +194,10 @@ impl Chat {
         }
         self.todos.clear();
         self.history.push(Msg::User(text.into(), files));
-        self.turn = Some(Turn { key: key.into(), provider: self.provider, model: self.model.clone(), rounds: 0 });
+        self.turns += 1;
+        let label = format!("assistant: {}", clip(text, 40));
+        let label = format!("{label} (turn {})", self.turns);
+        self.turn = Some(Turn { key: key.into(), provider: self.provider, model: self.model.clone(), rounds: 0, label });
         if let Err(e) = self.launch() {
             self.note(e);
             self.turn = None;
@@ -267,7 +276,12 @@ impl Chat {
             self.turn = None;
             return true;
         }
-        let done = batch(session, &calls, access);
+        // The turn is one undo step: this reply's calls are one transaction, merged with the turn's earlier ones.
+        let label = self.turn.as_ref().map(|t| t.label.clone()).unwrap_or_else(|| "assistant".into());
+        let done = session.transaction(&label, |s| Ok(batch(s, &calls, access))).unwrap_or_else(|e| {
+            calls.iter().map(|c| Done { id: c.id.clone(), name: c.name.clone(), text: e.clone(), error: true }).collect()
+        });
+        session.merge_steps(&label, &label);
         for (call, d) in calls.iter().zip(&done) {
             // The checklist is drawn as a list, not as a call in the log; one that was refused is shown, so the user sees why it is not.
             if call.name == TODO && !d.error {
