@@ -178,6 +178,9 @@ Priorities:
   `Profile::check` reads (a test checks every number is in it) and the window reads for each field's range, shown on hover. The
   print settings panel has groups for speeds, retraction and travel, the skirt, cooling, support details and the machine, and a
   start and end G-code editor that lists the placeholders and says when one is unknown.
+- **5.3 Preset inheritance.** A user's preset may name another, the user's or a built-in, in `inherits`; `presets::resolve` lays
+  each over the one it inherits, at most eight deep, and says when a chain comes back to itself or names a preset nobody has.
+  Saved over the preset chosen, a new one keeps only what differs from it, so a change to the base carries over.
 - **6.1 Send to Moonraker** and **6.2 Send to OctoPrint.** `crates/printer`: one multipart upload to the address the user typed
   (`/server/files/upload` with `root` and `print`, or `/api/files/local` with `select` and `print` and the key in `X-Api-Key`),
   no redirects, the reply read up to 1 MB, the address checked (http or https, no credentials, query or fragment). The
@@ -283,9 +286,6 @@ writer, the time planner and the preview's G-code reader all need to know arcs.
 sequential printing a check of the print head's clearance.
 
 ## 5. Profiles and settings
-
-**5.3 Preset inheritance (P2).** How: a user preset may name another in `inherits`, and its fields are laid over that one's. Resolve
-the chain with a depth limit, and refuse cycles.
 
 **5.4 Import other slicers' profiles (P2).** How: read an OrcaSlicer JSON preset or a PrusaSlicer `.ini` the user chooses, and map the
 keys we understand to our fields through a table we write. Report the keys left out. Never bundle their profile files, whose licence

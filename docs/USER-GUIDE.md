@@ -60,7 +60,8 @@ and `target/release/lamina-cli` (the command line).
 ## Presets of your own
 
 Type a name under the preset pickers and press Save printer, Save filament or Save process: it saves the fields that kind of preset
-holds, as they are shown. Your presets are listed under the built-in ones, marked "mine", and kept in the settings file.
+holds, as they are shown. Saved while another preset of that kind is chosen, it keeps only what you changed and follows the rest of
+that preset, so a change to it carries over. Your presets are listed under the built-in ones, marked "mine", and kept in the settings file.
 
 ## The assistant
 

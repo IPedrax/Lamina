@@ -91,7 +91,14 @@ impl Settings {
         (s.printer, s.filament, s.process) = (text("printer"), text("filament"), text("process"));
         for (key, into) in [("printers", &mut s.printers), ("filaments", &mut s.filaments), ("processes", &mut s.processes)] {
             for (name, fields) in all.get(key).and_then(Value::as_object).into_iter().flatten() {
-                let ok = fields.as_object().filter(|f| presets::apply(&Profile::default(), f).is_ok() && name.len() <= 200);
+                // Its own fields must be settings; what it inherits is resolved when it is applied.
+                let ok = fields.as_object().filter(|f| {
+                    let mut own = (*f).clone();
+                    let parent = own.remove(presets::INHERITS);
+                    parent.as_ref().is_none_or(|p| p.as_str().is_some_and(|p| p.len() <= 200))
+                        && presets::apply(&Profile::default(), &own).is_ok()
+                        && name.len() <= 200
+                });
                 match ok {
                     Some(f) => {
                         into.insert(name.clone(), f.clone());

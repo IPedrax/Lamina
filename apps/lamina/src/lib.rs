@@ -341,12 +341,11 @@ impl App {
         }
     }
 
-    /// Applies a preset by name, the user's first, then a built-in: its fields go over the settings shown, the others stay.
+    /// Applies a preset by name, the user's first, then a built-in, with the presets it inherits: its fields go over the settings
+    /// shown, the others stay.
     pub fn apply_preset(&mut self, kind: Kind, name: &str) {
-        let fields = match self.mine(kind).get(name) {
-            Some(f) => Ok(f.clone()),
-            None => presets::find(kind.built_in(), name).map(|p| p.fields()),
-        };
+        let mine = self.mine(kind).clone();
+        let fields = presets::resolve(name, |n| mine.get(n), kind.built_in());
         match fields.and_then(|f| presets::apply(&self.profile, &f)) {
             Ok(p) => {
                 self.profile = p;
@@ -373,7 +372,23 @@ impl App {
             (self.failed, self.status) = (true, format!("\"{name}\" is a built-in {}: choose another name.", kind.word()));
             return;
         }
-        let fields = presets::capture(&self.profile, kind.fields());
+        let mut fields = presets::capture(&self.profile, kind.fields());
+        // Saved over the preset chosen now, it keeps only what differs from it and names it, so a change to that one carries over.
+        let base = match kind {
+            Kind::Printer => self.printer.clone(),
+            Kind::Filament => self.filament.clone(),
+            Kind::Process => self.process.clone(),
+        };
+        let mine = self.mine(kind).clone();
+        if let Some(base) = base.filter(|b| !b.eq_ignore_ascii_case(name))
+            && let Ok(inherited) = presets::resolve(&base, |n| mine.get(n), kind.built_in())
+            && let Ok(under) = presets::apply(&Profile::default(), &inherited)
+        {
+            // Only what the base itself sets can be left to it; read back through a profile, so 240 and 240.0 compare equal.
+            let theirs = presets::capture(&under, kind.fields());
+            fields.retain(|k, v| !(inherited.contains_key(k) && theirs.get(k) == Some(v)));
+            fields.insert(presets::INHERITS.into(), Value::String(base));
+        }
         self.mine(kind).insert(name.to_string(), fields);
         self.apply_preset(kind, name);
         self.status = format!("Saved the {} preset \"{name}\".", kind.word());
@@ -1916,6 +1931,28 @@ mod tests {
         // Every setting says what it does.
         assert!(hint("layer_height").contains("thinner is finer") && hint("layer_height").contains("From 0.02"));
         assert_eq!(hint("seam"), lamina_slicer::profile::about("seam"));
+    }
+
+    #[test]
+    fn a_preset_saved_over_another_keeps_only_what_differs_and_follows_it() {
+        let mut h = window();
+        let app = h.state_mut();
+        app.apply_preset(Kind::Filament, "PETG");
+        app.profile.nozzle_temp = 235.0;
+        app.save_preset(Kind::Filament, "My PETG");
+        let saved = app.my_filaments["My PETG"].clone();
+        assert_eq!(saved.get("inherits").and_then(Value::as_str), Some("PETG"));
+        // What PETG sets and the settings match is left to it; the nozzle differs, and pressure advance, which PETG leaves alone, is kept.
+        assert_eq!(saved.get("nozzle_temp").and_then(Value::as_f64), Some(235.0));
+        assert!(!saved.contains_key("bed_temp") && !saved.contains_key("fan_speed"), "{saved:?}");
+        // Applied on top of PLA's, it gives PETG's other fields with its own nozzle.
+        app.apply_preset(Kind::Filament, "PLA");
+        app.apply_preset(Kind::Filament, "My PETG");
+        assert_eq!((app.profile.nozzle_temp, app.profile.bed_temp, app.profile.fan_speed), (235.0, 80.0, 128.0));
+        // A preset saved with nothing chosen holds every field of its kind.
+        app.filament = None;
+        app.save_preset(Kind::Filament, "Whole");
+        assert!(!app.my_filaments["Whole"].contains_key("inherits"));
     }
 
     #[test]

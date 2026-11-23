@@ -167,6 +167,58 @@ pub fn apply(profile: &Profile, fields: &Map<String, Value>) -> Result<Profile, 
     Profile::from_json(&merged)
 }
 
+/// The key with which a user's preset names the preset it is laid over.
+pub const INHERITS: &str = "inherits";
+/// The longest chain of presets laid over one another.
+pub const MAX_CHAIN: usize = 8;
+
+/// The fields of the preset `name`, with the chain it inherits resolved: a user's preset (found by `mine`) may name another, the user's
+/// or a built-in of `built_in`, in `inherits`, and its own fields are laid over that one's. A chain longer than [`MAX_CHAIN`], one that
+/// comes back to itself, or one that names a preset nobody has is an error that says which.
+pub fn resolve<'a>(
+    name: &str,
+    mine: impl Fn(&str) -> Option<&'a Map<String, Value>>,
+    built_in: &[Preset],
+) -> Result<Map<String, Value>, String> {
+    let mut chain: Vec<Map<String, Value>> = Vec::new();
+    let mut seen: Vec<String> = Vec::new();
+    let mut at = name.to_string();
+    loop {
+        if seen.iter().any(|s| s.eq_ignore_ascii_case(&at)) {
+            return Err(format!("the presets {} inherit from one another in a circle", seen.join(" > ")));
+        }
+        if seen.len() >= MAX_CHAIN {
+            return Err(format!("the preset `{name}` inherits through more than {MAX_CHAIN} others"));
+        }
+        seen.push(at.clone());
+        match mine(&at) {
+            Some(fields) => {
+                let mut own = fields.clone();
+                let parent = own.remove(INHERITS);
+                chain.push(own);
+                match parent {
+                    None => break,
+                    Some(Value::String(p)) if !p.trim().is_empty() => at = p,
+                    Some(_) => return Err(format!("`{INHERITS}` in the preset `{at}` is the name of another preset")),
+                }
+            }
+            None => {
+                chain.push(
+                    find(built_in, &at)
+                        .map_err(|e| if seen.len() > 1 { format!("`{}` inherits `{at}`: {e}", seen[seen.len() - 2]) } else { e })?
+                        .fields(),
+                );
+                break;
+            }
+        }
+    }
+    // The base first, then each preset over the one it inherits.
+    Ok(chain.into_iter().rev().fold(Map::new(), |mut all, fields| {
+        all.extend(fields);
+        all
+    }))
+}
+
 /// The fields of `profile` named in `keys`: what a preset of that kind saved from the settings shown would hold.
 pub fn capture(profile: &Profile, keys: &[&str]) -> Map<String, Value> {
     let Ok(Value::Object(all)) = serde_json::to_value(profile) else { return Map::new() };
@@ -176,6 +228,34 @@ pub fn capture(profile: &Profile, keys: &[&str]) -> Map<String, Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_preset_inherits_a_chain_and_a_circle_or_a_missing_parent_is_said() {
+        let mut mine: std::collections::BTreeMap<String, Map<String, Value>> = std::collections::BTreeMap::new();
+        let obj = |v: Value| v.as_object().cloned().unwrap();
+        mine.insert("Hot PLA".into(), obj(serde_json::json!({"inherits": "PLA", "nozzle_temp": 220})));
+        mine.insert("Hot PLA, slow fan".into(), obj(serde_json::json!({"inherits": "hot pla", "fan_speed": 100})));
+        let look = |n: &str| mine.iter().find(|(k, _)| k.eq_ignore_ascii_case(n)).map(|(_, v)| v);
+        let f = resolve("Hot PLA, slow fan", look, FILAMENTS).unwrap();
+        assert_eq!((f["nozzle_temp"].as_f64(), f["fan_speed"].as_f64(), f["bed_temp"].as_f64()), (Some(220.0), Some(100.0), Some(60.0)));
+        assert!(!f.contains_key("inherits"));
+        assert_eq!(resolve("PLA", look, FILAMENTS).unwrap(), find(FILAMENTS, "PLA").unwrap().fields());
+        // A circle, a missing parent, and a parent that is no name.
+        mine.insert("A".into(), obj(serde_json::json!({"inherits": "B"})));
+        mine.insert("B".into(), obj(serde_json::json!({"inherits": "A"})));
+        mine.insert("C".into(), obj(serde_json::json!({"inherits": "Nylon"})));
+        mine.insert("D".into(), obj(serde_json::json!({"inherits": 7})));
+        let look = |n: &str| mine.iter().find(|(k, _)| k.eq_ignore_ascii_case(n)).map(|(_, v)| v);
+        assert!(resolve("A", look, FILAMENTS).unwrap_err().contains("circle"));
+        assert!(resolve("C", look, FILAMENTS).unwrap_err().contains("`C` inherits `Nylon`"));
+        assert!(resolve("D", look, FILAMENTS).is_err());
+        // Too long a chain.
+        let mut long: std::collections::BTreeMap<String, Map<String, Value>> = std::collections::BTreeMap::new();
+        for i in 0..20 {
+            long.insert(format!("p{i}"), obj(serde_json::json!({"inherits": format!("p{}", i + 1)})));
+        }
+        assert!(resolve("p0", |n: &str| long.get(n), FILAMENTS).unwrap_err().contains("more than"));
+    }
 
     #[test]
     fn every_built_in_sets_only_its_own_fields_and_gives_a_valid_profile() {
