@@ -67,7 +67,8 @@ struct Ask {
 fn ask(c: Option<Connectors>) -> Result<Ask, String> {
     let c = c.unwrap_or_default();
     let (kind, said) = match c.kind.as_deref() {
-        None => (Some(Kind::Dowel), false),
+        // Pegs on one piece and sockets in the other by default: nothing loose to print, lose or glue.
+        None => (Some(Kind::Pin), false),
         Some("dowel") => (Some(Kind::Dowel), true),
         Some("pin") => (Some(Kind::Pin), true),
         Some("none") => (None, true),
@@ -695,8 +696,8 @@ mod tests {
     fn a_box_cut_with_dowels_gives_closed_pieces_with_holes_that_line_up_and_a_dowel_for_each() {
         let mut s = session();
         s.execute("add_primitive", &json!({"kind": "box", "size": [40, 40, 60]})).unwrap();
-        // The older form: no axis, no connectors asked for, so dowels where they fit.
-        let r = s.execute("cut", &json!({"id": 1, "z": 30})).unwrap();
+        // The older form, no axis, with dowels asked for by name.
+        let r = s.execute("cut", &json!({"id": 1, "z": 30, "connectors": {"kind": "dowel"}})).unwrap();
         let (pieces, dowels, c) = (ids(&r["ids"]), ids(&r["dowels"]), &r["connectors"]);
         assert_eq!((pieces.len(), dowels.len(), c["kind"].as_str(), c["count"].as_u64()), (2, 2, Some("dowel"), Some(2)), "{r}");
         let names: Vec<&str> = s.scene.objects.iter().map(|o| o.name.as_str()).collect();
@@ -757,11 +758,27 @@ mod tests {
         assert!((low.bounds().unwrap().1[2] - (30.0 + length)).abs() < 1e-3);
     }
 
+    /// One piece carries the connectors and the other the holes, unless something else is asked for: nothing loose to print.
+    #[test]
+    fn by_default_one_piece_has_the_pegs_and_the_other_the_sockets() {
+        let mut s = session();
+        s.execute("add_primitive", &json!({"kind": "box", "size": [40, 40, 60]})).unwrap();
+        let r = s.execute("cut", &json!({"id": 1, "z": 30})).unwrap();
+        let c = &r["connectors"];
+        assert_eq!((c["kind"].as_str(), c["count"].as_u64(), r["dowels"].as_array().map(Vec::len)), (Some("pin"), Some(2), Some(0)), "{r}");
+        assert_eq!(s.scene.objects.len(), 2, "nothing loose");
+        let p = ids(&r["ids"]);
+        let (pegs, sockets) = (world(&s, p[0]), world(&s, p[1]));
+        assert!(pegs.is_watertight() && sockets.is_watertight());
+        assert!(pegs.volume() > 48_000.0 && sockets.volume() < 48_000.0, "{} {}", pegs.volume(), sockets.volume());
+        assert!(pegs.bounds().unwrap().1[2] > 30.0, "the pegs stand above the cut");
+    }
+
     #[test]
     fn cuts_along_x_and_y_part_where_asked_and_line_up() {
         let mut s = session();
         s.execute("add_primitive", &json!({"kind": "box", "size": [60, 30, 20]})).unwrap();
-        let r = s.execute("cut", &json!({"id": 1, "axis": "x", "at": 10})).unwrap();
+        let r = s.execute("cut", &json!({"id": 1, "axis": "x", "at": 10, "connectors": {"kind": "dowel"}})).unwrap();
         let pieces = ids(&r["ids"]);
         let (a, b) = (world(&s, pieces[0]), world(&s, pieces[1]));
         assert!(a.is_watertight() && b.is_watertight());
@@ -786,7 +803,7 @@ mod tests {
     fn a_face_with_room_for_one_gets_a_square_key_and_a_face_too_small_none_said() {
         let mut s = session();
         s.execute("add_primitive", &json!({"kind": "box", "size": [9, 9, 20]})).unwrap();
-        let r = s.execute("cut", &json!({"id": 1, "z": 10})).unwrap();
+        let r = s.execute("cut", &json!({"id": 1, "z": 10, "connectors": {"kind": "dowel"}})).unwrap();
         assert_eq!((r["connectors"]["shape"].as_str(), r["connectors"]["count"].as_u64()), (Some("square"), Some(1)), "{r}");
         let key = world(&s, ids(&r["dowels"])[0]);
         let (lo, hi) = key.bounds().unwrap();
@@ -826,7 +843,7 @@ mod tests {
         let mut s = session();
         s.execute("add_primitive", &json!({"kind": "cylinder", "radius": 30, "height": 300})).unwrap();
         let whole = world(&s, 1).volume();
-        let r = s.execute("split_to_fit", &json!({"id": 1, "bed": [220, 220]})).unwrap();
+        let r = s.execute("split_to_fit", &json!({"id": 1, "bed": [220, 220], "connectors": {"kind": "dowel"}})).unwrap();
         let (pieces, dowels) = (ids(&r["ids"]), ids(&r["dowels"]));
         assert_eq!((pieces.len(), r["fits"].as_bool(), r["each_fits"].as_bool()), (2, Some(true), Some(true)), "{r}");
         let cut = &r["cuts"][0];
@@ -854,7 +871,7 @@ mod tests {
     fn a_wide_plate_is_split_both_ways_keeping_connectors_off_the_other_cuts() {
         let mut s = session();
         s.execute("add_primitive", &json!({"kind": "box", "size": [300, 260, 12]})).unwrap();
-        let r = s.execute("split_to_fit", &json!({"id": 1, "bed": [220, 220], "gap": 3})).unwrap();
+        let r = s.execute("split_to_fit", &json!({"id": 1, "bed": [220, 220], "gap": 3, "connectors": {"kind": "dowel"}})).unwrap();
         let pieces = ids(&r["ids"]);
         assert_eq!((pieces.len(), r["each_fits"].as_bool()), (4, Some(true)), "{r}");
         assert_eq!(r["cuts"].as_array().unwrap().len(), 3, "x first, the longer side, then y through both halves: {r}");

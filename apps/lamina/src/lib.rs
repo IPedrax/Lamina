@@ -217,7 +217,7 @@ impl App {
             nudge: [10.0, 0.0, 0.0],
             cut_axis: 2,
             cut_at: f64::NAN,
-            connector: "dowel",
+            connector: "pin",
             fields: None,
             keep_proportions: true,
             axis: 2,
@@ -1083,7 +1083,7 @@ impl App {
     }
 
     /// The Cut tools for the picked object: a plane square to an axis, shown in the 3D view, where the slider puts it; the connectors;
-    /// Cut, and Split to fit plate. Dowels are left to the command to place, so a face too small for them is cut without and said.
+    /// Cut, and Split to fit plate. The default, pins, is left to the command to place, so a face too small for them is cut without and said.
     fn cut_ui(&mut self, ui: &mut Ui, id: u32) {
         let Some((lo, hi)) = self.session.scene.get(id).ok().and_then(|o| o.bounds()) else { return };
         ui.horizontal(|ui| {
@@ -1106,12 +1106,12 @@ impl App {
             p
         }));
         ui.horizontal(|ui| {
-            ui.selectable_value(&mut self.connector, "dowel", "Dowels")
-                .on_hover_text("Holes in both pieces and loose pins to print; left out, and said, where the face is too small");
-            ui.selectable_value(&mut self.connector, "pin", "Pins").on_hover_text("Pegs on one piece, sockets in the other");
+            ui.selectable_value(&mut self.connector, "pin", "Pins")
+                .on_hover_text("Pegs on one piece, sockets in the other; left out, and said, where the face is too small");
+            ui.selectable_value(&mut self.connector, "dowel", "Dowels").on_hover_text("Holes in both pieces and loose pins to print");
             ui.selectable_value(&mut self.connector, "none", "None");
         });
-        let connectors = if self.connector == "dowel" { json!({}) } else { json!({ "kind": self.connector }) };
+        let connectors = if self.connector == "pin" { json!({}) } else { json!({ "kind": self.connector }) };
         ui.horizontal(|ui| {
             if ui.button("Cut").on_hover_text("Cut here; each piece is turned to print and the plate laid out").clicked() {
                 let axis = ["x", "y", "z"][k];
@@ -1702,33 +1702,33 @@ mod tests {
         press(&mut h, "Cut into pieces");
         let plane = h.state().view.plane.unwrap();
         assert!(plane.iter().all(|p| (p[2] - 30.0).abs() < 1e-9), "level, through the middle: {plane:?}");
-        // Dowels by default: two pieces, a dowel for each pair of holes, one undo step.
+        // Pins by default: two pieces, pegs on one and sockets in the other, nothing loose, one undo step.
         press(&mut h, "Cut");
         let app = h.state();
         assert!(!app.failed, "{}", app.status);
-        assert_eq!((app.session.scene.objects.len(), app.selected.len(), app.session.undo_label()), (4, 2, Some("cut")));
+        assert_eq!((app.session.scene.objects.len(), app.selected.len(), app.session.undo_label()), (2, 2, Some("cut")));
         assert!(app.session.scene.objects.iter().all(|o| o.bounds().unwrap().0[2].abs() < 1e-6), "laid out on the plate");
         press(&mut h, "Undo");
-        // Across x, with pins: the plane stands upright through the middle, and no loose dowels are made.
+        // Across x, with dowels: the plane stands upright through the middle, and a loose dowel is made for each pair of holes.
         let app = h.state_mut();
         (app.selected, app.cut_axis) = (vec![1], 0);
         h.run();
         let plane = h.state().view.plane.unwrap();
         assert!(plane.iter().all(|p| p[0].abs() < 1e-9), "{plane:?}");
-        press(&mut h, "Pins");
+        press(&mut h, "Dowels");
         press(&mut h, "Cut");
-        assert_eq!(h.state().session.scene.objects.len(), 2, "{}", h.state().status);
+        assert_eq!(h.state().session.scene.objects.len(), 4, "{}", h.state().status);
         // A part too tall for the printer is split into pieces that each fit.
         press(&mut h, "Undo");
         h.state_mut().run("add_primitive", json!({"kind": "cylinder", "radius": 25, "height": 300, "at": [80, 0]}));
         h.state_mut().selected = vec![2];
         h.run();
-        press(&mut h, "Dowels");
+        press(&mut h, "Pins");
         press(&mut h, "Split to fit plate");
         let app = h.state();
         assert!(!app.failed, "{}", app.status);
         assert_eq!(app.session.undo_label(), Some("split_to_fit"));
-        assert!(app.session.scene.objects.len() >= 5, "two pieces, their dowels and the box");
+        assert!(app.session.scene.objects.len() >= 3, "two pieces and the box, no loose dowels");
         assert!(app.session.scene.objects.iter().all(|o| o.bounds().unwrap().1[2] <= 250.0));
     }
 

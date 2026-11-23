@@ -27,7 +27,7 @@ the load then runs along the layers.
 
 - A chamfer of 45 degrees under an edge prints where a round fillet would sag: use chamfers on downward faces.
 - Split a part that cannot sit flat: `cut {id, z: 12, lay_out: true}` cuts it at a height into two parts, each turned onto its flat
-  cut face, with dowels to line them up where the face has room. Say where you cut and why.
+  cut face, with pegs and sockets to line them up where the face has room. Say where you cut and why.
 
 ## Lamina's support settings
 

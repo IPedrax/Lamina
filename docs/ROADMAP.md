@@ -95,8 +95,8 @@ Priorities:
   for later. A Cut control in the window.
 - **3.14 Cut into pieces with connectors, and split to fit.** `cut {id, axis, at, connectors?, lay_out?}` cuts along x, y or z
   (`{id, z}` still works) and keeps the pieces where they stood unless asked to lay them out. Connectors are automatic by default:
-  dowels where the face has room (holes in both pieces and a loose chamfered pin each), else none with a note; or pins (pegs and
-  sockets with clearance), or none. They are placed on the cut face (the slicer's section, shrunk by the sections down each hole's
+  pins where the face has room (pegs on one piece and sockets with clearance in the other, nothing loose), else none with a note;
+  or dowels (holes in both pieces and a loose chamfered pin each), or none. They are placed on the cut face (the slicer's section, shrunk by the sections down each hole's
   depth and inset by its radius and a wall) by farthest-point sampling, two or more so the pieces cannot turn, a square key where only
   one fits. `split_to_fit {id, bed?, height?, connectors?, gap?}` cuts an object too big for the printer into as few equal pieces
   as fit, longest side first, keeps connectors off the other cuts, turns each piece to print and arranges the plate. Tested through

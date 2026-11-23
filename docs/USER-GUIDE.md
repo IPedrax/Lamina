@@ -80,8 +80,8 @@ axis the plane crosses (x, y or z) and move the slider: the plane shows in the 3
 
 | Connectors | What is made | Printing |
 |---|---|---|
+| Pins (the default) | pegs on one piece and sockets, 0.2 mm a side larger, in the other: nothing loose | the peg piece prints pegs up |
 | Dowels | holes in both pieces at the same places, and a loose pin for each pair, 0.2 mm a side smaller than its holes | both pieces can lie on their cut faces; a steel or wooden dowel of the hole's size can replace a printed pin |
-| Pins | pegs on one piece and sockets, 0.2 mm a side larger, in the other | the peg piece prints pegs up |
 | None | nothing: for parts you glue | |
 
 Two or more connectors are spread across the cut face, so the pieces cannot turn on them; where only one fits it is a square key.
@@ -90,7 +90,7 @@ end). A face with no room for one is cut without and the status bar says so. Cut
 
 Split to fit plate cuts a part too big for the printer into as few pieces as fit the plate and the printer's height: across its
 longest side that does not fit first, in equal pieces, with the connectors chosen at every cut. Each piece is turned onto a cut
-face where that leaves it no taller, the dowels stand beside them, and the plate is laid out. If the pieces do not all fit on the
+face where that leaves it no taller (a piece with pegs stands pegs up), any dowels stand beside them, and the plate is laid out. If the pieces do not all fit on the
 plate at once, the status bar says to print them in batches. Undo takes the whole cut or split back.
 
 The assistant has the same two commands (`cut` and `split_to_fit`), and can cut where you say along any axis.

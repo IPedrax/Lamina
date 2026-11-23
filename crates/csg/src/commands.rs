@@ -28,14 +28,15 @@ pub static COMMANDS: &[Command] = &[
     Command {
         id: "cut",
         params: "{id, axis?:\"x\"|\"y\"|\"z\" (default z), at (mm along `axis`, between the object's least and greatest), keep?:\"both\"|\
-                 \"lower\"|\"upper\" (default both; lower is the side toward minus the axis), connectors?:{kind?:\"dowel\"|\"pin\"|\"none\", \
+                 \"lower\"|\"upper\" (default both; lower is the side toward minus the axis), connectors?:{kind?:\"pin\"|\"dowel\"|\"none\", \
                  count? (1..8, default 2), diameter? (mm, default from the face, 3 to 8), depth? (mm into each piece, default 1.5 x the \
                  diameter, at most 15), clearance? (mm a side, default 0.2)}, lay_out? (default false), name?} cuts an object in two with the \
                  plane square to `axis` at `at` (`{id, z}` still cuts level at height z). Each piece is closed and named with \" 1\" or \" 2\". \
-                 Without `kind`, dowels are made where the cut face has room (else none, said in `note`): holes in both pieces at the same \
-                 places and a loose dowel pin for each pair, added as objects. \"pin\" joins pegs to piece 1 and cuts sockets in piece 2. \
+                 Without `kind`, pins are made where the cut face has room (else none, said in `note`): pegs joined to piece 1 and sockets \
+                 with clearance cut in piece 2, so one piece carries the connectors and the other the holes. \"dowel\" cuts holes in both \
+                 pieces and adds a loose dowel pin for each pair as an object. \
                  Two or more are spread over the face so the pieces cannot turn; where only one fits it is a square key. Without \
-                 `lay_out` everything stays where it stood, put together, the dowels in their holes; with it each piece is turned to print \
+                 `lay_out` everything stays where it stood, put together, pegs in their sockets; with it each piece is turned to print \
                  (onto its cut face, pegs up) and the plate is arranged. Returns {ids (piece 1 first), dowels, connectors (sizes and the \
                  centres `at`, as cut), note?, fits? (laid out)}",
         run: crate::split::cut,
@@ -47,7 +48,7 @@ pub static COMMANDS: &[Command] = &[
         params: "{id, bed?:[x, y] (default the project's plate), height? (default the printer's), connectors? (as `cut` takes them), \
                  gap? (mm between pieces, default 5)} cuts an object too big for the printer into pieces that each fit: across its longest \
                  side that does not fit first, each such side in as few equal pieces as fit, with connectors at every cut. Each piece is \
-                 turned to print where that helps (onto a cut face, pegs up), the dowels stand beside them, and the whole plate is arranged. \
+                 turned to print where that helps (onto a cut face, pegs up), any dowels stand beside them, and the whole plate is arranged. \
                  Returns {ids (the pieces), dowels, cuts:[{axis, at, connectors}], fits (all on the plate at once), each_fits, note?}",
         run: crate::split::split_to_fit,
         undoable: true,
