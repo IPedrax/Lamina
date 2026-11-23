@@ -7,6 +7,7 @@ pub mod autosave;
 pub mod chat;
 pub mod comfort;
 pub mod files;
+pub mod icon;
 pub mod preview;
 pub mod printer;
 pub mod settings;

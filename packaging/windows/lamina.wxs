@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Lamina's Windows installer, for the WiX Toolset 5 (the wix .NET tool, 5.0.2) and its UI extension, which draws the setup
+  wizard: wix extension add -g WixToolset.UI.wixext/5.0.2
+  From the repository root, after a release build of lamina and lamina-cli for x86_64-pc-windows-msvc:
+
+    wix build packaging\windows\lamina.wxs -arch x64 -ext WixToolset.UI.wixext -d Version=0.1.0
+      -d BinDir=target\x86_64-pc-windows-msvc\release -o lamina-0.1.0-windows-x64.msi
+
+  Lifted from BIMCraft's packaging/windows/bimcraft.wxs (same author, MIT OR Apache-2.0). It installs for every user into
+  Program Files\Lamina, or into the folder chosen on the wizard's folder page (silent: INSTALLFOLDER="D:\Apps\Lamina"), which
+  an upgrade keeps: the app, the CLI, the licence and the notice, a Start menu shortcut, projects (.lamina) opening in Lamina,
+  and Lamina offered under "Open with" for .stl and .3mf files, without taking over the user's default app. A newer version
+  upgrades an older one in place, and so does a rebuild of the same version.
+
+  Desktop shortcut: the setup wizard asks (unticked by default). A silent install leaves it out unless asked:
+  msiexec /i lamina-0.1.0-windows-x64.msi /qn DESKTOPSHORTCUT=1. An upgrade keeps the previous choice unless DESKTOPSHORTCUT=1
+  or DESKTOPSHORTCUT=0 is given.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Lamina" Manufacturer="IPedrax" Version="$(var.Version)" UpgradeCode="B71A1D0D-D7D6-4F71-AB95-3DE7B3EF3641" Scope="perMachine" Compressed="yes" Language="1033">
+    <SummaryInformation Description="Lamina: a 3D slicer and modelling tool in pure Rust" />
+    <MajorUpgrade AllowSameVersionUpgrades="yes" IgnoreLanguage="yes" DowngradeErrorMessage="A newer version of Lamina is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <!-- Windows Installer writes the icon to a file named after its Id, and the shell only reads an icon from a file named .ico
+         or .exe: without the extension, the shortcuts show no icon. -->
+    <Icon Id="LaminaIcon.ico" SourceFile="assets\app-icon\lamina.ico" />
+    <Property Id="ARPPRODUCTICON" Value="LaminaIcon.ico" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/IPedrax/Lamina" />
+    <Property Id="ARPURLUPDATEINFO" Value="https://github.com/IPedrax/Lamina/releases" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/IPedrax/Lamina/issues" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Lamina" />
+    </StandardDirectory>
+
+    <!-- Where the previous install put Lamina, from the key the app component writes, so an upgrade stays in the folder that was
+         chosen. None, or a folder that's gone: the default above. Secure, so the elevated install sees the folder the wizard picked. -->
+    <Property Id="INSTALLFOLDER" Secure="yes">
+      <RegistrySearch Id="PreviousInstallFolder" Root="HKLM" Key="Software\Lamina" Name="InstallFolder" Type="directory" Bitness="always64" />
+    </Property>
+    <!-- The folder page edits this directory. -->
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+
+    <!-- "Create a desktop shortcut": the wizard's checkbox sets it to 1 (unticked, it's unset), and a silent install passes
+         DESKTOPSHORTCUT=1. Secure, so the elevated install sees the wizard's choice. -->
+    <Property Id="DESKTOPSHORTCUT" Secure="yes" />
+    <!-- The previous install's choice, from the shortcut's key path, so an upgrade keeps it unasked. -->
+    <Property Id="PREVIOUSDESKTOPSHORTCUT">
+      <RegistrySearch Id="PreviousDesktopShortcut" Root="HKCU" Key="Software\Lamina" Name="DesktopShortcut" Type="raw" />
+    </Property>
+    <SetProperty Id="DESKTOPSHORTCUT" Value="1" After="AppSearch" Sequence="first"
+        Condition="NOT DESKTOPSHORTCUT AND PREVIOUSDESKTOPSHORTCUT = &quot;1&quot;" />
+
+    <UIRef Id="LaminaUI" />
+
+    <Feature Id="Main" Title="Lamina" Level="1">
+      <Component Id="App" Directory="INSTALLFOLDER">
+        <File Id="LaminaExe" Source="$(var.BinDir)\lamina.exe" KeyPath="yes">
+          <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="Lamina" Description="3D slicer and modelling" WorkingDirectory="INSTALLFOLDER" Icon="LaminaIcon.ico" Advertise="yes" />
+        </File>
+        <ProgId Id="Lamina.Project" Description="Lamina project" Icon="LaminaIcon.ico" Advertise="yes">
+          <Extension Id="lamina" ContentType="application/x-lamina">
+            <Verb Id="open" Command="Open" Argument="&quot;%1&quot;" />
+          </Extension>
+        </ProgId>
+        <!-- Run as `lamina`, and listed under "Open with" for meshes as Lamina. -->
+        <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\App Paths\lamina.exe" Value="[#LaminaExe]" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\lamina.exe" Name="FriendlyAppName" Value="Lamina" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\lamina.exe\shell\open\command" Value="&quot;[#LaminaExe]&quot; &quot;%1&quot;" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.stl\OpenWithProgids" Name="Lamina.Mesh" Value="" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.3mf\OpenWithProgids" Name="Lamina.Mesh" Value="" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Lamina.Mesh\shell\open\command" Value="&quot;[#LaminaExe]&quot; &quot;%1&quot;" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Lamina" Name="InstallFolder" Value="[INSTALLFOLDER]" Type="string" />
+      </Component>
+      <Component Id="Cli" Directory="INSTALLFOLDER">
+        <File Id="LaminaCliExe" Source="$(var.BinDir)\lamina-cli.exe" KeyPath="yes" />
+      </Component>
+      <Component Id="Licence" Directory="INSTALLFOLDER">
+        <File Id="LicenseFile" Name="LICENSE.txt" Source="LICENSE" KeyPath="yes" />
+      </Component>
+      <Component Id="NoticeFile" Directory="INSTALLFOLDER">
+        <File Id="Notice" Name="NOTICE.txt" Source="NOTICE" KeyPath="yes" />
+      </Component>
+      <!-- A shortcut that isn't advertised needs a registry key path, and in a profile folder (the desktop, which per-machine is
+           the Public one) that key must be under HKCU (ICE38, ICE43, ICE57). -->
+      <Component Id="DesktopShortcut" Directory="DesktopFolder" Condition="DESKTOPSHORTCUT = &quot;1&quot;">
+        <Shortcut Id="DesktopShortcut" Name="Lamina" Description="3D slicer and modelling" Target="[INSTALLFOLDER]lamina.exe" WorkingDirectory="INSTALLFOLDER" Icon="LaminaIcon.ico" />
+        <RegistryValue Root="HKCU" Key="Software\Lamina" Name="DesktopShortcut" Value="1" Type="string" KeyPath="yes" />
+      </Component>
+    </Feature>
+  </Package>
+
+  <!--
+    The setup wizard, as BIMCraft's: WixUI_InstallDir's flow without the licence page,
+    plus a Shortcuts page after the folder's.
+      install:     Welcome > Folder > Shortcuts > Ready to install > Progress > Finish
+      maintenance: Maintenance welcome > Repair or Remove > Ready > Progress > Finish
+  -->
+  <Fragment>
+    <UI Id="LaminaUI">
+      <TextStyle Id="WixUI_Font_Normal" FaceName="Tahoma" Size="8" />
+      <TextStyle Id="WixUI_Font_Bigger" FaceName="Tahoma" Size="12" />
+      <TextStyle Id="WixUI_Font_Title" FaceName="Tahoma" Size="9" Bold="yes" />
+      <Property Id="DefaultUIFont" Value="WixUI_Font_Normal" />
+
+      <DialogRef Id="BrowseDlg" />
+      <DialogRef Id="DiskCostDlg" />
+      <DialogRef Id="ErrorDlg" />
+      <DialogRef Id="FatalError" />
+      <DialogRef Id="FilesInUse" />
+      <DialogRef Id="MsiRMFilesInUse" />
+      <DialogRef Id="PrepareDlg" />
+      <DialogRef Id="ProgressDlg" />
+      <DialogRef Id="ResumeDlg" />
+      <DialogRef Id="UserExit" />
+
+      <Dialog Id="ShortcutsDlg" Width="370" Height="270" Title="!(loc.InstallDirDlg_Title)">
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="!(loc.WixUINext)" />
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="!(loc.WixUIBack)" />
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="Choose where to start [ProductName] from." />
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="200" Height="15" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}Shortcuts" />
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="!(loc.InstallDirDlgBannerBitmap)" />
+        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+
+        <Control Id="StartMenuText" Type="Text" X="20" Y="60" Width="330" Height="15" NoPrefix="yes" Text="[ProductName] will be added to the Start menu." />
+        <Control Id="DesktopShortcutCheckBox" Type="CheckBox" X="20" Y="85" Width="330" Height="17" Property="DESKTOPSHORTCUT" CheckBoxValue="1" Text="Create a &amp;desktop shortcut" />
+      </Dialog>
+
+      <Publish Dialog="ExitDialog" Control="Finish" Event="EndDialog" Value="Return" Order="999" />
+
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" Condition="NOT Installed" />
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" Condition="Installed AND PATCH" />
+
+      <!-- WixUI_InstallDir's own events for the folder page and its Browse dialog, with the path check (the x64 build of
+           WiX's WixUIValidatePath) that stops a folder Windows can't use before the install starts. -->
+      <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" />
+      <Publish Dialog="InstallDirDlg" Control="Next" Event="SetTargetPath" Value="[WIXUI_INSTALLDIR]" Order="1" />
+      <Publish Dialog="InstallDirDlg" Control="Next" Event="DoAction" Value="WixUIValidatePath_X64" Order="2" Condition="NOT WIXUI_DONTVALIDATEPATH" />
+      <Publish Dialog="InstallDirDlg" Control="Next" Event="SpawnDialog" Value="InvalidDirDlg" Order="3" Condition="NOT WIXUI_DONTVALIDATEPATH AND WIXUI_INSTALLDIR_VALID&lt;&gt;&quot;1&quot;" />
+      <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="ShortcutsDlg" Order="4" Condition="WIXUI_DONTVALIDATEPATH OR WIXUI_INSTALLDIR_VALID=&quot;1&quot;" />
+      <Publish Dialog="InstallDirDlg" Control="ChangeFolder" Property="_BrowseProperty" Value="[WIXUI_INSTALLDIR]" Order="1" />
+      <Publish Dialog="InstallDirDlg" Control="ChangeFolder" Event="SpawnDialog" Value="BrowseDlg" Order="2" />
+      <Publish Dialog="BrowseDlg" Control="OK" Event="DoAction" Value="WixUIValidatePath_X64" Order="3" Condition="NOT WIXUI_DONTVALIDATEPATH" />
+      <Publish Dialog="BrowseDlg" Control="OK" Event="SpawnDialog" Value="InvalidDirDlg" Order="4" Condition="NOT WIXUI_DONTVALIDATEPATH AND WIXUI_INSTALLDIR_VALID&lt;&gt;&quot;1&quot;" />
+
+      <Publish Dialog="ShortcutsDlg" Control="Back" Event="NewDialog" Value="InstallDirDlg" />
+      <Publish Dialog="ShortcutsDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" />
+
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="ShortcutsDlg" Order="1" Condition="NOT Installed" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="MaintenanceTypeDlg" Order="2" Condition="Installed AND NOT PATCH" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="2" Condition="Installed AND PATCH" />
+
+      <Publish Dialog="MaintenanceWelcomeDlg" Control="Next" Event="NewDialog" Value="MaintenanceTypeDlg" />
+
+      <Publish Dialog="MaintenanceTypeDlg" Control="RepairButton" Event="NewDialog" Value="VerifyReadyDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="RemoveButton" Event="NewDialog" Value="VerifyReadyDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="Back" Event="NewDialog" Value="MaintenanceWelcomeDlg" />
+
+      <!-- No "Change" in Apps and features: there is a single feature. -->
+      <Property Id="ARPNOMODIFY" Value="1" />
+    </UI>
+
+    <UIRef Id="WixUI_Common" />
+  </Fragment>
+</Wix>

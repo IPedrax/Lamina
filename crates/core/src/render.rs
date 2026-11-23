@@ -385,9 +385,14 @@ pub fn thumbnail_of(meshes: &[crate::Mesh], size: usize) -> Picture {
 
 /// The picture as a PNG file: eight bits a channel, RGBA, each row unfiltered, the image data deflated in a zlib stream.
 pub fn png(p: &Picture) -> Vec<u8> {
-    let [w, h] = p.size;
+    png_rgba(p.size, &p.pixels)
+}
+
+/// Pixels `size` wide and high, row by row, as a PNG file.
+pub fn png_rgba(size: [usize; 2], pixels: &[Rgba]) -> Vec<u8> {
+    let [w, h] = size;
     let mut raw = Vec::with_capacity(h * (1 + 4 * w));
-    for row in p.pixels.chunks(w.max(1)).take(h) {
+    for row in pixels.chunks(w.max(1)).take(h) {
         raw.push(0); // filter: none
         raw.extend(row.iter().flatten());
     }

@@ -241,6 +241,7 @@ BIMCraft is `/mnt/ai/RevCraft` (github.com/IPedrax/BIMCraft), same author, MIT O
 | `crates/core/src/mesh_in.rs` (OBJ and glTF readers, "knows no element") | `core/mesh_in.rs` | lifted with its reader tests; `import_mesh` makes objects of what it reads |
 | `crates/core/src/autosave.rs` | `apps/lamina/src/autosave.rs` | simpler: one window, one file |
 | `crates/dwg` (`in_child`, `child_main`, `run_child`) | `crates/csg/src/child.rs` | the same pattern, for booleans |
+| `packaging/` (env, Linux, Windows WiX, macOS), `.github/workflows/release.yml` | the same paths | AppImage, tarball, MSI and DMG only: no deb, rpm, Flatpak, Arch, riscv64, APT, Discord or updater; the icon is drawn in Rust (`apps/lamina/src/icon.rs`) |
 | `crates/ui-egui/src/orbit.rs`, `camera.rs`, `gpu.rs`, `gpu.wgsl`, `retained.rs` (wgpu 3D view, orbit/pan/zoom, picking) | `apps/lamina/src/view3d.rs`, own and smaller | the same interaction, drawn on the CPU; the GPU pass is the upgrade |
 | `crates/ui-egui` panels, `assistant.rs` (chat palette) | `apps/lamina/src/chat.rs` | rewritten small on the same chat, with the same Remember and passphrase; no Co-Work |
 | `crates/core/src/view3d.rs`, `view3d/gpu.rs` | not reused | BIM-specific (levels, elements, section boxes) |

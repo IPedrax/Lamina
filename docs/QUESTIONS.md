@@ -51,6 +51,18 @@ Reads work.
   file may still reach the printer. Taken because the upload is short and a half-sent file is worse than a whole one. Say if a
   cancelled upload should be followed by a delete on the printer.
 
+## Releases need secrets, and were not run (roadmap 7.7)
+
+- The release workflow needs the repository secret `LAMINA_KEY_SECRET` (any long random text, kept private): without it the
+  release's tests fail on purpose, so no release seals keys under the public development secret. For a macOS build Gatekeeper
+  accepts, also `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_PASSWORD` and `APPLE_TEAM_ID`; without them
+  the DMG is signed ad hoc and Gatekeeper asks before it opens.
+- Not run here: GitHub refused every write, so no tag could start the workflow. Only the Linux tarball was built and checked in
+  this session; the AppImage step downloads appimagetool, which this session was not allowed to run, and the MSI and DMG need
+  Windows and macOS runners. shellcheck passes on the scripts and the workflow parses. The first tag will be their first real run.
+- Not lifted from BIMCraft: deb, rpm, Flatpak, Arch and riscv64 packages, the APT repository and the Discord posts. Say which of
+  them Lamina should have.
+
 ## Blocked: real test prints (roadmap 0.2)
 
 - Printing the calibration cube, the single-wall box and the bridge test on a Marlin and a Klipper printer needs the printers, and

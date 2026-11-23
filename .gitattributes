@@ -2,3 +2,7 @@
 crates/slicer/tests/golden/*.gcode text eol=lf
 crates/slicer/tests/golden/*.lamina text eol=lf
 crates/slicer/tests/golden/*.stl binary
+# The icon files are compared byte for byte with the icon the code draws.
+assets/app-icon/* binary
+# Shell scripts run on Linux and macOS runners whatever system checked them out.
+packaging/**/*.sh text eol=lf

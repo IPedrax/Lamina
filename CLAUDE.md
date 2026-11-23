@@ -70,9 +70,11 @@ CI (`.github/workflows/ci.yml`) runs the same three on Linux, Windows and macOS 
   `lamina_core::render`, picking, the gizmo and the tools), `preview.rs` (layers read back from the G-code with each extrusion's kind, drawn in 3D up to the
   chosen layer and coloured by kind, or one layer from above), `chat.rs` (the assistant panel, with Remember and a passphrase for the key), `printer.rs` (the printer connection and the Send
   buttons), `work.rs` (slicing, booleans, export and sending on a thread, with a spinner and Cancel), `comfort.rs` (shortcuts,
-  the right-click menu, the Edit menu with the undo history, the theme), `settings.rs` (the settings file: print settings,
+  the right-click menu, the Edit menu with the undo history, the theme), `icon.rs` (the app icon, drawn, and its PNG, ICO and ICNS files), `settings.rs` (the settings file: print settings,
   presets, sealed keys; read hostilely, written whole and owner-only). Thin: it changes the scene only through `Session::execute`. UI behaviour is tested with
   egui_kittest; `picture_of_the_window` (ignored, needs a GPU) renders it to a PNG to look at.
 - `apps/lamina-cli`: the `lamina-cli` binary and `mcp.rs`, the MCP server.
+- `packaging/` and `.github/workflows/release.yml`: the AppImage and tarball, the MSI and the DMG, built and published on each tag
+  (lifted from BIMCraft's). `assets/app-icon/` is written by `apps/lamina/src/icon.rs` (`LAMINA_BLESS=1`; a test checks they match).
 - `docs/`: `ARCHITECTURE.md` (what is ported from BIMCraft and what is not), `RESEARCH.md` (slicers, editors, crates, licence flags),
   `ROADMAP.md` (the order of work and the known limits).

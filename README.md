@@ -12,6 +12,9 @@ of it, and send the result to a Moonraker or OctoPrint printer. A plate and its 
 
 ## Try it
 
+Installers for Windows (MSI), Linux (AppImage and a tarball) and macOS (DMG) are built for each tagged release, on the
+[releases page](https://github.com/IPedrax/Lamina/releases). From source:
+
 ```sh
 cargo build --release
 target/release/lamina                                      # the desktop app (optionally: lamina part.stl or plate.lamina)

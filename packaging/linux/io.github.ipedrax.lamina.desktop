@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Lamina
+GenericName=3D Slicer
+Comment=Model parts, slice them for a 3D printer and talk to an assistant about them
+Exec=lamina %F
+TryExec=lamina
+Icon=io.github.ipedrax.lamina
+Terminal=false
+StartupNotify=true
+StartupWMClass=io.github.ipedrax.lamina
+Categories=Graphics;Engineering;3DGraphics;
+MimeType=application/x-lamina;model/stl;model/3mf;
+Keywords=slicer;3d printing;gcode;stl;3mf;cad;

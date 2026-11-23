@@ -14,6 +14,11 @@ fn main() -> ExitCode {
     if let Some(code) = lamina_csg::child_main(&args) {
         return code;
     }
+    // What the packaging scripts run to check the program starts: no window.
+    if args.first().map(String::as_str) == Some("--version") {
+        println!("lamina {}", env!("CARGO_PKG_VERSION"));
+        return ExitCode::SUCCESS;
+    }
     // Every boolean runs in a copy of this program, so a crash in the engine is an error in the window and not the end of it.
     if let Ok(exe) = std::env::current_exe() {
         lamina_csg::run_in_child(exe);
@@ -32,7 +37,12 @@ fn main() -> ExitCode {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_title("Lamina")
             .with_app_id("io.github.ipedrax.lamina")
-            .with_inner_size([1440.0, 900.0]),
+            .with_inner_size([1440.0, 900.0])
+            .with_icon(eframe::egui::IconData {
+                rgba: lamina_desktop::icon::pixels(256).into_iter().flatten().collect(),
+                width: 256,
+                height: 256,
+            }),
         ..Default::default()
     };
     match eframe::run_native("Lamina", options, Box::new(|_| Ok(Box::new(app)))) {

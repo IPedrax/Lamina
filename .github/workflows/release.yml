@@ -1,0 +1,196 @@
+# The installers: on a version tag (v0.1.0) each platform's job tests and packages Lamina, and the last job publishes them all as
+# that tag's release; run by hand, they stay as the run's artifacts.
+#   Windows  lamina-<version>-windows-x64.msi
+#   Linux    lamina-<version>-linux-<x86_64|aarch64>.{AppImage,tar.gz}
+#   macOS    lamina-<version>-macos-universal.dmg, lamina-cli-<version>-macos-universal.zip
+# Lifted from BIMCraft's release workflow (same author, MIT OR Apache-2.0), without its Flatpak, Arch, riscv64, APT and Discord
+# jobs, and without an updater (roadmap 7.7 leaves that for later).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# The secret a user's saved API key is sealed with (crates/assistant/src/seal.rs) is built into the program, and comes from this
+# repository secret, so its text is not in the source (`gh secret set LAMINA_KEY_SECRET`). A release whose build has none (the
+# secret missing, or empty) fails its tests here (`LAMINA_REQUIRE_KEY_SECRET`), rather than sealing keys with the public
+# development secret.
+env:
+  LAMINA_KEY_SECRET: ${{ secrets.LAMINA_KEY_SECRET }}
+  LAMINA_REQUIRE_KEY_SECRET: "1"
+
+jobs:
+  windows:
+    name: Windows installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust
+        run: rustup update stable && rustup default stable
+
+      - name: Test
+        run: cargo test --workspace
+
+      # The C runtime linked in, as BIMCraft does, so the programs run on a Windows without the Visual C++ redistributable. Scoped
+      # to the target, so build scripts and proc macros are left as they are.
+      - name: Build
+        env:
+          CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=+crt-static
+        run: cargo build --release --locked --target x86_64-pc-windows-msvc -p lamina -p lamina-cli
+
+      - name: Check
+        shell: pwsh
+        run: |
+          $bin = "$PWD\target\x86_64-pc-windows-msvc\release"
+          # This runner has the Visual C++ runtime, so a build needing it would pass here and fail on a clean PC. A rough check: it
+          # looks for the DLL's name anywhere in the file, not just in the import table.
+          foreach ($exe in 'lamina.exe', 'lamina-cli.exe') {
+            $text = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes("$bin\$exe"))
+            if ($text.IndexOf('VCRUNTIME140', [StringComparison]::OrdinalIgnoreCase) -ge 0) { throw "$exe needs the Visual C++ runtime" }
+          }
+          & "$bin\lamina-cli.exe" --version
+          # The window's program has no console in a release build, so what it prints goes nowhere: its exit code says it ran.
+          $app = Start-Process "$bin\lamina.exe" -ArgumentList '--version' -Wait -PassThru
+          if ($app.ExitCode -ne 0) { throw "lamina.exe --version exited with $($app.ExitCode)" }
+
+      - name: Installer
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+          dotnet tool install --global wix --version 5.0.2
+          $wix = "$env:USERPROFILE\.dotnet\tools\wix.exe"
+          & $wix extension add -g WixToolset.UI.wixext/5.0.2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $msi = "lamina-$version-windows-x64.msi"
+          & $wix build packaging/windows/lamina.wxs -arch x64 -ext WixToolset.UI.wixext -d Version=$version -d BinDir=target\x86_64-pc-windows-msvc\release -o $msi
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Add-Content -Path $env:GITHUB_ENV -Value "MSI=$msi"
+
+      # Installs the MSI into a folder of its own, checks what landed there, and removes it again.
+      - name: Install and remove
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'Lamina elsewhere'
+          $log = Join-Path $env:RUNNER_TEMP 'install.log'
+          $p = Start-Process msiexec.exe -ArgumentList "/i `"$env:MSI`" INSTALLFOLDER=`"$dir`" /qn /l*v `"$log`"" -Wait -PassThru
+          if ($p.ExitCode -notin 0, 3010) { Get-Content $log -Tail 60; throw "the install exited with $($p.ExitCode)" }
+          foreach ($file in 'lamina.exe', 'lamina-cli.exe', 'LICENSE.txt', 'NOTICE.txt') {
+            if (-not (Test-Path "$dir\$file")) { throw "expected $file in the folder that was chosen" }
+          }
+          & "$dir\lamina-cli.exe" --version
+          $p = Start-Process msiexec.exe -ArgumentList "/x `"$env:MSI`" /qn" -Wait -PassThru
+          if ($p.ExitCode -notin 0, 3010) { throw "the removal exited with $($p.ExitCode)" }
+          if (Test-Path "$dir\lamina.exe") { throw "the removal left lamina.exe behind" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lamina-windows-x64
+          path: ${{ env.MSI }}
+          if-no-files-found: error
+
+  linux:
+    name: Linux ${{ matrix.arch }}
+    # The oldest Ubuntu runner, so the binaries need glibc 2.35 at most and run on the distros after it.
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64, runner: ubuntu-22.04 }
+          - { arch: aarch64, runner: ubuntu-22.04-arm }
+    steps:
+      - uses: actions/checkout@v4
+
+      # The X11, Wayland and GL headers egui's window builds against, and the tool that checks the desktop entry.
+      - name: Tools
+        timeout-minutes: 30
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libxkbcommon-dev libwayland-dev libx11-dev \
+            libxrandr-dev libxi-dev libgl1-mesa-dev desktop-file-utils
+
+      - name: Rust
+        run: rustup update stable && rustup default stable
+
+      - name: Test
+        run: cargo test --workspace
+
+      - name: Build and package
+        run: packaging/linux/package.sh
+
+      - name: Check
+        run: |
+          tar tzf dist/release/*.tar.gz | grep -E 'bin/lamina$|bin/lamina-cli$|applications/|mime/'
+          for appimage in dist/release/*.AppImage; do
+            chmod +x "$appimage"
+            APPIMAGE_EXTRACT_AND_RUN=1 "$appimage" --version
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lamina-linux-${{ matrix.arch }}
+          path: dist/release/*
+          if-no-files-found: error
+
+  macos:
+    name: macOS universal
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust
+        run: |
+          rustup update stable && rustup default stable
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - name: Test
+        run: cargo test --workspace
+
+      # Without the secrets (a fork, say) the app is signed ad hoc and not notarized: it runs, but Gatekeeper asks before it does.
+      - name: Signing certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: packaging/macos/import-cert.sh
+
+      - name: Build, sign and notarize
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: packaging/macos/package.sh --arch universal
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lamina-macos-universal
+          path: dist/release/*
+          if-no-files-found: error
+
+      - name: Remove the keychain
+        if: always()
+        run: if [ -n "${MACOS_KEYCHAIN:-}" ]; then security delete-keychain "$MACOS_KEYCHAIN" || true; fi
+
+  release:
+    name: Release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [windows, linux, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        run: cd dist && sha256sum -- * > SHA256SUMS
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" dist/* --repo "${{ github.repository }}" --title "Lamina ${{ github.ref_name }}" --generate-notes

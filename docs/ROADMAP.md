@@ -180,6 +180,12 @@ Priorities:
   objects in the 3D view and the plate list. Edit, History lists the undo and redo steps (`Session::history`). Every setting has a
   tooltip from `profile::ABOUT` (a sentence for each field, checked by a test) and its range. A light theme, or the system's, in the
   View menu, kept in the settings file. Vase mode is in the window now.
+- **7.7 Packaging and releases.** `packaging/` and `.github/workflows/release.yml`, lifted from BIMCraft's: on a `v*` tag, an
+  MSI (WiX 5, installed and removed again in the job), an AppImage and a tarball for x86_64 and aarch64 Linux, and a universal
+  DMG with the CLI zipped beside it (signed and notarized when the Apple secrets are set, else ad hoc), all tested first and
+  published with SHA256SUMS. Builds take `LAMINA_KEY_SECRET` from a repository secret and fail without it. The icon is drawn in
+  Rust (`apps/lamina/src/icon.rs`) and written to `assets/app-icon/` as PNG, ICO and ICNS; the window uses it too. `lamina
+  --version` lets the packages check the program starts. The updater is 7.9.
 
 ## Order of work
 
@@ -265,9 +271,8 @@ egui shows (`register_native_texture`), as BIMCraft's `crates/ui-egui/src/gpu.rs
 **7.6 Translations (P2).** How: lift BIMCraft's `crates/i18n` (PO files compiled in, English fallback) and pass every interface string
 through it.
 
-**7.7 Packaging and releases (P1).** How: lift BIMCraft's `packaging/` and release workflow to build an AppImage, an MSI and a DMG on
-each tag. Set `LAMINA_KEY_SECRET` as a CI secret, so a release's sealed keys are not under the public development secret. An updater
-(BIMCraft's `crates/update`) is P2.
+**7.9 Updater (P2).** How: lift BIMCraft's `crates/update`, which checks the releases and installs the MSI, the AppImage or the
+DMG, each checked against the SHA-256 digest GitHub gives the asset. The release names in `release.yml` are what it would look for.
 
 **7.8 Logging and crash safety (P1).** How: a log file in the settings folder, and a fallback when the graphics adapter fails at
 start. BIMCraft's `apps/bimcraft/src/startup.rs` has both.
