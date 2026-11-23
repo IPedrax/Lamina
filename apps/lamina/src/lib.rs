@@ -671,6 +671,10 @@ impl App {
                 let axis = ["x", "y", "z"][self.axis];
                 self.run("rotate", json!({ "id": id, "axis": axis, "degrees": self.degrees }));
             }
+            if ui.button("Mirror").on_hover_text("Mirror across the plane square to the axis chosen").clicked() {
+                let axis = ["x", "y", "z"][self.axis];
+                self.run("mirror", json!({ "id": id, "axis": axis }));
+            }
         });
         ui.horizontal(|ui| {
             ui.add(egui::DragValue::new(&mut self.factor).speed(0.01).range(0.01..=100.0).prefix("x "));

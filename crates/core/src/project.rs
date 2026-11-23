@@ -149,9 +149,9 @@ fn transform(v: &Value) -> Result<Transform, String> {
     if !xf.is_finite() {
         return Err("its transform is not finite".into());
     }
-    // A transform that flattens the object, or turns it inside out, is not one any command makes.
-    if xf.det() <= 1e-12 {
-        return Err("its transform flattens or mirrors the object".into());
+    // A transform that flattens the object is not one any command makes (a mirror, `mirror` makes, with a negative determinant).
+    if xf.det().abs() <= 1e-12 {
+        return Err("its transform flattens the object".into());
     }
     Ok(xf)
 }
@@ -223,7 +223,7 @@ mod tests {
             with(&|v| v["objects"][0]["transform"]["t"] = json!([1e300, 0, 0])),
             with(&|v| v["objects"][0]["transform"]["t"] = json!([2e6, 0, 0])),
             with(&|v| v["objects"][0]["transform"]["m"] = json!([[0, 0, 0], [0, 1, 0], [0, 0, 1]])),
-            with(&|v| v["objects"][0]["transform"]["m"] = json!([[-1, 0, 0], [0, 1, 0], [0, 0, 1]])),
+            with(&|v| v["objects"][0]["transform"]["m"] = json!([[1e-9, 0, 0], [0, 1e-9, 0], [0, 0, 1]])),
             with(&|v| v["objects"][0]["transform"]["m"] = json!([[1, 0], [0, 1, 0], [0, 0, 1]])),
             with(&|v| v["objects"][0].as_object_mut().unwrap().remove("transform").map(|_| ()).unwrap_or(())),
         ];

@@ -70,10 +70,12 @@ impl Mesh {
         !edges.is_empty() && edges.values().all(|&(count, net)| count == 2 && net == 0)
     }
 
-    /// The mesh moved by `t`. A transform with a positive determinant keeps the winding.
+    /// The mesh moved by `t`. A transform that mirrors (a negative determinant) would turn the faces inside out, so their winding is
+    /// turned too, and the mesh still faces out.
     pub fn transformed(&self, t: &Transform) -> Mesh {
         let vertices = self.vertices.iter().map(|v| t.apply(v.map(f64::from)).map(|c| c as f32)).collect();
-        Mesh { vertices, triangles: self.triangles.clone() }
+        let triangles = if t.det() < 0.0 { self.triangles.iter().map(|t| [t[0], t[2], t[1]]).collect() } else { self.triangles.clone() };
+        Mesh { vertices, triangles }
     }
 
     /// Several meshes as one, for export.
@@ -200,7 +202,7 @@ impl Transform {
         Transform { t: by, ..Transform::IDENTITY }
     }
 
-    /// Scale by a positive factor on each axis. Negative factors would mirror the mesh and flip its winding, so the commands refuse them.
+    /// Scale by a factor on each axis. The `scale` command takes only positive factors; `mirror` is the way to turn an object over.
     pub fn scale(by: P3) -> Transform {
         Transform { m: [[by[0], 0.0, 0.0], [0.0, by[1], 0.0], [0.0, 0.0, by[2]]], t: [0.0; 3] }
     }
@@ -295,6 +297,19 @@ mod tests {
         assert!(Mesh::new(vec![[f32::NAN, 0.0, 0.0]], vec![]).is_err());
         assert!(Mesh::new(vec![[2e6, 0.0, 0.0]], vec![]).is_err());
         assert!(Mesh::new(vec![[0.0; 3]], vec![[0, 0, 1]]).is_err());
+    }
+
+    #[test]
+    fn a_mirrored_mesh_stays_closed_and_faces_out() {
+        let shape = Mesh::cylinder(3.0, 8.0, 24).transformed(&Transform::translate([5.0, 0.0, 0.0]));
+        for axis in 0..3 {
+            let mut by = [1.0; 3];
+            by[axis] = -1.0;
+            let m = shape.transformed(&Transform::scale(by));
+            assert!(m.is_watertight(), "mirrored across axis {axis}");
+            assert!((m.volume() - shape.volume()).abs() < 1e-3 && m.volume() > 0.0, "{} {}", m.volume(), shape.volume());
+        }
+        assert!(Transform::scale([-1.0, 1.0, 1.0]).det() < 0.0 && Transform::rotate(2, 30.0).det() > 0.0);
     }
 
     #[test]

@@ -51,8 +51,8 @@ pub fn boolean_placed(op: Op, a: Placed, b: Placed) -> Result<Mesh, String> {
         if !m.is_watertight() {
             return Err(format!("the {name} shape is not a closed mesh, so a boolean cannot tell its inside from its outside"));
         }
-        if !xf.is_finite() || xf.det() <= 1e-12 {
-            return Err(format!("the {name} shape's transform flattens or mirrors it"));
+        if !xf.is_finite() || xf.det().abs() <= 1e-12 {
+            return Err(format!("the {name} shape's transform flattens it"));
         }
     }
     let total = a.0.triangles.len() + b.0.triangles.len();
@@ -211,12 +211,17 @@ fn to_csg(m: &Mesh, xf: &Transform) -> Vec<Polygon<()>> {
         [c[0][2] * c[2][1] - c[0][1] * c[2][2], c[0][0] * c[2][2] - c[0][2] * c[2][0], c[0][1] * c[2][0] - c[0][0] * c[2][1]],
         [c[0][1] * c[1][2] - c[0][2] * c[1][1], c[0][2] * c[1][0] - c[0][0] * c[1][2], c[0][0] * c[1][1] - c[0][1] * c[1][0]],
     ];
+    // A mirror turns faces inside out: their corners go the other way round, and the cofactors point the normal inward.
+    let flip = xf.det() < 0.0;
+    let sign = if flip { -1.0 } else { 1.0 };
+    let corners = |ring: &[u32]| -> Vec<u32> { if flip { ring.iter().rev().copied().collect() } else { ring.to_vec() } };
     let turn = |n: Vector3<f64>| {
-        let w = Vector3::new(
-            cof[0][0] * n.x + cof[0][1] * n.y + cof[0][2] * n.z,
-            cof[1][0] * n.x + cof[1][1] * n.y + cof[1][2] * n.z,
-            cof[2][0] * n.x + cof[2][1] * n.y + cof[2][2] * n.z,
-        );
+        let w = sign
+            * Vector3::new(
+                cof[0][0] * n.x + cof[0][1] * n.y + cof[0][2] * n.z,
+                cof[1][0] * n.x + cof[1][1] * n.y + cof[1][2] * n.z,
+                cof[2][0] * n.x + cof[2][1] * n.y + cof[2][2] * n.z,
+            );
         if w.norm() > 1e-12 { w.normalize() } else { n }
     };
     let mut out = Vec::new();
@@ -225,12 +230,12 @@ fn to_csg(m: &Mesh, xf: &Transform) -> Vec<Polygon<()>> {
         if tris.len() > 1
             && let Some(ring) = outline(m, tris).filter(|r| exactly_flat(m, r) && repair::flat_and_convex(m, r, 5.0 * WELD))
         {
-            out.push(Polygon::new(ring.iter().map(|&i| Vertex::new(point(i), n)).collect(), None));
+            out.push(Polygon::new(corners(&ring).iter().map(|&i| Vertex::new(point(i), n)).collect(), None));
             continue;
         }
         for &i in tris {
             if let Some(n) = normals[i].map(turn) {
-                out.push(Polygon::new(m.triangles[i].iter().map(|&v| Vertex::new(point(v), n)).collect(), None));
+                out.push(Polygon::new(corners(&m.triangles[i]).iter().map(|&v| Vertex::new(point(v), n)).collect(), None));
             }
         }
     }
@@ -390,6 +395,19 @@ mod tests {
         let grooved = boolean(Op::Difference, &a, &slot).unwrap();
         closed(&grooved);
         near(grooved.volume(), 4000.0 - 20.0 * 4.0 * 2.0);
+    }
+
+    #[test]
+    fn a_mirrored_object_takes_part_in_a_boolean_the_right_way_out() {
+        let cube = Mesh::cuboid([20.0, 20.0, 10.0]);
+        // A peg at x = 6, mirrored across x: it cuts at x = -6.
+        let peg = Mesh::cylinder(3.0, 14.0, 24);
+        let mirrored = Transform::translate([6.0, 0.0, -2.0]).then(&Transform::scale([-1.0, 1.0, 1.0]));
+        let m = boolean_placed(Op::Difference, (&cube, Transform::IDENTITY), (&peg, mirrored)).unwrap();
+        closed(&m);
+        near(m.volume(), 4000.0 - polygon_area(24.0, 3.0) * 10.0);
+        let hole_x = m.vertices.iter().filter(|v| v[2] > 9.9 && (v[1].abs() < 0.01)).map(|v| f64::from(v[0])).fold(0.0, f64::min);
+        assert!(hole_x < -8.0, "the hole is on the mirrored side: {hole_x}");
     }
 
     #[test]

@@ -60,6 +60,9 @@ Priorities:
   Production Extension's `path` for objects in other parts, build items with their transforms). `import_mesh` reads a `.3mf` with
   each build item as its own object, laid out as in the file and centred on the plate; `export_mesh` writes one, positions for a
   printer whose zero is the plate's corner. Other slicers' settings in a package are left alone.
+- **2.1 Mirror.** `Transform::det`, `Mesh::transformed` turns the winding when a transform mirrors, and `mirror {id, axis}`
+  mirrors an object about its centre (a Mirror button in the window). Projects keep mirrored transforms; booleans take mirrored
+  objects the right way out (corners reversed, normals turned).
 - **2.2 Mesh repair.** `crates/core/src/repair.rs` holds the passes the booleans used (T-junctions, skins, fins, snapping, hole
   filling), now shared, and a new one that makes winding consistent across shared edges and turns each shell outward unless it lies
   inside another (a void). `import_mesh` repairs on the way in and says what it did; `repair {id}` mends an object, as one undo step.
@@ -116,10 +119,6 @@ what is wrong before adding features.
 **1.5 OBJ export (P2).** How: write each object's world mesh as plain text. (3MF export came with 1.4.)
 
 ## 2. Meshes
-
-**2.1 Mirror (P1).** How: `Mesh::transformed` must reverse each triangle's winding when the transform's determinant is negative. Add
-a `det()` to `Transform`, then a `mirror {id, axis}` command in `crates/core/src/commands.rs`. Test: a mirrored mesh stays watertight
-with positive volume.
 
 **2.4 Simplify heavy meshes (P2).** Imported scans can have millions of triangles. How: quadric edge collapse (Garland and Heckbert's
 public algorithm) in `crates/core/src/simplify.rs`, behind a `simplify {id, triangles}` command. The `meshopt` crate is C++ through

@@ -16,7 +16,8 @@ with `move {id, by: [x, y, 0]}`.
   `{kind: "sphere", radius, segments?}`. The default 48 segments is fine for most parts; raise `segments` (up to 256) when a round
   part must look round.
 - Place and reshape: `move`, `rotate` (about the object's centre, then it is set back on the plate), `scale` (positive factors,
-  one per axis with `by`, so a sphere can become an ellipsoid and a cylinder a disc), `drop_to_bed`, `delete`, `undo`, `redo`.
+  one per axis with `by`, so a sphere can become an ellipsoid and a cylinder a disc), `mirror {id, axis}` (a left part from a right
+  one), `drop_to_bed`, `delete`, `undo`, `redo`.
 - Opening and saving files is the user's job in the app. You cannot read or write files.
 
 ## Joining and cutting

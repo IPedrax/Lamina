@@ -53,6 +53,13 @@ pub static ALL: &[Command] = &[
         true,
         Files::None,
     ),
+    cmd(
+        "mirror",
+        "{id, axis:\"x\"|\"y\"|\"z\"} mirrors an object across the plane through its centre square to `axis` (x turns left and right over), then sets it back on the plate",
+        mirror,
+        true,
+        Files::None,
+    ),
     cmd("drop_to_bed", "{id} lowers or raises an object so its lowest point touches the plate", drop_to_bed, true, Files::None),
     cmd("delete", "{id} removes an object", delete, true, Files::None),
     cmd(
@@ -336,6 +343,26 @@ fn rotate(s: &mut Session, p: &Value) -> Result<Value, String> {
         other => return Err(format!("unknown axis `{other}`: x, y or z")),
     };
     about_centre(s.scene_mut().get_mut(a.id)?, &Transform::rotate(axis, a.degrees))?;
+    Ok(json!({}))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Mirror {
+    id: u32,
+    axis: String,
+}
+
+fn mirror(s: &mut Session, p: &Value) -> Result<Value, String> {
+    let a: Mirror = parse(p)?;
+    let mut by = [1.0; 3];
+    match a.axis.as_str() {
+        "x" => by[0] = -1.0,
+        "y" => by[1] = -1.0,
+        "z" => by[2] = -1.0,
+        other => return Err(format!("unknown axis `{other}`: x, y or z")),
+    }
+    about_centre(s.scene_mut().get_mut(a.id)?, &Transform::scale(by))?;
     Ok(json!({}))
 }
 
@@ -764,6 +791,25 @@ mod tests {
         assert_eq!((r["triangles"].as_u64(), r["watertight"].as_bool()), (Some(1), Some(false)));
         assert!((r["size"][2].as_f64().unwrap() - 1000.0).abs() < 1e-3, "a metre tall, y up turned to z up: {}", r["size"]);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn mirror_turns_an_object_over_and_it_stays_a_solid() {
+        let mut s = Session::new();
+        // A bar, and a post beside its +x end.
+        run(&mut s, "add_primitive", json!({"kind": "box", "size": [20, 4, 4]})).unwrap();
+        run(&mut s, "add_primitive", json!({"kind": "box", "size": [4, 4, 10], "at": [8, 0]})).unwrap();
+        let before = s.scene.get(1).unwrap().bounds().unwrap();
+        run(&mut s, "mirror", json!({"id": 2, "axis": "x"})).unwrap();
+        let o = s.scene.get(2).unwrap();
+        assert!(o.world().is_watertight() && (o.world().volume() - 160.0).abs() < 1e-3);
+        let (lo, hi) = o.bounds().unwrap();
+        assert_eq!((lo[0], hi[0], lo[2]), (6.0, 10.0, 0.0), "mirrored about its own centre, still on the plate");
+        assert_eq!(s.scene.get(1).unwrap().bounds().unwrap(), before);
+        // A project keeps the mirrored transform and reads it back.
+        let back = crate::project::read(&crate::project::write(&s.scene, &serde_json::Value::Null)).unwrap();
+        assert!(back.scene.get(2).unwrap().xf.det() < 0.0 && back.scene.get(2).unwrap().world().is_watertight());
+        assert!(run(&mut s, "mirror", json!({"id": 2, "axis": "w"})).is_err());
     }
 
     #[test]
