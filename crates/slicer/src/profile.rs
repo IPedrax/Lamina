@@ -66,6 +66,12 @@ pub struct Profile {
     pub retract_speed: f64,
     /// A travel shorter than this is made without retracting, mm.
     pub retract_min_travel: f64,
+    /// Travel inside the part without retracting, however far: it crosses no gap, so nothing strings.
+    pub combing: bool,
+    /// Lift the nozzle by this much while it travels retracted, mm; 0 for none.
+    pub z_hop: f64,
+    /// Retract while moving this far back along the stroke just printed, mm; 0 for none.
+    pub wipe_distance: f64,
     /// The part-cooling fan, 0 to 255: off for the first layer, then up in equal steps to this by `fan_full_layer`.
     pub fan_speed: f64,
     pub fan_full_layer: u32,
@@ -139,6 +145,9 @@ impl Default for Profile {
             retract_length: 0.8,
             retract_speed: 35.0,
             retract_min_travel: 1.5,
+            combing: true,
+            z_hop: 0.0,
+            wipe_distance: 0.0,
             fan_speed: 255.0,
             fan_full_layer: 3,
             min_layer_time: 5.0,
@@ -209,6 +218,8 @@ impl Profile {
         within("retract_length", self.retract_length, 0.0, 20.0)?;
         within("retract_speed", self.retract_speed, 1.0, 200.0)?;
         within("retract_min_travel", self.retract_min_travel, 0.0, 100.0)?;
+        within("z_hop", self.z_hop, 0.0, 5.0)?;
+        within("wipe_distance", self.wipe_distance, 0.0, 10.0)?;
         within("fan_speed", self.fan_speed, 0.0, 255.0)?;
         within("fan_full_layer", f64::from(self.fan_full_layer), 1.0, 100.0)?;
         within("min_layer_time", self.min_layer_time, 0.0, 120.0)?;

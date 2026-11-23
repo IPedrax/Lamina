@@ -31,7 +31,9 @@ presets live in the app's settings panel, not in these commands.
 - Cooling and retraction: `fan_speed` 0 to 255 (PLA full, PETG about half, ABS off), off for the first layer and up in steps to
   full by `fan_full_layer` (3). `min_layer_time` (5 s) slows a small layer so it cools before the next, never below
   `min_print_speed` (10 mm/s): raise it to 10 to 15 for small, tall parts that droop. `retract_length` about 0.5 to 2 mm on a
-  direct-drive extruder and 3 to 6 mm on a Bowden tube, `retract_speed` 25 to 45.
+  direct-drive extruder and 3 to 6 mm on a Bowden tube, `retract_speed` 25 to 45. `combing` (on) travels inside the part without
+  retracting; `z_hop` (0; 0.2 to 0.4 mm lifts the nozzle over what is printed, against scrapes and knocked-over parts) and
+  `wipe_distance` (0; 1 to 2 mm wipes the nozzle along the last line while retracting, against blobs and strings).
 - The skirt (`skirt_loops`, `skirt_distance`) primes the nozzle. `brim_width` (mm, 0 by default; 3 to 8 for parts with a small
   footprint or sharp corners that may lift, and for ABS) adds loops round the first layer, touching it. `raft_layers` (0 by default,
   2 or 3 when used) prints coarse layers under the part and lifts it onto them: for a warped bed or a tiny contact area; it costs

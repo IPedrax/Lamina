@@ -120,6 +120,10 @@ Priorities:
 - **4.8 Cooling.** `min_layer_time` (5 s): a layer whose moves would take less is slowed in proportion, no move below
   `min_print_speed`. The fan is off on the first layer and comes up in equal steps to `fan_speed` by `fan_full_layer`; bridges
   have their own fan (4.6).
+- **4.9 Travel moves.** Combing (`combing`, on): a travel whose straight path stays inside the object's region on that layer needs
+  no retraction, however long (routing round holes is for later). `z_hop` lifts on each retraction and lowers before the next
+  extrusion; `wipe_distance` spreads the retraction over a move along the stroke just printed. Retractions in the golden files
+  fell by about half again (a 20 mm cube now retracts once a layer).
 - **4.13 Feature types in the G-code.** Every stroke has a kind, written as `;TYPE:outer-wall` (inner-wall, solid-infill,
   sparse-infill, skirt, brim, support, support-interface, raft) before it, again after each layer change. `slice_check` returns
   the filament of each kind (`features`), so the assistant can count them.
@@ -183,13 +187,6 @@ the AI's skills what is not possible.
 a quarter line, is printed as single lines along its centre. Find the centreline with a straight skeleton or a Voronoi diagram:
 `boostvoronoi` is BSL-1.0 and permissive, BIMCraft has a straight skeleton (`skeleton.rs`). Vary the flow by width. Full
 variable-width walls (as in the public Arachne paper) are P2.
-
-**4.9 Travel moves (P1).** How:
-- Combing: route a travel inside the region instead of across a gap, so it needs no retraction.
-- Z-hop: lift on retraction, with a `z_hop` field.
-- Wipe: move along the last wall while retracting.
-
-Test: the number of retractions and the travel distance on a two-object plate.
 
 **4.10 Better time estimates (P1).** How: printer fields for maximum acceleration and junction deviation, Marlin's or Klipper's.
 Estimate each move with a trapezoid speed profile instead of distance over speed. Compare with the printer's real time from 0.2.
