@@ -144,6 +144,134 @@ impl Mesh {
         Mesh { vertices, triangles }
     }
 
+    /// A cone or a frustum along z, its bottom on the plate: radius `bottom` there, `top` at `height` (0 makes a point), `segments`
+    /// flat sides (at least 3, so 3 to 8 make prisms and pyramids).
+    pub fn frustum(bottom: f64, top: f64, height: f64, segments: u32) -> Mesh {
+        if top > 0.0 {
+            let mut m = Mesh::cylinder(bottom, height, segments);
+            let n = segments.max(3) as usize;
+            for v in &mut m.vertices[n..2 * n] {
+                let k = top / bottom;
+                (v[0], v[1]) = ((f64::from(v[0]) * k) as f32, (f64::from(v[1]) * k) as f32);
+            }
+            return m;
+        }
+        let n = segments.max(3);
+        let mut vertices: Vec<[f32; 3]> = (0..n)
+            .map(|i| {
+                let a = std::f64::consts::TAU * f64::from(i) / f64::from(n);
+                [(bottom * a.cos()) as f32, (bottom * a.sin()) as f32, 0.0]
+            })
+            .collect();
+        let (centre, apex) = (n, n + 1);
+        vertices.push([0.0, 0.0, 0.0]);
+        vertices.push([0.0, 0.0, height as f32]);
+        let mut triangles = Vec::new();
+        for i in 0..n {
+            let j = (i + 1) % n;
+            triangles.push([centre, j, i]);
+            triangles.push([i, j, apex]);
+        }
+        Mesh { vertices, triangles }
+    }
+
+    /// A ring: a tube of radius `tube` swept round a circle of radius `ring` in the plate's plane, resting on the plate.
+    pub fn torus(ring: f64, tube: f64, segments: u32) -> Mesh {
+        let (n, m) = (segments.max(3), (segments / 2).max(3));
+        let mut vertices = Vec::with_capacity((n * m) as usize);
+        for i in 0..n {
+            let u = std::f64::consts::TAU * f64::from(i) / f64::from(n);
+            for j in 0..m {
+                let v = std::f64::consts::TAU * f64::from(j) / f64::from(m);
+                let r = ring + tube * v.cos();
+                vertices.push([(r * u.cos()) as f32, (r * u.sin()) as f32, (tube + tube * v.sin()) as f32]);
+            }
+        }
+        let at = |i: u32, j: u32| (i % n) * m + (j % m);
+        let mut triangles = Vec::with_capacity((2 * n * m) as usize);
+        for i in 0..n {
+            for j in 0..m {
+                let (a, b, c, d) = (at(i, j), at(i + 1, j), at(i + 1, j + 1), at(i, j + 1));
+                triangles.push([a, b, c]);
+                triangles.push([a, c, d]);
+            }
+        }
+        Mesh { vertices, triangles }
+    }
+
+    /// A tube along z, its bottom on the plate: a cylinder of radius `outer` with one of radius `inner` taken out, built directly.
+    pub fn tube(outer: f64, inner: f64, height: f64, segments: u32) -> Mesh {
+        let n = segments.max(3);
+        let mut vertices = Vec::with_capacity(4 * n as usize);
+        // Outer bottom, outer top, inner bottom, inner top.
+        for (r, z) in [(outer, 0.0), (outer, height), (inner, 0.0), (inner, height)] {
+            for i in 0..n {
+                let a = std::f64::consts::TAU * f64::from(i) / f64::from(n);
+                vertices.push([(r * a.cos()) as f32, (r * a.sin()) as f32, z as f32]);
+            }
+        }
+        let (ob, ot, ib, it) = (0, n, 2 * n, 3 * n);
+        let mut triangles = Vec::with_capacity(8 * n as usize);
+        for i in 0..n {
+            let j = (i + 1) % n;
+            triangles.extend([[ob + i, ob + j, ot + j], [ob + i, ot + j, ot + i]]); // outside
+            triangles.extend([[ib + i, it + j, ib + j], [ib + i, it + i, it + j]]); // inside, facing the axis
+            triangles.extend([[ot + i, ot + j, it + j], [ot + i, it + j, it + i]]); // top
+            triangles.extend([[ob + i, ib + j, ob + j], [ob + i, ib + i, ib + j]]); // bottom
+        }
+        Mesh { vertices, triangles }
+    }
+
+    /// A box of `size` whose edges and corners are rounded to `radius` (less than half its smallest side), built directly: each face's
+    /// grid is pushed out from the box shrunk by the radius, so faces stay flat, edges become quarter cylinders and corners eighths of
+    /// a sphere. `segments` is the steps over each quarter turn.
+    pub fn rounded_box(size: P3, radius: f64, segments: u32) -> Mesh {
+        let k = segments.clamp(1, 32) as usize;
+        let half = size.map(|s| s / 2.0);
+        let inner = half.map(|h| (h - radius).max(0.0));
+        // On each axis, from -half to half: the flat part's two ends, and steps whose push-out turns by equal angles.
+        let coords = |axis: usize| -> Vec<f64> {
+            let steps: Vec<f64> = (1..=k)
+                .map(|i| if i == k { half[axis] } else { inner[axis] + radius * (std::f64::consts::FRAC_PI_4 * i as f64 / k as f64).tan() })
+                .collect();
+            let mut c: Vec<f64> = steps.iter().rev().map(|v| -v).collect();
+            c.extend([-inner[axis], inner[axis]]);
+            c.extend(steps);
+            c
+        };
+        let place = |p: P3| -> [f32; 3] {
+            let q = [0, 1, 2].map(|i| p[i].clamp(-inner[i], inner[i]));
+            let d = [p[0] - q[0], p[1] - q[1], p[2] - q[2]];
+            let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+            let n = if len > 0.0 { d.map(|c| c / len) } else { d };
+            [(q[0] + radius * n[0]) as f32, (q[1] + radius * n[1]) as f32, (q[2] + radius * n[2] + half[2]) as f32]
+        };
+        let mut corners: Vec<[f32; 3]> = Vec::new();
+        for axis in 0..3 {
+            let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
+            let (cu, cv) = (coords(u), coords(v));
+            for side in [-1.0, 1.0] {
+                for a in 0..cu.len() - 1 {
+                    for b in 0..cv.len() - 1 {
+                        let at = |i: usize, j: usize| {
+                            let mut p = [0.0; 3];
+                            (p[axis], p[u], p[v]) = (side * half[axis], cu[i], cv[j]);
+                            place(p)
+                        };
+                        let (p0, p1, p2, p3) = (at(a, b), at(a + 1, b), at(a + 1, b + 1), at(a, b + 1));
+                        // u x v points along +axis: wind the quad that way on the + side and the other way on the - side.
+                        if side > 0.0 {
+                            corners.extend([p0, p1, p2, p0, p2, p3]);
+                        } else {
+                            corners.extend([p0, p2, p1, p0, p3, p2]);
+                        }
+                    }
+                }
+            }
+        }
+        crate::stl::weld(&corners).unwrap_or_default()
+    }
+
     /// A sphere resting on the plate: a geodesic sphere (a subdivided icosahedron with a vertex at each pole), whose triangles are all
     /// about the same size. A UV sphere's thin fans at the poles were what the boolean engine failed on most; measured on curved
     /// pairs, this shape gives a clean result in 134 cases of 160 where the UV sphere gave 123, with fewer triangles for the same accuracy.
@@ -270,6 +398,30 @@ mod tests {
         assert!(ball.is_watertight());
         assert!((ball.volume() - 4.0 / 3.0 * std::f64::consts::PI * 125.0).abs() < 5.0);
         assert_eq!(ball.bounds().map(|(lo, hi)| (lo[2], hi[2])), Some((0.0, 10.0)));
+    }
+
+    #[test]
+    fn the_other_shapes_are_closed_and_enclose_their_volume() {
+        use std::f64::consts::PI;
+        let close = |m: &Mesh, want: f64, tol: f64, what: &str| {
+            assert!(m.is_watertight(), "{what} is not closed");
+            assert!((m.volume() - want).abs() <= tol * want, "{what}: {} is not {want}", m.volume());
+            assert_eq!(m.bounds().map(|(lo, _)| lo[2]), Some(0.0), "{what} rests on the plate");
+        };
+        close(&Mesh::frustum(5.0, 2.0, 9.0, 96), PI * 9.0 / 3.0 * (25.0 + 10.0 + 4.0), 0.01, "a frustum");
+        close(&Mesh::frustum(5.0, 0.0, 9.0, 96), PI * 25.0 * 9.0 / 3.0, 0.01, "a cone");
+        // A square pyramid of circumradius 5: a base of side 5 x sqrt 2.
+        close(&Mesh::frustum(5.0, 0.0, 6.0, 4), 50.0 * 6.0 / 3.0, 1e-6, "a pyramid");
+        close(&Mesh::torus(10.0, 3.0, 96), 2.0 * PI * PI * 10.0 * 9.0, 0.01, "a torus");
+        close(&Mesh::tube(8.0, 5.0, 4.0, 96), PI * (64.0 - 25.0) * 4.0, 0.01, "a tube");
+        // A rounded box is its shrunk box grown by a sphere (Steiner's formula for a box).
+        let (x, y, z, r) = (20.0, 10.0, 6.0, 2.0);
+        let (a, b, c) = (x - 2.0 * r, y - 2.0 * r, z - 2.0 * r);
+        let want = a * b * c + 2.0 * r * (a * b + b * c + c * a) + PI * r * r * (a + b + c) + 4.0 / 3.0 * PI * r * r * r;
+        let rounded = Mesh::rounded_box([x, y, z], r, 8);
+        close(&rounded, want, 0.01, "a rounded box");
+        let (lo, hi) = rounded.bounds().unwrap();
+        assert!((hi[0] - lo[0] - x).abs() < 1e-5 && (hi[2] - z).abs() < 1e-5, "it keeps its size: {lo:?} {hi:?}");
     }
 
     #[test]

@@ -188,7 +188,26 @@ mod tests {
     fn command_parameters_never_panic_and_never_break_the_scene() {
         let mut s = Session::new();
         s.execute("add_primitive", &json!({"kind": "box", "size": [5, 5, 5]})).unwrap();
-        let keys = ["id", "kind", "size", "radius", "height", "segments", "at", "by", "axis", "degrees", "factor", "name", "ids"];
+        let keys = [
+            "id",
+            "kind",
+            "size",
+            "radius",
+            "height",
+            "segments",
+            "at",
+            "by",
+            "axis",
+            "degrees",
+            "factor",
+            "name",
+            "ids",
+            "radius_top",
+            "sides",
+            "inner",
+            "tube",
+            "corner",
+        ];
         let commands: Vec<String> = s.catalog().as_array().unwrap().iter().filter_map(|c| c["id"].as_str()).map(str::to_string).collect();
         let mut r = Rng::new(0xc0de);
         for _ in 0..ROUNDS {

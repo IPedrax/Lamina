@@ -508,6 +508,21 @@ impl App {
             if ui.button("Add sphere").clicked() {
                 self.add(json!({"kind": "sphere", "radius": 10}), 20.0);
             }
+            ui.menu_button("More shapes", |ui| {
+                let shapes = [
+                    ("Rounded box", json!({"kind": "rounded_box", "size": [20, 20, 20], "corner": 3}), 20.0),
+                    ("Cone", json!({"kind": "cone", "radius": 10, "height": 20}), 20.0),
+                    ("Tube", json!({"kind": "tube", "radius": 10, "inner": 7, "height": 20}), 20.0),
+                    ("Torus", json!({"kind": "torus", "radius": 10, "tube": 3}), 26.0),
+                    ("Hexagonal prism", json!({"kind": "prism", "radius": 10, "height": 20, "sides": 6}), 20.0),
+                    ("Pyramid", json!({"kind": "pyramid", "radius": 12, "height": 15, "sides": 4}), 24.0),
+                ];
+                for (label, params, width) in shapes {
+                    if ui.button(label).clicked() {
+                        self.add(params, width);
+                    }
+                }
+            });
             if ui.button("Import mesh...").clicked()
                 && let Some(p) = rfd::FileDialog::new().add_filter("Mesh", files::MESHES).pick_file()
             {

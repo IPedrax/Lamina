@@ -68,6 +68,9 @@ Priorities:
   inside another (a void). `import_mesh` repairs on the way in and says what it did; `repair {id}` mends an object, as one undo step.
 - **2.3 Report problems clearly.** `info` gives `open_edges`, `nonmanifold_edges` and `flipped_faces` for each object; the plate
   panel shows a warning sign with the problems on hover, and a Repair button for the picked object.
+- **3.8 More shapes.** `add_primitive` kinds `cone` (and frustum, with `radius_top`), `prism`, `pyramid`, `tube` (built directly),
+  `torus` and `rounded_box` (each face's grid pushed out from the box shrunk by the radius, so edges are quarter cylinders and
+  corners eighths of a sphere). Each is tested closed with its volume; the window has a More shapes menu.
 - **4.1 Supports.** `crates/slicer/src/support.rs`: where a layer leans past `support_angle` from vertical, all of it that is over
   air is held up; overhangs are carried down to the model or the plate (`support`: `off`, `everywhere`, `from_plate`), keep
   `support_xy_gap` from the walls and stop `support_z_gap` below the model, with `support_interface_layers` of denser lines on top.
@@ -149,10 +152,6 @@ one above the plane and one below, and replace the object with both halves. This
 
 **3.7 Absolute position and size fields (P1).** How: in the plate panel, show the object's position and size and let them be typed.
 On enter, run `move` by the difference, or `scale` with `by` set to the ratio. Add a lock for keeping proportions.
-
-**3.8 More shapes (P1).** How: in `crates/core/src/mesh.rs` and `add_primitive`. A cone or frustum is the cylinder with a second radius.
-Add a torus (two angles), an n-sided prism or pyramid, a tube built directly (no boolean needed), and a box with rounded edges, built
-directly as a rounded box rather than a fillet. Test each for watertightness and volume, as the existing primitives are tested.
 
 **3.9 Sketch and extrude (P1).** A flat outline lifted into a solid covers most mechanical parts. How: an
 `extrude {outline: [[x,y]...], holes?, height}` command. Clean the outline with `i_overlay` (already a slicer dependency; move the

@@ -13,8 +13,10 @@ with `move {id, by: [x, y, 0]}`.
 ## What you can do today
 
 - Shapes: `add_primitive {kind: "box", size: [x, y, z]}`, `{kind: "cylinder", radius, height, segments?}` and
-  `{kind: "sphere", radius, segments?}`. The default 48 segments is fine for most parts; raise `segments` (up to 256) when a round
-  part must look round.
+  `{kind: "sphere", radius, segments?}`. Also `rounded_box` (`size` and `corner`, the edges' radius), `cone` (`radius`, `height`,
+  `radius_top` for a frustum), `prism` and `pyramid` (`radius` to a corner, `height`, `sides`), `tube` (`radius`, `inner`,
+  `height`: no boolean needed) and `torus` (`radius` to the ring's middle, `tube`). The default 48 segments is fine for most parts;
+  raise `segments` (up to 256) when a round part must look round.
 - Place and reshape: `move`, `rotate` (about the object's centre, then it is set back on the plate), `scale` (positive factors,
   one per axis with `by`, so a sphere can become an ellipsoid and a cylinder a disc), `mirror {id, axis}` (a left part from a right
   one), `drop_to_bed`, `delete`, `undo`, `redo`.
@@ -32,7 +34,7 @@ the result stands, as one undo step. The result keeps the first object's name un
   changes nothing: move or resize a shape by a hundredth of a millimetre and try again. Do turns before booleans where you can: the
   first boolean on an object sees its faces exactly flat, a later one only to the precision stored.
 - Booleans take longer on shapes with many segments. Use 24 to 32 segments for a cutting tool.
-- Still missing: fillets and chamfers, text, threads and sweeps. Say so plainly, and offer the closest thing that works.
+- Still missing: fillets and chamfers (a rounded box is the one rounded shape), text, threads and sweeps. Say so plainly, and offer the closest thing that works.
 
 ## Work in this order
 

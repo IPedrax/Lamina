@@ -26,7 +26,7 @@ pub static ALL: &[Command] = &[
     ),
     cmd(
         "add_primitive",
-        "{kind:\"box\"|\"cylinder\"|\"sphere\", name?, at?:[x,y] (where its centre stands, default the middle of the plate), size?:[x,y,z] (box), radius? (cylinder, sphere), height? (cylinder), segments? (3..256, default 48; a sphere is geodesic and gets 320, 1280, 5120 or 20480 triangles from it)} a shape on the plate, mm. Returns {id}",
+        "{kind, name?, at?:[x,y] (where its centre stands, default the middle of the plate), segments? (3..256, default 48), and by kind: \"box\" {size:[x,y,z]}; \"rounded_box\" {size, corner (the edges' radius, under half the smallest side)}; \"cylinder\" {radius, height}; \"cone\" {radius, height, radius_top? (default 0, a point; more makes a frustum)}; \"prism\" and \"pyramid\" {radius (to a corner), height, sides (3..64)}; \"tube\" {radius, inner, height}; \"torus\" {radius (to the middle of the ring), tube (the ring's own radius, less than radius)}; \"sphere\" {radius} (geodesic: 320, 1280, 5120 or 20480 triangles from segments)} a shape on the plate, mm. Returns {id}",
         add_primitive,
         true,
         Files::None,
@@ -276,6 +276,11 @@ struct Primitive {
     radius: Option<f64>,
     height: Option<f64>,
     segments: Option<u32>,
+    radius_top: Option<f64>,
+    sides: Option<u32>,
+    inner: Option<f64>,
+    tube: Option<f64>,
+    corner: Option<f64>,
 }
 
 fn add_primitive(s: &mut Session, p: &Value) -> Result<Value, String> {
@@ -286,14 +291,48 @@ fn add_primitive(s: &mut Session, p: &Value) -> Result<Value, String> {
         return Err("`segments` is from 3 to 256".into());
     }
     let need = |v: Option<f64>, what: &str| v.ok_or_else(|| format!("a {} needs `{what}`", a.kind)).and_then(|x| positive(what, x, MAX));
+    let size = || -> Result<P3, String> {
+        let size = a.size.ok_or_else(|| format!("a {} needs `size`: [x, y, z]", a.kind))?;
+        size.map(|c| positive("size", c, MAX)).into_iter().collect::<Result<Vec<_>, _>>().map(|v| [v[0], v[1], v[2]])
+    };
+    let sides = || -> Result<u32, String> {
+        let n = a.sides.ok_or_else(|| format!("a {} needs `sides`, 3 to 64", a.kind))?;
+        if (3..=64).contains(&n) { Ok(n) } else { Err("`sides` is from 3 to 64".into()) }
+    };
+    let less = |what: &str, x: f64, than: &str, limit: f64| -> Result<f64, String> {
+        if x < limit { Ok(x) } else { Err(format!("`{what}` must be less than {than} ({limit})")) }
+    };
     let mesh = match a.kind.as_str() {
-        "box" => {
-            let size = a.size.ok_or("a box needs `size`: [x, y, z]")?;
-            Mesh::cuboid(size.map(|c| positive("size", c, MAX)).into_iter().collect::<Result<Vec<_>, _>>().map(|v| [v[0], v[1], v[2]])?)
+        "box" => Mesh::cuboid(size()?),
+        "rounded_box" => {
+            let size = size()?;
+            let smallest = size.iter().copied().fold(f64::MAX, f64::min);
+            let corner = less("corner", need(a.corner, "corner")?, "half the smallest side", smallest / 2.0)?;
+            Mesh::rounded_box(size, corner, (segments / 6).clamp(2, 16))
         }
         "cylinder" => Mesh::cylinder(need(a.radius, "radius")?, need(a.height, "height")?, segments),
+        "cone" => {
+            let top = match a.radius_top {
+                None | Some(0.0) => 0.0,
+                Some(t) => positive("radius_top", t, MAX)?,
+            };
+            Mesh::frustum(need(a.radius, "radius")?, top, need(a.height, "height")?, segments)
+        }
+        "prism" => Mesh::cylinder(need(a.radius, "radius")?, need(a.height, "height")?, sides()?),
+        "pyramid" => Mesh::frustum(need(a.radius, "radius")?, 0.0, need(a.height, "height")?, sides()?),
+        "tube" => {
+            let outer = need(a.radius, "radius")?;
+            let inner = less("inner", need(a.inner, "inner")?, "radius", outer)?;
+            Mesh::tube(outer, inner, need(a.height, "height")?, segments)
+        }
+        "torus" => {
+            let ring = need(a.radius, "radius")?;
+            Mesh::torus(ring, less("tube", need(a.tube, "tube")?, "radius", ring)?, segments)
+        }
         "sphere" => Mesh::sphere(need(a.radius, "radius")?, segments),
-        other => return Err(format!("unknown kind `{other}`: box, cylinder or sphere")),
+        other => {
+            return Err(format!("unknown kind `{other}`: box, rounded_box, cylinder, cone, prism, pyramid, tube, torus or sphere"));
+        }
     };
     added(s, a.name.as_deref().unwrap_or(&a.kind), mesh, a.at)
 }
@@ -558,6 +597,35 @@ mod tests {
         );
         assert!(run(&mut s, "add_primitive", json!({"kind": "box", "size": [1, 1, 1], "at": [1e300, 0]})).is_err());
         assert_eq!(s.scene.objects.len(), 1);
+    }
+
+    #[test]
+    fn every_kind_of_shape_is_made_closed_and_bad_sizes_are_refused() {
+        let mut s = Session::new();
+        for p in [
+            json!({"kind": "rounded_box", "size": [20, 10, 6], "corner": 2}),
+            json!({"kind": "cone", "radius": 5, "height": 8}),
+            json!({"kind": "cone", "radius": 5, "height": 8, "radius_top": 2}),
+            json!({"kind": "prism", "radius": 5, "height": 8, "sides": 6}),
+            json!({"kind": "pyramid", "radius": 5, "height": 8, "sides": 4}),
+            json!({"kind": "tube", "radius": 8, "inner": 6, "height": 10}),
+            json!({"kind": "torus", "radius": 10, "tube": 2}),
+        ] {
+            let v = run(&mut s, "add_primitive", p.clone()).unwrap();
+            assert_eq!(v["watertight"], true, "{p}");
+        }
+        for bad in [
+            json!({"kind": "rounded_box", "size": [20, 10, 6], "corner": 3}),
+            json!({"kind": "tube", "radius": 8, "inner": 8, "height": 10}),
+            json!({"kind": "torus", "radius": 3, "tube": 3}),
+            json!({"kind": "prism", "radius": 5, "height": 8, "sides": 2}),
+            json!({"kind": "pyramid", "radius": 5, "height": 8}),
+            json!({"kind": "cone", "radius": 5, "height": 8, "radius_top": -1}),
+            json!({"kind": "star", "radius": 5}),
+        ] {
+            assert!(run(&mut s, "add_primitive", bad.clone()).is_err(), "{bad}");
+        }
+        assert_eq!(s.scene.objects.len(), 7);
     }
 
     #[test]
