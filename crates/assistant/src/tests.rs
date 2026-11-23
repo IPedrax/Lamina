@@ -1336,3 +1336,45 @@ fn a_control_port_token_is_128_random_bits_in_hex() {
     assert!(a.bytes().all(|c| c.is_ascii_hexdigit()));
     assert_ne!(a, b);
 }
+
+// ---------- saved chats ----------
+
+#[test]
+fn a_projects_chat_is_kept_beside_the_settings_and_comes_back() {
+    use crate::saved;
+    let dir = tempfile::tempdir().unwrap();
+    let project = std::path::Path::new("/home/me/parts/bracket.lamina");
+    let net =
+        Arc::new(Fake::default().reply(200, tool_reply(&[("a", "execute", BOX), ("b", "preview", "{}")])).reply(200, text_reply("A box.")));
+    let (mut chat, mut s) = (chat_on(&net), Session::new());
+    chat.provider = Provider::Anthropic;
+    chat.send("a box, and look at it", KEY);
+    drive(&mut chat, &mut s);
+    saved::write(dir.path(), project, &chat).unwrap();
+    let file = dir.path().join(saved::file_name(project));
+    let text = std::fs::read_to_string(&file).unwrap();
+    assert!(!text.contains(KEY), "the key is never kept");
+    assert!(!text.contains("iVBOR"), "nor the picture preview drew");
+    // The next window: the log, the conversation and the checklist come back, and the model is sent it again.
+    let mut back = chat_on(&Arc::new(Fake::default()));
+    assert!(back.restore(&saved::read(dir.path(), project).unwrap(), Provider::Anthropic));
+    assert_eq!(back.log, chat.log);
+    assert_eq!(back.history.len(), chat.history.len());
+    // With another provider chosen, it is shown but the model starts afresh.
+    let mut other = chat_on(&Arc::new(Fake::default()));
+    assert!(other.restore(&saved::read(dir.path(), project).unwrap(), Provider::Gemini));
+    assert!(other.history.is_empty() && matches!(other.log.last(), Some(Line::Note(n)) if n.contains("afresh")));
+    // A file that is not one, or of a newer version, is left alone, and the chat stays as it was.
+    let mut kept = chat_on(&Arc::new(Fake::default()));
+    for bad in [
+        json!({}),
+        json!({"v": 99, "log": [], "history": [], "todos": []}),
+        json!({"v": 1, "log": [{"t": "?"}], "history": [], "todos": []}),
+    ] {
+        assert!(!kept.restore(&bad, Provider::Anthropic), "{bad}");
+    }
+    assert!(kept.log.is_empty());
+    saved::remove(dir.path(), project);
+    assert!(saved::read(dir.path(), project).is_none());
+    assert_ne!(saved::file_name(project), saved::file_name(std::path::Path::new("/home/me/parts/other.lamina")));
+}

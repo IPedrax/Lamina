@@ -21,6 +21,7 @@ pub mod gemini;
 pub mod local;
 pub mod net;
 pub mod openai;
+pub mod saved;
 pub mod seal;
 pub mod skills;
 #[cfg(any(test, feature = "testing"))]

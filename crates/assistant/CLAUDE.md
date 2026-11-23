@@ -58,6 +58,9 @@ What comes from the network is hostile, and what goes out is the user's:
   conversation may carry (`Msg::file_bytes`), as every request sends them again.
 - Look at `tools::all()`'s schemas when adding a tool: plain types only (Gemini takes a subset of OpenAPI; `gemini::schema` writes a
   free-form object as text that the tool reads back). A test checks it.
-- Not here, on purpose: saved chats (roadmap 9.5, now that projects exist) and a chat shared between windows. Add them with their own tests.
+- `saved.rs` (from BIMCraft): each project's chat in a `chats` folder beside the settings, named for a hash of the project's path,
+  never in the project; the key and pictures never kept; read hostilely, whole or not at all (`Chat::restore`), and another
+  provider's chat shown but not continued. The window writes it when a turn ends and reads it when the project opens.
+- Not here, on purpose: a chat shared between windows. Add it with its own tests.
 - `cargo test -p lamina-assistant` is slow in a debug build unless the root `Cargo.toml` builds `ring` optimised
   (`[profile.dev.package.ring] opt-level = 3`): the passphrase tests make 600,000 rounds of PBKDF2 each.

@@ -115,6 +115,7 @@ impl App {
     pub fn new_project(&mut self) {
         if self.run("new", json!({})).is_some() {
             self.project = None;
+            self.chat_for(None);
             (self.selected, self.sliced) = (Vec::new(), None);
             self.mark_saved();
             self.status = "New project.".into();
@@ -138,6 +139,7 @@ impl App {
             notes.push(format!("this version left out {}", ignored.join(", ")));
         }
         self.project = Some(path.to_path_buf());
+        self.chat_for(Some(path));
         self.remember(path);
         (self.selected, self.sliced) = (Vec::new(), None);
         self.mark_saved();

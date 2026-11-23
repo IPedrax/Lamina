@@ -75,7 +75,7 @@ pub struct Chat {
     /// Tokens the provider has counted since the window last took them ([`Chat::take_usage`]).
     unreported: Usage,
     /// The provider the conversation the model has was made with: its reasoning and calls mean nothing to another.
-    with: Option<Provider>,
+    pub(crate) with: Option<Provider>,
     /// Turns sent so far, which names each turn's undo step.
     turns: u64,
 }

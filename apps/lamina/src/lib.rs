@@ -186,6 +186,10 @@ pub struct App {
     pub agents: control::Agents,
     pub agents_failed: Option<String>,
     pub bridge_file: Option<PathBuf>,
+    /// Where each project's chat is kept (`chats` beside the settings; none in a test that does not ask), and the chat's revision when
+    /// it was last written there.
+    pub chats: Option<PathBuf>,
+    chat_saved: usize,
 }
 
 impl App {
@@ -243,6 +247,8 @@ impl App {
             agents: control::Agents::default(),
             agents_failed: None,
             bridge_file: None,
+            chats: None,
+            chat_saved: 0,
         }
         .ready()
     }
@@ -285,6 +291,7 @@ impl App {
         app.autosave = Some(a);
         app.log = Some(startup::Files::beside(&path).log);
         app.bridge_file = Some(path.with_file_name(lamina_core::bridge::FILE));
+        app.chats = Some(path.with_file_name("chats"));
         if let Some(a) = s.agents.clone() {
             app.agents = a;
         }
@@ -653,6 +660,7 @@ impl App {
         if self.chat.poll(&ctx, &mut self.session) {
             self.prune();
         }
+        self.keep_chat();
         self.dropped(&ctx);
         self.file_keys(&ctx);
         self.keys(&ctx);
@@ -695,6 +703,32 @@ impl App {
         }
         self.persist(&ctx);
         self.log_error();
+    }
+
+    /// Writes the open project's chat beside the settings when a turn is over and it changed.
+    fn keep_chat(&mut self) {
+        let chat = &self.chat.chat;
+        if chat.busy() || chat.revision() == self.chat_saved {
+            return;
+        }
+        if let (Some(dir), Some(project)) = (&self.chats, &self.project)
+            && let Err(e) = lamina_assistant::saved::write(dir, project, chat)
+        {
+            (self.failed, self.status) = (true, format!("The chat could not be kept: {e}"));
+        }
+        self.chat_saved = chat.revision();
+    }
+
+    /// The chat of `project`, as it was left, in place of the one shown; an empty one when it has none.
+    pub(crate) fn chat_for(&mut self, project: Option<&std::path::Path>) {
+        self.chat.chat.reset();
+        if let (Some(dir), Some(project)) = (&self.chats, project)
+            && let Some(v) = lamina_assistant::saved::read(dir, project)
+        {
+            let provider = self.chat.chat.provider;
+            self.chat.chat.restore(&v, provider);
+        }
+        self.chat_saved = self.chat.chat.revision();
     }
 
     /// Writes the error on the status bar to the log, once.
@@ -1951,6 +1985,35 @@ mod tests {
         // Closing the port removes the bridge file.
         h.state_mut().close_control();
         assert!(!dir.path().join(lamina_core::bridge::FILE).exists());
+    }
+
+    #[test]
+    fn a_projects_chat_is_kept_and_comes_back_with_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let net = Arc::new(
+            lamina_assistant::testing::Fake::default()
+                .reply(200, r#"{"content": [{"type": "text", "text": "Hello."}], "stop_reason": "end_turn"}"#),
+        );
+        let mut app = App::with_settings(session(), net, dir.path().join("settings.json"));
+        app.chat.chat.provider = lamina_assistant::Provider::Anthropic;
+        let mut h = Harness::builder().with_size([1400.0, 860.0]).build_ui_state(|ui, app: &mut App| app.show(ui), app);
+        let project = dir.path().join("plate.lamina");
+        assert!(h.state_mut().save_project(&project));
+        h.state_mut().chat.chat.send("hi", "sk-test-0123456789abcdef");
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while h.state().chat.chat.busy() {
+            assert!(std::time::Instant::now() < until);
+            h.step();
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        h.run();
+        let log = h.state().chat.chat.log.clone();
+        assert!(log.iter().any(|l| matches!(l, lamina_assistant::Line::Says(t) if t == "Hello.")), "{log:?}");
+        // A new plate has a new chat; opening the project again brings its chat back.
+        h.state_mut().new_project();
+        assert!(h.state().chat.chat.log.is_empty());
+        h.state_mut().open_project(&project);
+        assert_eq!(h.state().chat.chat.log, log);
     }
 
     #[test]

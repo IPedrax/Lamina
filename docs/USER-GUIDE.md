@@ -85,7 +85,8 @@ Choose a model that supports tool calling; small models follow the tools less we
 The assistant can model (shapes, outlines extruded into parts, booleans, cuts, arranging), set up and check a slice, and read notes
 on design for FDM and on slicer settings. It can look at the plate too: it draws a picture of it to compare a part with a photo you
 attached (Attach, under the message box, or drop the picture on the window) or with what you described. It cannot touch files, so it cannot open, save or export anything or send to a printer,
-and it cannot start a new plate. Each of its turns is one undo step.
+and it cannot start a new plate. Each of its turns is one undo step. Each saved project keeps its own chat (beside the settings,
+never in the project file, and never with the key): opening the project brings the conversation back.
 
 ## Sending to a printer
 

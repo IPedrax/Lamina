@@ -266,6 +266,10 @@ Priorities:
   [PORT]` in `apps/lamina-cli/src/window.rs`. The Agents section of the plate panel (or `lamina --control PORT`) opens it, kept in
   the settings file, with read-only as an option. A window's agent never replaces the plate or sends it to a printer. Tested with
   a real port: an agent adds a box that becomes an undo step in the window.
+- **9.5 Saved chats.** BIMCraft's `saved.rs`, lifted into `crates/assistant`: each project's chat (the log, the conversation and the
+  checklist, never the key or a picture) in `chats/` beside the settings, named for a hash of the project's path. The window
+  writes it when a turn ends and brings it back when the project opens; a new plate starts a new chat. A file is read whole or
+  not at all, within a live chat's caps.
 
 ## Order of work
 
@@ -327,9 +331,6 @@ DMG, each checked against the SHA-256 digest GitHub gives the asset. The release
 ## 8. Quality and infrastructure
 
 ## 9. The assistant
-
-**9.5 Saved chats (P2).** How: keep each project's conversation beside it. BIMCraft's `saved.rs` was removed from the port for lack of
-project files and can return after 1.1.
 
 **9.6 Streaming replies (P2).** How: read each provider's server-sent events, so text appears as it is written. It is a change to
 `net.rs` and the three provider parsers.
