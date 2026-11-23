@@ -43,6 +43,8 @@ pub struct Profile {
     pub layer_height: f64,
     pub first_layer_height: f64,
     pub perimeters: u32,
+    /// Vase mode: above the bottom layers, one wall climbing without a stop, no infill, an open top.
+    pub vase: bool,
     pub top_layers: u32,
     pub bottom_layers: u32,
     /// 0 to 1: the share of the inside that is filled.
@@ -132,6 +134,7 @@ impl Default for Profile {
             layer_height: 0.2,
             first_layer_height: 0.2,
             perimeters: 2,
+            vase: false,
             top_layers: 4,
             bottom_layers: 4,
             infill_density: 0.15,

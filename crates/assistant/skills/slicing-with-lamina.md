@@ -38,6 +38,8 @@ presets live in the app's settings panel, not in these commands.
   footprint or sharp corners that may lift, and for ABS) adds loops round the first layer, touching it. `raft_layers` (0 by default,
   2 or 3 when used) prints coarse layers under the part and lifts it onto them: for a warped bed or a tiny contact area; it costs
   time and a rougher underside.
+- Vase mode: `vase: true` prints the bottom layers, then one outer wall that climbs without stopping, with no infill and no top:
+  for vases, cups and lamp shades, one object at a time. The wall is one line thick, so it is fragile.
 - Seams: `seam` is where each wall loop starts and ends, which leaves a small mark: `"aligned"` (the default, one tidy line up the
   part), `"rear"` (at the back, out of sight), `"sharpest"` (hidden in an inside corner) or `"nearest"` (least travel, marks
   scattered).

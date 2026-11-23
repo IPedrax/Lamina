@@ -128,6 +128,9 @@ Priorities:
   as the junction deviation allows (Marlin's documented formula; Klipper's square corner velocity converts), a backward pass so
   every move can stop and a forward pass so every speed is reachable. The Klipper presets set 3000 mm/s2. Not yet compared with a
   real print (0.2).
+- **4.11 Vase mode.** `vase`: the bottom layers as usual, then each layer's outer wall alone, its points rising in proportion to
+  the way round from the last layer's height to its own (`G1 X Y Z E`), so z never stops; no infill, no top, no layer-change
+  retraction. A warning with several objects. A golden square vase.
 - **4.13 Feature types in the G-code.** Every stroke has a kind, written as `;TYPE:outer-wall` (inner-wall, solid-infill,
   sparse-infill, skirt, brim, support, support-interface, raft) before it, again after each layer change. `slice_check` returns
   the filament of each kind (`features`), so the assistant can count them.
@@ -191,9 +194,6 @@ the AI's skills what is not possible.
 a quarter line, is printed as single lines along its centre. Find the centreline with a straight skeleton or a Voronoi diagram:
 `boostvoronoi` is BSL-1.0 and permissive, BIMCraft has a straight skeleton (`skeleton.rs`). Vary the flow by width. Full
 variable-width walls (as in the public Arachne paper) are P2.
-
-**4.11 Vase mode (P1).** How: one wall, no top, and z raised a little along each point of the loop, so it never stops. It is cheap
-to add and popular.
 
 **4.12 Firmware details (P1).**
 - Klipper: object markers (`EXCLUDE_OBJECT` lines) so one failed object can be cancelled.

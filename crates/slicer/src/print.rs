@@ -47,6 +47,8 @@ struct Stroke {
     kind: Feature,
     /// The flow multiplied by this (a bridge's own flow), 1 for most.
     flow: f64,
+    /// In vase mode: a loop that climbs from the layer below's height to its own as it goes round, so z never stops.
+    spiral: bool,
 }
 
 /// What a stroke is part of, written as `;TYPE:` before it so a preview can colour it and a reader can count it.
@@ -125,6 +127,9 @@ pub fn gcode(objects: &[(u32, Mesh)], p: &Profile) -> Result<Output, String> {
             warnings.push(format!("object {id} is not a closed mesh: parts of it may be missing from the print"));
         }
     }
+    if p.vase && objects.len() > 1 {
+        warnings.push("vase mode climbs one wall without stopping: with several objects the head stops at each, so print one".into());
+    }
     let w = p.line_width();
     // The plan of each object: its first layer's region, then its layers and the strokes of each.
     let mut plans: Vec<ObjectPlan> = objects.iter().map(|(_, m)| plan(m, p, w)).collect::<Result<_, _>>()?;
@@ -145,6 +150,7 @@ pub fn gcode(objects: &[(u32, Mesh)], p: &Profile) -> Result<Output, String> {
         fan: 0.0,
         fan_now: 0.0,
         region: Region::new(),
+        spiral: None,
         hopped: false,
         wipe: Vec::new(),
     };
@@ -160,7 +166,7 @@ pub fn gcode(objects: &[(u32, Mesh)], p: &Profile) -> Result<Output, String> {
     let brim: Vec<Stroke> = (0..brim_loops)
         .flat_map(|i| geom::inset(&footprint, -(w / 2.0 + i as f64 * w)))
         .flatten()
-        .map(|pts| Stroke { pts, closed: true, speed: p.first_layer_speed, kind: Feature::Brim, flow: 1.0 })
+        .map(|pts| Stroke { pts, closed: true, speed: p.first_layer_speed, kind: Feature::Brim, flow: 1.0, spiral: false })
         .collect();
     // The skirt: outward from the brim or the raft, or from the footprint when there is neither.
     let skirt_base = match (raft.is_empty(), brim_loops) {
@@ -171,7 +177,7 @@ pub fn gcode(objects: &[(u32, Mesh)], p: &Profile) -> Result<Output, String> {
     let skirt: Vec<Stroke> = (0..p.skirt_loops)
         .flat_map(|i| geom::inset(&skirt_base, -(p.skirt_distance + (f64::from(i) + 0.5) * w)))
         .filter_map(|shape| shape.into_iter().next())
-        .map(|pts| Stroke { pts, closed: true, speed: p.first_layer_speed, kind: Feature::Skirt, flow: 1.0 })
+        .map(|pts| Stroke { pts, closed: true, speed: p.first_layer_speed, kind: Feature::Skirt, flow: 1.0, spiral: false })
         .collect();
     let mut first = Some((skirt, brim));
     for (k, (z, height, strokes, _)) in raft.into_iter().enumerate() {
@@ -214,7 +220,13 @@ pub fn gcode(objects: &[(u32, Mesh)], p: &Profile) -> Result<Output, String> {
         }
         for (_, layers) in plans.iter_mut() {
             let Some((z, height, strokes, region)) = layers.get_mut(k) else { continue };
-            g.set_z(*z + lift);
+            // A vase layer climbs to its height as it prints, from where the last one ended.
+            if !strokes.is_empty() && strokes.iter().all(|s| s.spiral) {
+                g.spiral = Some((g.z, *z + lift));
+            } else {
+                g.spiral = None;
+                g.set_z(*z + lift);
+            }
             g.region = std::mem::take(region);
             if let Some((skirt, brim)) = first.take() {
                 g.strokes(skirt, flow(*height, w, p.filament_diameter));
@@ -293,7 +305,7 @@ fn raft(footprint: &Region, p: &Profile, w: f64) -> Vec<LayerPlan> {
             let speed = if k == 0 { p.first_layer_speed } else { p.infill_speed };
             let strokes = fill_lines(&area, spacing, angle)
                 .into_iter()
-                .map(|pts| Stroke { pts, closed: false, speed, kind: Feature::Raft, flow: 1.0 })
+                .map(|pts| Stroke { pts, closed: false, speed, kind: Feature::Raft, flow: 1.0, spiral: false })
                 .collect();
             (z, height, strokes, Region::new())
         })
@@ -319,6 +331,17 @@ fn plan(mesh: &Mesh, p: &Profile, w: f64) -> Result<ObjectPlan, String> {
     for (k, layer) in layers.iter().enumerate() {
         let speed = |s: f64| if k == 0 { p.first_layer_speed } else { s };
         let mut strokes = Vec::new();
+        // Vase mode, above the bottom: the outer wall alone, climbing as it goes round; no infill and no top.
+        if p.vase && k >= (p.bottom_layers as usize).max(1) {
+            for shape in geom::inset(&regions[k], w / 2.0) {
+                if let Some(pts) = shape.into_iter().next() {
+                    let kind = Feature::OuterWall;
+                    strokes.push(Stroke { pts, closed: true, speed: speed(p.perimeter_speed), kind, flow: 1.0, spiral: true });
+                }
+            }
+            out.push((layer.z, layer.height, strokes, regions[k].clone()));
+            continue;
+        }
         // Supports: sparse lines all run one way, so the layers stack into thin walls; the interface crosses them, denser, to carry
         // the overhang. The writer prints a layer's loops (the walls) before its lines.
         let s = &supports[k];
@@ -333,13 +356,21 @@ fn plan(mesh: &Mesh, p: &Profile, w: f64) -> Result<ObjectPlan, String> {
                     speed: speed(p.infill_speed),
                     kind,
                     flow: 1.0,
+                    spiral: false,
                 }));
             }
         }
         for i in (0..p.perimeters).rev() {
             let kind = if i == 0 { Feature::OuterWall } else { Feature::InnerWall };
             for shape in geom::inset(&regions[k], w / 2.0 + f64::from(i) * w) {
-                strokes.extend(shape.into_iter().map(|pts| Stroke { pts, closed: true, speed: speed(p.perimeter_speed), kind, flow: 1.0 }));
+                strokes.extend(shape.into_iter().map(|pts| Stroke {
+                    pts,
+                    closed: true,
+                    speed: speed(p.perimeter_speed),
+                    kind,
+                    flow: 1.0,
+                    spiral: false,
+                }));
             }
         }
         let covered = covered(&inner, k, p.top_layers as usize, p.bottom_layers as usize);
@@ -358,6 +389,7 @@ fn plan(mesh: &Mesh, p: &Profile, w: f64) -> Result<ObjectPlan, String> {
                 speed: p.bridge_speed,
                 kind: Feature::Bridge,
                 flow: p.bridge_flow,
+                spiral: false,
             }));
         }
         if !geom::is_empty(&solid) {
@@ -367,6 +399,7 @@ fn plan(mesh: &Mesh, p: &Profile, w: f64) -> Result<ObjectPlan, String> {
                 speed: speed(p.infill_speed),
                 kind: Feature::SolidInfill,
                 flow: 1.0,
+                spiral: false,
             }));
         }
         if p.infill_density > 0.0 && !geom::is_empty(&sparse) {
@@ -379,6 +412,7 @@ fn plan(mesh: &Mesh, p: &Profile, w: f64) -> Result<ObjectPlan, String> {
                 speed: speed(p.infill_speed),
                 kind: Feature::SparseInfill,
                 flow: 1.0,
+                spiral: false,
             }));
         }
         out.push((layer.z, layer.height, strokes, regions[k].clone()));
@@ -637,6 +671,8 @@ struct Writer<'a> {
     fan_now: f64,
     /// The region of the object and layer being printed: a travel inside it needs no retraction (combing).
     region: Region,
+    /// In vase mode, the heights a climbing loop goes from and to on this layer.
+    spiral: Option<(f64, f64)>,
     /// Whether the head is lifted by `z_hop`, and the path a wipe follows from where the head is (the stroke just printed).
     hopped: bool,
     wipe: Vec<P2>,
@@ -761,6 +797,25 @@ impl Writer<'_> {
         self.at = Some(to);
     }
 
+    /// An extrusion to `to` that also rises to `z` (vase mode).
+    fn climb(&mut self, to: P2, z: f64, per_mm: f64, speed: f64) {
+        let len = self.at.map_or(0.0, |from| dist(from, to));
+        if len < 1e-6 {
+            return;
+        }
+        self.unretract();
+        let (m, e) = (self.machine(to), len * per_mm);
+        self.line(format!("G1 X{:.3} Y{:.3} Z{z:.3} E{e:.5} F{:.0}", m[0], m[1], speed * 60.0));
+        self.filament += e;
+        if let Some(f) = self.feature {
+            *self.by_feature.entry(f.name()).or_default() += e;
+        }
+        if let Some(from) = self.at {
+            self.planner.xy(from, to, speed);
+        }
+        (self.at, self.z) = (Some(to), z);
+    }
+
     /// Prints `strokes`: the nearest loop goes first and starts where the seam rule says; open ones keep their order.
     fn strokes(&mut self, mut strokes: Vec<Stroke>, per_mm: f64) {
         let (mut loops, open): (Vec<Stroke>, Vec<Stroke>) = strokes.drain(..).partition(|s| s.closed);
@@ -797,11 +852,23 @@ impl Writer<'_> {
         }
         let per_mm = per_mm * s.flow;
         self.travel(*first);
-        for q in s.pts.iter().skip(1) {
-            self.extrude(*q, per_mm, s.speed);
-        }
-        if s.closed {
-            self.extrude(*first, per_mm, s.speed);
+        if let (true, Some((from, to))) = (s.spiral, self.spiral) {
+            // Each point a little higher, in proportion to the way round, so the loop ends where the next begins.
+            let total = path_length(s).max(1e-9);
+            let mut done = 0.0;
+            let mut prev = *first;
+            for q in s.pts.iter().skip(1).chain(std::iter::once(first)) {
+                done += dist(prev, *q);
+                prev = *q;
+                self.climb(*q, from + (to - from) * (done / total), per_mm, s.speed);
+            }
+        } else {
+            for q in s.pts.iter().skip(1) {
+                self.extrude(*q, per_mm, s.speed);
+            }
+            if s.closed {
+                self.extrude(*first, per_mm, s.speed);
+            }
         }
         // A wipe goes on round a loop from where it closed, or back along a line.
         self.wipe = if s.closed { s.pts.iter().skip(1).copied().collect() } else { s.pts.iter().rev().skip(1).copied().collect() };
@@ -1176,6 +1243,21 @@ mod tests {
             at = Some((x, y));
         }
         assert!(g.seconds > bound, "{} against at least {bound}", g.seconds);
+    }
+
+    #[test]
+    fn vase_mode_climbs_one_wall_without_stopping_and_leaves_the_top_open() {
+        let p = Profile { vase: true, ..Profile::default() };
+        let out = gcode(&[(1, Mesh::cylinder(15.0, 10.0, 64))], &p).unwrap();
+        let g = &out.gcode;
+        let above: &str = g.split(";LAYER:5\n").nth(1).unwrap().split("M104 S0").next().unwrap();
+        assert!(!above.contains("TYPE:sparse-infill") && !above.contains("TYPE:solid-infill") && !above.contains("TYPE:inner-wall"));
+        // No layer change stops the head: every move up there carries its own z, and z only rises.
+        assert!(!above.lines().any(|l| l.starts_with("G1 Z")), "no separate z moves");
+        let zs: Vec<f64> = above.lines().filter_map(|l| l.split(" Z").nth(1)?.split(' ').next()?.parse().ok()).collect();
+        assert!(zs.len() > 500 && zs.windows(2).all(|w| w[1] >= w[0] - 1e-9), "z climbs steadily");
+        assert!((zs.last().unwrap() - 10.0).abs() < 1e-6);
+        assert!(above.lines().filter(|l| l.starts_with("G1 E-")).count() <= 1, "no retraction on the way up");
     }
 
     #[test]
