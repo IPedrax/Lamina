@@ -47,6 +47,9 @@ Priorities:
   each sliced and compared line by line (numbers to just under their written precision, so CI on three systems agrees);
   `LAMINA_BLESS=1` writes the new output to be read in the diff. The first run found spikes and doubled points in walls on round
   shapes (offsetting points in a straight line), fixed by simplifying loops before they are offset.
+- **1.2 Autosave.** Every two minutes while the plate has unsaved changes, the window writes the project to `autosave.lamina`
+  beside the settings file, on a thread. A clean exit or a save removes it; at the next start a file still there is offered back
+  (Bring it back, as an unsaved project, or Discard it). `apps/lamina/src/autosave.rs`, a simpler cousin of BIMCraft's.
 - **1.4 3MF import and export.** `crates/core/src/zip.rs` (stored and deflated entries over `miniz_oxide`, every offset checked,
   inflated up to a limit, CRC checked) and `threemf.rs` (the model part read with `quick-xml`: meshes, components, units, the
   Production Extension's `path` for objects in other parts, build items with their transforms). `import_mesh` reads a `.3mf` with
@@ -104,9 +107,6 @@ Print each on one Marlin and one Klipper printer. Measure with calipers. Write t
 what is wrong before adding features.
 
 ## 1. Files and projects
-
-**1.2 Autosave (P1).** How: every few minutes, when the scene changed, write the project to the settings folder. Offer it at the next
-start if the app did not close cleanly. BIMCraft's `autosave.rs` has the pattern.
 
 **1.3 OBJ and glTF import (P1).** How: lift `crates/core/src/mesh_in.rs` from BIMCraft (same author, MIT OR Apache-2.0). It already
 reads OBJ and glTF from their public specifications, in millimetres with z up, with caps, and "knows no element". Dispatch on the file

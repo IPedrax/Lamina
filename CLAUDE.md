@@ -62,7 +62,8 @@ CI (`.github/workflows/ci.yml`) runs the same three on Linux, Windows and macOS 
 - `crates/printer`: sending G-code to Moonraker or OctoPrint on the user's network (`send`, the `send_to_printer` command), and a
   fake printer for tests (`testing`, a feature). With the assistant, the only crate that may use `ureq`.
 - `apps/lamina`: the desktop app (`lamina`): `lib.rs` (the window: toolbar, plate panel, settings, tabs), `files.rs` (the File menu,
-  recent projects, dropped files, the question before unsaved changes are lost), `view3d.rs` (orbit camera,
+  recent projects, dropped files, the question before unsaved changes are lost), `autosave.rs` (the plate written every two minutes
+  and offered back after an unclean exit), `view3d.rs` (orbit camera,
   a CPU rasterizer that keeps an object id per pixel for picking, and the move gizmo), `preview.rs` (layers read back from the G-code, one drawn at a
   time), `chat.rs` (the assistant panel, with Remember and a passphrase for the key), `printer.rs` (the printer connection and the Send
 buttons), `settings.rs` (the settings file: print settings,

@@ -3,6 +3,7 @@
 //! whatever a button does, a script, the MCP server or the assistant does the same way.
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+pub mod autosave;
 pub mod chat;
 pub mod files;
 pub mod preview;
@@ -117,6 +118,9 @@ pub struct App {
     title: String,
     /// Where a sliced plate is sent.
     pub link: printer::PrinterPanel,
+    /// The autosave beside the settings file (none in a test that does not ask), and a plate an unclean exit left, to offer back.
+    pub autosave: Option<autosave::Autosave>,
+    pub recovery: Option<PathBuf>,
     /// What is wrong with each mesh, by the address of its `Arc`, worked out once and kept while the mesh lives.
     problems: std::collections::HashMap<usize, lamina_core::repair::Problems>,
 }
@@ -157,6 +161,8 @@ impl App {
             title: String::new(),
             problems: std::collections::HashMap::new(),
             link: printer::PrinterPanel::default(),
+            autosave: None,
+            recovery: None,
         }
         .ready()
     }
@@ -186,6 +192,9 @@ impl App {
             (app.failed, app.status) = (true, notes.join(" "));
         }
         app.saved = Some(app.settings());
+        let a = autosave::Autosave::beside(&path);
+        app.recovery = a.path.exists().then(|| a.path.clone());
+        app.autosave = Some(a);
         app.settings_path = Some(path);
         app.mark_saved();
         app
@@ -455,6 +464,8 @@ impl App {
             Tab::Preview => self.preview(ui),
         });
         self.closing(&ctx);
+        self.recovery_ui(&ctx);
+        self.autosave_tick();
         let title = self.title();
         if title != self.title {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
@@ -818,6 +829,15 @@ impl eframe::App for App {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         self.show(ui);
     }
+
+    /// A clean exit leaves no autosave behind, unless a plate it left is still waiting for an answer.
+    fn on_exit(&mut self) {
+        if self.recovery.is_none()
+            && let Some(a) = self.autosave.as_mut()
+        {
+            a.remove();
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1178,6 +1198,37 @@ mod tests {
         assert_eq!(got[0].header("X-Api-Key"), Some("ABCDEF0123456789"));
         let body = got[0].body_text();
         assert!(body.contains("filename=\"plate.gcode\"") && body.contains(";LAYER:99"), "the whole slice went");
+    }
+
+    #[test]
+    fn an_unclean_exit_leaves_a_plate_that_is_offered_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let net = || -> Arc<dyn Net> { Arc::new(lamina_assistant::testing::Fake::default()) };
+        let mut first = App::with_settings(session(), net(), path.clone());
+        assert!(first.recovery.is_none());
+        first.run("add_primitive", json!({"kind": "box", "size": [12, 12, 12]}));
+        first.profile.infill_density = 0.42;
+        first.autosave_now();
+        let file = dir.path().join(autosave::FILE);
+        assert!(file.exists());
+        drop(first); // the window is gone without a clean exit
+        let mut again = App::with_settings(session(), net(), path.clone());
+        assert_eq!(again.recovery.as_deref(), Some(file.as_path()));
+        let mut h = Harness::builder().with_size([1400.0, 860.0]).build_ui_state(|ui, app: &mut App| app.show(ui), again);
+        h.run();
+        h.get_by_label("Bring back the last plate?");
+        press(&mut h, "Bring it back");
+        let app = h.state_mut();
+        assert_eq!(app.session.scene.objects.len(), 1);
+        assert_eq!(app.profile.infill_density, 0.42);
+        assert!(app.project.is_none() && app.dirty(), "an unsaved project, which the window asks about before losing");
+        // A clean exit removes it; the next start offers nothing.
+        eframe::App::on_exit(app);
+        assert!(!file.exists());
+        again = App::with_settings(session(), net(), path);
+        assert!(again.recovery.is_none());
+        again.discard_recovery();
     }
 
     #[test]

@@ -155,6 +155,12 @@ impl App {
         self.project = Some(path.clone());
         self.remember(&path);
         self.mark_saved();
+        // Saved: nothing is left for an autosave to bring back.
+        if self.recovery.is_none()
+            && let Some(a) = self.autosave.as_mut()
+        {
+            a.remove();
+        }
         self.status = format!("Saved {}.", path.display());
         true
     }
