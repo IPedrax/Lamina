@@ -43,7 +43,7 @@ CI (`.github/workflows/ci.yml`) runs the same three on Linux, Windows and macOS 
   `engine.rs` (`Session`: execute, undo, transactions, `adopt` for work done on a thread, script, catalog, the project's print settings), `commands.rs` (the built-in commands),
   `project.rs` (`.lamina` files: `save`, `open`, `new`), `repair.rs` (mesh repair shared by import and the booleans, and the
   problems `info` reports), `threemf.rs` and `zip.rs` (3MF in and out), `mesh_in.rs` (OBJ and glTF in, lifted from BIMCraft), `sketch.rs` (outlines extruded into solids), `render.rs` (the orbit camera and CPU rasterizer
-  the 3D view, the thumbnails and the assistant's picture share, and a PNG writer), `base64.rs`, `fuzz.rs` (the seeded generator every crate's fuzz tests use), `cancel.rs` (the flag a worker thread's slice or
+  the 3D view, the thumbnails and the assistant's picture share, `draw_paths` for the 3D G-code preview, and a PNG writer), `base64.rs`, `fuzz.rs` (the seeded generator every crate's fuzz tests use), `cancel.rs` (the flag a worker thread's slice or
   boolean stops on).
   `bridge.rs` (what an agent may ask: execute, script, catalog; read-only access; `REPLACES`, the commands that replace the plate).
 - `crates/slicer`: `slice.rs` (mesh to closed loops per layer), `geom.rs` (polygon booleans, offsets, line clipping on i_overlay),
@@ -67,8 +67,8 @@ CI (`.github/workflows/ci.yml`) runs the same three on Linux, Windows and macOS 
 - `apps/lamina`: the desktop app (`lamina`): `lib.rs` (the window: toolbar, plate panel, settings, tabs), `files.rs` (the File menu,
   recent projects, dropped files, the question before unsaved changes are lost), `autosave.rs` (the plate written every two minutes
   and offered back after an unclean exit), `view3d.rs` (the 3D view on
-  `lamina_core::render`, picking, the gizmo and the tools), `preview.rs` (layers read back from the G-code, one drawn at a
-  time), `chat.rs` (the assistant panel, with Remember and a passphrase for the key), `printer.rs` (the printer connection and the Send
+  `lamina_core::render`, picking, the gizmo and the tools), `preview.rs` (layers read back from the G-code with each extrusion's kind, drawn in 3D up to the
+  chosen layer and coloured by kind, or one layer from above), `chat.rs` (the assistant panel, with Remember and a passphrase for the key), `printer.rs` (the printer connection and the Send
   buttons), `work.rs` (slicing, booleans, export and sending on a thread, with a spinner and Cancel), `settings.rs` (the settings file: print settings,
   presets, sealed keys; read hostilely, written whole and owner-only). Thin: it changes the scene only through `Session::execute`. UI behaviour is tested with
   egui_kittest; `picture_of_the_window` (ignored, needs a GPU) renders it to a PNG to look at.

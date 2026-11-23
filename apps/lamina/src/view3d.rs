@@ -21,7 +21,7 @@ pub use lamina_core::render::{Camera, FOV, Picture, draw};
 use lamina_core::render::{add, scale};
 
 /// The picture as egui shows it.
-fn image(p: &Picture) -> ColorImage {
+pub fn image(p: &Picture) -> ColorImage {
     ColorImage::new(p.size, p.pixels.iter().map(|c| Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])).collect())
 }
 
@@ -295,6 +295,27 @@ pub struct Shown {
     pub point: Option<P3>,
 }
 
+/// Moves `camera` with the pointer over `response`: a primary drag orbits (when `orbit`), a secondary or middle drag pans, the wheel
+/// zooms. The 3D view and the 3D G-code preview steer alike.
+pub fn steer(camera: &mut Camera, response: &egui::Response, ui: &Ui, orbit: bool) {
+    let d = response.drag_delta();
+    if orbit && response.dragged_by(PointerButton::Primary) {
+        camera.azimuth -= f64::from(d.x) * 0.4;
+        camera.elevation = (camera.elevation + f64::from(d.y) * 0.4).clamp(-89.0, 89.0);
+    }
+    if response.dragged_by(PointerButton::Secondary) || response.dragged_by(PointerButton::Middle) {
+        let (_, right, up, _) = camera.frame();
+        let k = camera.distance * 0.0015;
+        camera.target = add(camera.target, add(scale(right, -f64::from(d.x) * k), scale(up, f64::from(d.y) * k)));
+    }
+    if response.hovered() {
+        let wheel = f64::from(ui.input(|i| i.smooth_scroll_delta.y));
+        if wheel != 0.0 {
+            camera.distance = (camera.distance * (1.0 - wheel * 0.002).clamp(0.5, 1.5)).clamp(20.0, 5000.0);
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct View {
     pub camera: Camera,
@@ -334,7 +355,6 @@ impl View {
         {
             self.moving = Some(Moving { ids: selected.to_vec(), handle, start, at, change: Change::Move([0.0; 3]) });
         }
-        let d = response.drag_delta();
         if let Some(m) = &mut self.moving {
             if let Some(now) = response.interact_pointer_pos() {
                 let free = ui.input(|i| i.modifiers.shift);
@@ -344,20 +364,11 @@ impl View {
                 shown.moved = Some((m.ids.clone(), m.change)).filter(|(_, c)| !c.is_nothing());
                 self.moving = None;
             }
-        } else if response.dragged_by(PointerButton::Primary) {
-            self.camera.azimuth -= f64::from(d.x) * 0.4;
-            self.camera.elevation = (self.camera.elevation + f64::from(d.y) * 0.4).clamp(-89.0, 89.0);
+        } else {
+            steer(&mut self.camera, &response, ui, true);
         }
-        if response.dragged_by(PointerButton::Secondary) || response.dragged_by(PointerButton::Middle) {
-            let (_, right, up, _) = self.camera.frame();
-            let k = self.camera.distance * 0.0015;
-            self.camera.target = add(self.camera.target, add(scale(right, -f64::from(d.x) * k), scale(up, f64::from(d.y) * k)));
-        }
-        if response.hovered() {
-            let wheel = f64::from(ui.input(|i| i.smooth_scroll_delta.y));
-            if wheel != 0.0 {
-                self.camera.distance = (self.camera.distance * (1.0 - wheel * 0.002).clamp(0.5, 1.5)).clamp(20.0, 5000.0);
-            }
+        if self.moving.is_some() {
+            steer(&mut self.camera, &response, ui, false);
         }
         // While a drag is under way the object is drawn where it would go; the scene itself changes only when the window runs the move.
         let moving = self.moving.as_ref().map(|m| (m.ids.clone(), m.change));

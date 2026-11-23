@@ -171,6 +171,10 @@ Priorities:
   its scene comes back as one undo step (`Session::adopt`), refused if the plate changed meanwhile; the window's own commands wait
   for a job that changes the plate. Cancel sets a flag (`lamina_core::cancel`) the slicer checks each layer and a boolean's child
   wait checks, ending the child.
+- **7.3 3D G-code preview.** The preview reads each extrusion's kind from the `;TYPE:` comments and draws every layer up to the
+  chosen one in 3D (`lamina_core::render::draw_paths`: each line as wide as it prints, shaded round, depth-tested), coloured by kind
+  with a legend; the layer view from above stays one click away. Triangles and lines are now cut at the near plane, so the plate
+  seen from close by is drawn up to the eye in the 3D view too.
 
 ## Order of work
 
@@ -249,9 +253,6 @@ window.
 limited by Bambu's own authorization), and USB serial with line numbers and resends. Each is its own module in `crates/printer`.
 
 ## 7. Desktop
-
-**7.3 3D G-code preview (P1).** How: draw the extrusion moves up to the chosen layer as lines in the 3D view, with depth. The CPU
-rasterizer already draws depth-tested lines (`Raster::line`). Colour them by feature type from 4.13, and keep the 2D layer view.
 
 **7.4 GPU viewport (P2).** The CPU view slows past a few hundred thousand triangles. How: render the scene with wgpu into a texture
 egui shows (`register_native_texture`), as BIMCraft's `crates/ui-egui/src/gpu.rs` does, and keep the CPU path as the fallback.

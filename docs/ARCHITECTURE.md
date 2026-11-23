@@ -82,6 +82,10 @@ its build.
 `apps/lamina` is egui 0.36 on eframe (wgpu), the same stack as BIMCraft. The window is thin: it reads `session.scene` and changes it
 only through `Session::execute`, so the assistant, a button and a script do the same thing the same way.
 
+- **Preview (`preview.rs`).** The G-code is read back into layers of moves, each extrusion with its kind from the `;TYPE:`
+  comments. In 3D every layer up to the chosen one is drawn by `lamina_core::render::draw_paths`, each line as wide as it prints
+  and shaded round, coloured by kind with a legend, lower layers a little darker; the camera steers as the 3D view's does. The
+  chosen layer alone from above, with its travels, is the other view.
 - **Long work (`work.rs`).** Slicing, the booleans and the cut, writing G-code and sending it run on a thread, as the chat's requests
   do, so the window keeps drawing; the status bar shows a spinner, the time so far and Cancel. A job runs on a sibling session that
   shares the scene, so it still goes through `Session::execute`, and its new scene comes back with `Session::adopt` as one undo

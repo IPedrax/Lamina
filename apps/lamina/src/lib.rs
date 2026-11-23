@@ -156,6 +156,9 @@ pub struct App {
     problems: std::collections::HashMap<usize, lamina_core::repair::Problems>,
     /// The long work running on a thread, if any.
     pub job: Option<work::Job>,
+    /// The preview in 3D (every layer up to the chosen one) or the chosen layer alone from above.
+    pub preview_3d: bool,
+    pub preview: preview::Preview3d,
 }
 
 impl App {
@@ -202,6 +205,8 @@ impl App {
             autosave: None,
             recovery: None,
             job: None,
+            preview_3d: true,
+            preview: preview::Preview3d::default(),
         }
         .ready()
     }
@@ -1239,8 +1244,17 @@ impl App {
             ui.add(egui::Slider::new(&mut self.layer, 0..=last).text("layer"));
             ui.label(format!("z = {z:.2} mm"));
             ui.checkbox(&mut self.travels, "Travels");
+            ui.separator();
+            ui.selectable_value(&mut self.preview_3d, true, "3D").on_hover_text("Every layer up to this one, coloured by what it prints");
+            ui.selectable_value(&mut self.preview_3d, false, "Layer").on_hover_text("This layer alone, from above");
         });
-        preview::show(ui, &sliced.layers, self.layer, self.profile.bed, self.profile.origin_center, self.travels);
+        let (bed, centred) = (self.profile.bed, self.profile.origin_center);
+        if self.preview_3d {
+            let machine = preview::Machine { bed, centred, width: self.profile.line_width() };
+            preview::show_3d(ui, &mut self.preview, &sliced.layers, self.layer, machine, self.travels);
+        } else {
+            preview::show(ui, &sliced.layers, self.layer, bed, centred, self.travels);
+        }
     }
 }
 
@@ -1383,6 +1397,16 @@ mod tests {
         assert!(sliced.layers[50].moves.iter().any(|m| m.extrude));
         assert!(sliced.summary.contains("100 layers"), "{}", sliced.summary);
         h.get_by_label("Travels");
+        // In 3D, every layer up to the chosen one, with a legend of what they print; the layer alone from above is a click away.
+        assert!(app.preview_3d);
+        h.get_by_label("outer wall");
+        h.get_by_label("sparse infill");
+        let kinds = h.state().preview.kinds.len();
+        h.state_mut().layer = 0;
+        h.run();
+        assert!(h.state().preview.kinds.len() < kinds, "the first layer has no sparse infill");
+        press(&mut h, "Layer");
+        assert!(!h.state().preview_3d);
     }
 
     #[test]

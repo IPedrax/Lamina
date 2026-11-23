@@ -12,6 +12,8 @@ pub type Rgba = [u8; 4];
 /// Vertical field of view, degrees, and the nearest the eye sees, mm.
 pub const FOV: f64 = 35.0;
 const NEAR: f64 = 1.0;
+/// Where a cut at the near plane puts the new corner: a hair in front of it, so rounding never puts it behind.
+const CLIP: f64 = NEAR * 1.01;
 
 pub const BACKGROUND: Rgba = [38, 41, 46, 255];
 pub const PLATE: Rgba = [62, 66, 72, 255];
@@ -134,27 +136,8 @@ struct Raster {
 
 /// The scene seen through `camera`, `size` pixels, with the objects in `selected` drawn in the highlight colour.
 pub fn draw(scene: &Scene, selected: &[u32], camera: &Camera, bed: [f64; 2], size: [usize; 2]) -> Picture {
-    let (w, h) = (size[0].max(1), size[1].max(1));
-    let (_, _, _, forward) = camera.frame();
-    // A light from over the viewer's shoulder, so faces turned to the eye are bright and the top reads from the sides.
-    let light = normalize(add(scale(forward, -1.0), [0.25, 0.15, 0.7]));
-    let mut r =
-        Raster { w, h, pix: vec![BACKGROUND; w * h], depth: vec![0.0; w * h], ids: vec![0; w * h], tris: vec![0; w * h], tri: 0, light };
-    let (hx, hy) = (bed[0] / 2.0, bed[1] / 2.0);
-    let c = [[-hx, -hy, 0.0], [hx, -hy, 0.0], [hx, hy, 0.0], [-hx, hy, 0.0]];
-    r.fill(camera, [c[0], c[1], c[2]], PLATE, 0);
-    r.fill(camera, [c[0], c[2], c[3]], PLATE, 0);
-    // A line every 10 mm, a hair above the plate so it wins the depth test against it and loses to anything standing on it.
-    let mut x = -hx;
-    while x <= hx + 1e-9 {
-        r.line(camera, [x, -hy, 0.01], [x, hy, 0.01]);
-        x += 10.0;
-    }
-    let mut y = -hy;
-    while y <= hy + 1e-9 {
-        r.line(camera, [-hx, y, 0.01], [hx, y, 0.01]);
-        y += 10.0;
-    }
+    let mut r = Raster::new(camera, size);
+    r.plate(camera, bed);
     for o in &scene.objects {
         let base = if selected.contains(&o.id) { SELECTED } else { MODEL };
         let world = o.world();
@@ -165,10 +148,102 @@ pub fn draw(scene: &Scene, selected: &[u32], camera: &Camera, bed: [f64; 2], siz
             }
         }
     }
-    Picture { size: [w, h], pixels: r.pix, ids: r.ids, tris: r.tris, depth: r.depth }
+    r.picture()
+}
+
+/// The most segments [`draw_paths`] draws; past it, the rest are left out (a slice of a large plate has a few million).
+pub const MAX_PATHS: usize = 4_000_000;
+
+/// A printed line: its two ends, its colour, and how wide it prints, mm.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Path {
+    pub from: P3,
+    pub to: P3,
+    pub color: Rgba,
+    pub width: f64,
+}
+
+/// The plate and `paths` (a slice's extrusions) seen through `camera`, `size` pixels: each line as wide as it prints and shaded
+/// round, so it reads as a bead of plastic, nearer lines in front. The G-code preview in 3D.
+pub fn draw_paths(paths: &[Path], camera: &Camera, bed: [f64; 2], size: [usize; 2]) -> Picture {
+    let mut r = Raster::new(camera, size);
+    r.plate(camera, bed);
+    for p in paths.iter().take(MAX_PATHS) {
+        r.bead(camera, p);
+    }
+    r.picture()
 }
 
 impl Raster {
+    fn new(camera: &Camera, size: [usize; 2]) -> Raster {
+        let (w, h) = (size[0].clamp(1, 8192), size[1].clamp(1, 8192));
+        let (_, _, _, forward) = camera.frame();
+        // A light from over the viewer's shoulder, so faces turned to the eye are bright and the top reads from the sides.
+        let light = normalize(add(scale(forward, -1.0), [0.25, 0.15, 0.7]));
+        Raster { w, h, pix: vec![BACKGROUND; w * h], depth: vec![0.0; w * h], ids: vec![0; w * h], tris: vec![0; w * h], tri: 0, light }
+    }
+
+    fn picture(self) -> Picture {
+        Picture { size: [self.w, self.h], pixels: self.pix, ids: self.ids, tris: self.tris, depth: self.depth }
+    }
+
+    /// The plate, `bed` mm, centred on the origin, with a line every 10 mm.
+    fn plate(&mut self, camera: &Camera, bed: [f64; 2]) {
+        let (hx, hy) = (bed[0] / 2.0, bed[1] / 2.0);
+        let c = [[-hx, -hy, 0.0], [hx, -hy, 0.0], [hx, hy, 0.0], [-hx, hy, 0.0]];
+        self.fill(camera, [c[0], c[1], c[2]], PLATE, 0);
+        self.fill(camera, [c[0], c[2], c[3]], PLATE, 0);
+        // A hair above the plate so the lines win the depth test against it and lose to anything standing on it.
+        let mut x = -hx;
+        while x <= hx + 1e-9 {
+            self.line(camera, [x, -hy, 0.01], [x, hy, 0.01]);
+            x += 10.0;
+        }
+        let mut y = -hy;
+        while y <= hy + 1e-9 {
+            self.line(camera, [-hx, y, 0.01], [hx, y, 0.01]);
+            y += 10.0;
+        }
+    }
+
+    /// A printed line: a run of discs along it, each as wide as the line looks at its depth, darker towards its edges.
+    fn bead(&mut self, camera: &Camera, path: &Path) {
+        let Some((from, to)) = clip(camera, path.from, path.to) else { return };
+        let (w, h) = (self.w as f64, self.h as f64);
+        let (Some(a), Some(b)) = (camera.project(from, w, h), camera.project(to, w, h)) else { return };
+        if !path.width.is_finite() || path.width <= 0.0 {
+            return;
+        }
+        let f = (h / 2.0) / (FOV.to_radians() / 2.0).tan();
+        let steps = (b[0] - a[0]).abs().max((b[1] - a[1]).abs()).ceil().clamp(1.0, 20_000.0) as usize;
+        for s in 0..=steps {
+            let t = s as f64 / steps as f64;
+            let (x, y, inv) = (a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]), a[2] + t * (b[2] - a[2]));
+            let r = (path.width / 2.0 * f * inv).clamp(0.5, 12.0);
+            let (x0, x1) = ((x - r).floor().max(0.0), (x + r).ceil().min(w - 1.0));
+            let (y0, y1) = ((y - r).floor().max(0.0), (y + r).ceil().min(h - 1.0));
+            if x1 < x0 || y1 < y0 {
+                continue;
+            }
+            for py in y0 as usize..=y1 as usize {
+                for px in x0 as usize..=x1 as usize {
+                    let d2 = ((px as f64 + 0.5 - x).powi(2) + (py as f64 + 0.5 - y).powi(2)) / (r * r);
+                    if d2 > 1.0 {
+                        continue;
+                    }
+                    // The bead is round: its middle stands a little nearer the eye than its edges, and is lit more.
+                    let near = (inv * (1.0 + 0.002 * (1.0 - d2))) as f32;
+                    let k = py * self.w + px;
+                    if near > self.depth[k] {
+                        let shade = 1.0 - 0.45 * d2;
+                        let c = path.color.map(|v| (f64::from(v) * shade).round().clamp(0.0, 255.0) as u8);
+                        (self.depth[k], self.pix[k], self.ids[k]) = (near, [c[0], c[1], c[2], 255], 0);
+                    }
+                }
+            }
+        }
+    }
+
     fn shaded(&mut self, camera: &Camera, t: [P3; 3], base: Rgba, id: u32) {
         let n = cross(sub(t[1], t[0]), sub(t[2], t[0]));
         let len = dot(n, n).sqrt();
@@ -181,7 +256,31 @@ impl Raster {
         self.fill(camera, t, [tint(base[0]), tint(base[1]), tint(base[2]), base[3]], id);
     }
 
+    /// A triangle, cut at the near plane first: a plate seen from close by has corners behind the eye, and the part in front must
+    /// still be drawn.
     fn fill(&mut self, camera: &Camera, t: [P3; 3], color: Rgba, id: u32) {
+        let (eye, _, _, forward) = camera.frame();
+        let z = t.map(|p| dot(sub(p, eye), forward));
+        if z.iter().all(|&d| d >= NEAR) {
+            return self.fill_seen(camera, t, color, id);
+        }
+        // Clip against z >= NEAR (one plane of Sutherland and Hodgman): three corners become up to four, drawn as a fan.
+        let mut kept: Vec<P3> = Vec::with_capacity(4);
+        for i in 0..3 {
+            let (p, q, zp, zq) = (t[i], t[(i + 1) % 3], z[i], z[(i + 1) % 3]);
+            if zp >= NEAR {
+                kept.push(p);
+            }
+            if (zp >= NEAR) != (zq >= NEAR) {
+                kept.push(add(p, scale(sub(q, p), (CLIP - zp) / (zq - zp))));
+            }
+        }
+        for k in 1..kept.len().saturating_sub(1) {
+            self.fill_seen(camera, [kept[0], kept[k], kept[k + 1]], color, id);
+        }
+    }
+
+    fn fill_seen(&mut self, camera: &Camera, t: [P3; 3], color: Rgba, id: u32) {
         let (w, h) = (self.w as f64, self.h as f64);
         let (Some(a), Some(b), Some(c)) = (camera.project(t[0], w, h), camera.project(t[1], w, h), camera.project(t[2], w, h)) else {
             return;
@@ -213,6 +312,7 @@ impl Raster {
     }
 
     fn line(&mut self, camera: &Camera, p: P3, q: P3) {
+        let Some((p, q)) = clip(camera, p, q) else { return };
         let (w, h) = (self.w as f64, self.h as f64);
         let (Some(a), Some(b)) = (camera.project(p, w, h), camera.project(q, w, h)) else { return };
         let steps = (b[0] - a[0]).abs().max((b[1] - a[1]).abs()).ceil().clamp(1.0, 20_000.0) as usize;
@@ -228,6 +328,19 @@ impl Raster {
                 (self.depth[k], self.pix[k]) = (inv, GRID);
             }
         }
+    }
+}
+
+/// The part of the segment `p`, `q` in front of the near plane, if any.
+fn clip(camera: &Camera, p: P3, q: P3) -> Option<(P3, P3)> {
+    let (eye, _, _, forward) = camera.frame();
+    let (zp, zq) = (dot(sub(p, eye), forward), dot(sub(q, eye), forward));
+    let cut = |a: P3, b: P3, za: f64, zb: f64| add(a, scale(sub(b, a), (CLIP - za) / (zb - za)));
+    match (zp >= NEAR, zq >= NEAR) {
+        (true, true) => Some((p, q)),
+        (false, false) => None,
+        (true, false) => Some((p, cut(p, q, zp, zq))),
+        (false, true) => Some((cut(q, p, zq, zp), q)),
     }
 }
 
@@ -325,6 +438,44 @@ pub fn normalize(a: P3) -> P3 {
 mod tests {
     use super::*;
     use crate::Mesh;
+
+    #[test]
+    fn printed_lines_are_drawn_as_wide_as_they_print_and_the_nearer_one_in_front() {
+        let camera = Camera { target: [0.0, 0.0, 0.0], azimuth: -90.0, elevation: 89.0, distance: 100.0 };
+        let red = [220, 40, 40, 255];
+        let blue = [40, 40, 220, 255];
+        // From above: a red line along x at z 0.2, and a blue one crossing it a layer higher.
+        let paths = [
+            Path { from: [-20.0, 0.0, 0.2], to: [20.0, 0.0, 0.2], color: red, width: 0.45 },
+            Path { from: [0.0, -20.0, 0.4], to: [0.0, 20.0, 0.4], color: blue, width: 0.45 },
+        ];
+        let p = draw_paths(&paths, &camera, [220.0, 220.0], [200, 200]);
+        let at = |x: f64, y: f64| {
+            let q = camera.project([x, y, 0.3], 200.0, 200.0).unwrap();
+            p.pixels[q[1] as usize * 200 + q[0] as usize]
+        };
+        let reddish = |c: Rgba| c[0] > 2 * c[2];
+        let bluish = |c: Rgba| c[2] > 2 * c[0];
+        assert!(reddish(at(10.0, 0.0)) && bluish(at(0.0, 10.0)), "{:?} {:?}", at(10.0, 0.0), at(0.0, 10.0));
+        assert!(bluish(at(0.0, 0.0)), "the higher line is in front where they cross");
+        assert_eq!(at(5.0, 5.0), PLATE, "the plate between them");
+        // A line 0.45 mm wide, 100 mm away in a 200 pixel picture: a few pixels across, not one and not many.
+        let q = camera.project([10.0, 0.0, 0.2], 200.0, 200.0).unwrap();
+        let across = (0..200).filter(|&y| reddish(p.pixels[y * 200 + q[0] as usize])).count();
+        assert!((1..=4).contains(&across), "{across}");
+        // Nothing drawn for a line with no width, or behind the eye.
+        let none = draw_paths(&[Path { width: f64::NAN, ..paths[0] }], &camera, [220.0, 220.0], [50, 50]);
+        assert!(none.pixels.iter().all(|c| !reddish(*c)));
+    }
+
+    #[test]
+    fn the_plate_seen_from_close_by_is_drawn_up_to_the_eye() {
+        // Low over the plate, near its middle: most of its corners are behind the eye, yet all the picture's lower half is plate.
+        let camera = Camera { target: [0.0, 0.0, 0.0], azimuth: -90.0, elevation: 10.0, distance: 30.0 };
+        let p = draw(&Scene::default(), &[], &camera, [220.0, 220.0], [100, 100]);
+        let bottom = &p.pixels[90 * 100..91 * 100];
+        assert!(bottom.iter().all(|&c| c == PLATE || c == GRID), "{:?}", &bottom[..4]);
+    }
 
     #[test]
     fn a_thumbnail_shows_the_part_on_a_clear_background_and_is_a_png() {
