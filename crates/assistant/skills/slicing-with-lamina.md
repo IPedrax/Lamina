@@ -28,7 +28,9 @@ presets live in the app's settings panel, not in these commands.
 - Speeds, mm/s: `perimeter_speed` 40 to 60, `infill_speed` 60 to 100, `first_layer_speed` 15 to 25, `travel_speed` 120 to 200.
 - Temperatures are typical ranges and the filament's label wins. PLA: nozzle 190 to 220, bed 50 to 65. PETG: nozzle 230 to 250,
   bed 70 to 85. ABS: nozzle 230 to 260, bed 90 to 110.
-- Cooling and retraction: `fan_speed` 0 to 255 (PLA full, PETG about half, ABS off). `retract_length` about 0.5 to 2 mm on a
+- Cooling and retraction: `fan_speed` 0 to 255 (PLA full, PETG about half, ABS off), off for the first layer and up in steps to
+  full by `fan_full_layer` (3). `min_layer_time` (5 s) slows a small layer so it cools before the next, never below
+  `min_print_speed` (10 mm/s): raise it to 10 to 15 for small, tall parts that droop. `retract_length` about 0.5 to 2 mm on a
   direct-drive extruder and 3 to 6 mm on a Bowden tube, `retract_speed` 25 to 45.
 - The skirt (`skirt_loops`, `skirt_distance`) primes the nozzle. `brim_width` (mm, 0 by default; 3 to 8 for parts with a small
   footprint or sharp corners that may lift, and for ABS) adds loops round the first layer, touching it. `raft_layers` (0 by default,

@@ -180,9 +180,26 @@ pub fn gcode(objects: &[(u32, Mesh)], p: &Profile) -> Result<Output, String> {
     let below = p.raft_layers as usize;
     for k in 0..count {
         g.line(format!(";LAYER:{}", k + below));
+        // The fan: off for the first layer, then up a step a layer to full at `fan_full_layer`.
+        let fan = fan_at(p, k + below);
+        if (fan - g.fan).abs() > 0.5 {
+            g.line(format!("M106 S{fan:.0}"));
+            (g.fan, g.fan_now) = (fan, fan);
+        }
+        // A layer that would print in less than `min_layer_time` is slowed to take that long, so it cools before the next.
+        let strokes_here = plans.iter().filter_map(|(_, l)| l.get(k)).flat_map(|(_, _, s)| s.iter());
+        let time: f64 = strokes_here.map(|s| path_length(s) / s.speed).sum();
+        if time > 0.0 && time < p.min_layer_time {
+            let f = time / p.min_layer_time;
+            for (_, layers) in plans.iter_mut() {
+                if let Some((_, _, strokes)) = layers.get_mut(k) {
+                    for s in strokes.iter_mut() {
+                        s.speed = (s.speed * f).max(p.min_print_speed.min(s.speed));
+                    }
+                }
+            }
+        }
         if k + below == 2 {
-            g.line(format!("M106 S{:.0}", p.fan_speed));
-            (g.fan, g.fan_now) = (p.fan_speed, p.fan_speed);
             if p.nozzle_temp != p.first_layer_nozzle_temp {
                 g.line(format!("M104 S{:.0}", p.nozzle_temp));
             }
@@ -203,6 +220,22 @@ pub fn gcode(objects: &[(u32, Mesh)], p: &Profile) -> Result<Output, String> {
     g.retract();
     g.line(p.expand(&p.end_gcode)?);
     Ok(Output { gcode: g.out, layers: count + below, filament_mm: g.filament, seconds: g.seconds, warnings, features: g.by_feature })
+}
+
+/// The fan on layer `k` (counting the raft): off on the first, then up to full by `fan_full_layer`.
+fn fan_at(p: &Profile, k: usize) -> f64 {
+    if k == 0 {
+        return 0.0;
+    }
+    let full = p.fan_full_layer.max(1) as f64;
+    (p.fan_speed * (k as f64 / full).min(1.0)).round()
+}
+
+/// How long a stroke's path is, mm (a loop back to its start).
+fn path_length(s: &Stroke) -> f64 {
+    let open: f64 = s.pts.windows(2).map(|w| dist(w[0], w[1])).sum();
+    let close = if s.closed { s.pts.first().zip(s.pts.last()).map_or(0.0, |(a, b)| dist(*a, *b)) } else { 0.0 };
+    open + close
 }
 
 /// A raft reaches this far beyond the footprint, mm.
@@ -1003,6 +1036,23 @@ mod tests {
             moves.windows(2).map(|w| ((w[1].0 - w[0].0).abs(), (w[1].1 - w[0].1).abs())).filter(|d| d.0 + d.1 > 5.0).collect::<Vec<_>>();
         assert!(!long.is_empty() && long.iter().all(|d| d.1 < 0.5), "{long:?}");
         assert!(out.features["bridge"] > 0.0 && layer.contains("M106 S128"), "the fan goes back after the bridge");
+    }
+
+    #[test]
+    fn a_small_layer_is_slowed_to_cool_and_the_fan_comes_up_in_steps() {
+        let tiny = vec![(1, Mesh::cuboid([5.0, 5.0, 5.0]))];
+        let speeds = |p: &Profile| -> Vec<f64> {
+            let g = gcode(&tiny, p).unwrap().gcode;
+            let layer = g.split(";LAYER:12\n").nth(1).unwrap().split(";LAYER:").next().unwrap().to_string();
+            layer.lines().filter(|l| l.starts_with("G1 X")).filter_map(|l| l.rsplit(" F").next()?.parse::<f64>().ok()).collect()
+        };
+        let quick = speeds(&Profile { min_layer_time: 0.0, ..Profile::default() });
+        let slow = speeds(&Profile { min_layer_time: 15.0, ..Profile::default() });
+        assert!(quick.contains(&2700.0), "walls at 45 mm/s without a minimum: {quick:?}");
+        assert!(slow.iter().all(|&f| (600.0..2700.0).contains(&f)), "slowed, never under 10 mm/s: {slow:?}");
+        let g = gcode(&tiny, &Profile { fan_full_layer: 4, fan_speed: 200.0, ..Profile::default() }).unwrap().gcode;
+        let fans: Vec<&str> = g.lines().filter(|l| l.starts_with("M106")).collect();
+        assert_eq!(fans, ["M106 S50", "M106 S100", "M106 S150", "M106 S200"], "a quarter more each layer from the second");
     }
 
     #[test]

@@ -66,8 +66,12 @@ pub struct Profile {
     pub retract_speed: f64,
     /// A travel shorter than this is made without retracting, mm.
     pub retract_min_travel: f64,
-    /// The part-cooling fan, 0 to 255, from the third layer on.
+    /// The part-cooling fan, 0 to 255: off for the first layer, then up in equal steps to this by `fan_full_layer`.
     pub fan_speed: f64,
+    pub fan_full_layer: u32,
+    /// A layer printed faster than this, seconds, is slowed to take this long, but no move under `min_print_speed` (mm/s).
+    pub min_layer_time: f64,
+    pub min_print_speed: f64,
     /// Where each wall loop starts, which leaves a small mark.
     pub seam: Seam,
     // Bridges: solid infill over air
@@ -136,6 +140,9 @@ impl Default for Profile {
             retract_speed: 35.0,
             retract_min_travel: 1.5,
             fan_speed: 255.0,
+            fan_full_layer: 3,
+            min_layer_time: 5.0,
+            min_print_speed: 10.0,
             seam: Seam::Aligned,
             bridge_speed: 25.0,
             bridge_flow: 1.0,
@@ -203,6 +210,9 @@ impl Profile {
         within("retract_speed", self.retract_speed, 1.0, 200.0)?;
         within("retract_min_travel", self.retract_min_travel, 0.0, 100.0)?;
         within("fan_speed", self.fan_speed, 0.0, 255.0)?;
+        within("fan_full_layer", f64::from(self.fan_full_layer), 1.0, 100.0)?;
+        within("min_layer_time", self.min_layer_time, 0.0, 120.0)?;
+        within("min_print_speed", self.min_print_speed, 1.0, 100.0)?;
         within("bridge_speed", self.bridge_speed, 1.0, 1000.0)?;
         within("bridge_flow", self.bridge_flow, 0.5, 1.5)?;
         within("bridge_fan", self.bridge_fan, 0.0, 255.0)?;

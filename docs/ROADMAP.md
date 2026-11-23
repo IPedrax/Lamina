@@ -117,6 +117,9 @@ Priorities:
 - **4.6 Bridging.** The solid infill not over the layer below (without slivers) is a bridge: lines at the angle, in steps of 15
   degrees, whose ends rest on the layer below the most (a point a line's width past each end is tested), else the shortest; printed
   at `bridge_speed` with `bridge_flow` and `bridge_fan`, the fan set back after. A golden span between two pillars.
+- **4.8 Cooling.** `min_layer_time` (5 s): a layer whose moves would take less is slowed in proportion, no move below
+  `min_print_speed`. The fan is off on the first layer and comes up in equal steps to `fan_speed` by `fan_full_layer`; bridges
+  have their own fan (4.6).
 - **4.13 Feature types in the G-code.** Every stroke has a kind, written as `;TYPE:outer-wall` (inner-wall, solid-infill,
   sparse-infill, skirt, brim, support, support-interface, raft) before it, again after each layer change. `slice_check` returns
   the filament of each kind (`features`), so the assistant can count them.
@@ -180,9 +183,6 @@ the AI's skills what is not possible.
 a quarter line, is printed as single lines along its centre. Find the centreline with a straight skeleton or a Voronoi diagram:
 `boostvoronoi` is BSL-1.0 and permissive, BIMCraft has a straight skeleton (`skeleton.rs`). Vary the flow by width. Full
 variable-width walls (as in the public Arachne paper) are P2.
-
-**4.8 Cooling (P1).** How: a `min_layer_time` field. When a layer would print faster than that, slow its moves to meet it. Add a fan
-ramp over the first layers and full fan on bridges.
 
 **4.9 Travel moves (P1).** How:
 - Combing: route a travel inside the region instead of across a gap, so it needs no retraction.
