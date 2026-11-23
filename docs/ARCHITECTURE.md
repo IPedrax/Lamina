@@ -176,9 +176,9 @@ Measured on random pairs with round-number offsets (`success_matrix`, 200 cases 
 
 Upright, every cell is 100% but cylinder with sphere union (95%). The weak spot left is tilted cylinders: crossing each other (50%) or
 joined to a box (71%), because a tilted cap cannot be merged into one flat polygon. Those are refused with advice; nothing broken is
-returned. One risk remains: if csgrs ever recursed without end on some input, the stack overflow would abort the app rather than return
-an error. It has not happened in thousands of measured booleans since merging was limited to exactly flat faces, but only running
-booleans in a child process would make it impossible.
+returned. If csgrs ever recursed without end on some input, the stack overflow would abort the process: so the desktop and the CLI run
+each boolean in a copy of themselves (`child.rs`, `--boolean-child`, ported from BIMCraft's DWG reader), and a child that aborts or
+runs past two minutes is an error the app carries on from. Tests, and apps that do not ask, run booleans in the process.
 
 csgrs 0.20.1 also needs `core2`, every release of which is yanked, so `vendor/core2` stands in for it over `std::io` (the root
 `Cargo.toml` patches it in); remove it when csgrs stops asking.

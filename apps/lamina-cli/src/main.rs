@@ -102,6 +102,14 @@ fn main_with(args: &[String], out: &mut impl Write) -> Result<(), String> {
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // Started as the child that runs one boolean: do that and nothing else.
+    if let Some(code) = lamina_csg::child_main(&args) {
+        return code;
+    }
+    // Every boolean runs in a copy of this program, so a crash in the engine is an error and not the end of the run.
+    if let Ok(exe) = std::env::current_exe() {
+        lamina_csg::run_in_child(exe);
+    }
     match main_with(&args, &mut std::io::stdout().lock()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {

@@ -6,6 +6,7 @@
 //! splits triangles at those vertices until every edge is shared by two faces.
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+mod child;
 mod commands;
 
 use std::collections::{HashMap, HashSet};
@@ -15,6 +16,7 @@ use lamina_core::Mesh;
 use lamina_core::repair::{self, SNAP};
 use nalgebra::{Point3, Vector3};
 
+pub use child::{CHILD_ARG, CHILD_TIME, child_main, in_child, isolated, run_in_child};
 pub use commands::COMMANDS;
 
 /// The most triangles that may go into one operation. BSP trees grow faster than the input, so this keeps one command to seconds.

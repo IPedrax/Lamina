@@ -27,6 +27,10 @@ Priorities:
 - **8.1 Continuous integration.** `.github/workflows/ci.yml` (adapted from BIMCraft's) runs `cargo fmt --check`, clippy with
   `-D warnings` and `cargo test --workspace` on Linux, Windows and macOS for every push and pull request, with the build cache saved
   from `main`. The ignored tests stay manual. Not yet seen running: pushing was refused overnight (see `QUESTIONS.md`).
+- **0.4 Booleans in a child process.** `crates/csg/src/child.rs`, ported from BIMCraft's `crates/dwg`: the desktop and the CLI
+  run each boolean in a copy of themselves started with `--boolean-child`, the meshes on its standard input (lossless arrays) and the
+  result on its standard output, stopped after two minutes. A child that aborts or hangs is an error and the app carries on.
+  Tested with the real `lamina-cli` as the child.
 - **1.1 Project files.** `crates/core/src/project.rs`: `.lamina` JSON with `format: 1`, each object's id, name, transform and local
   mesh (base64 little-endian arrays), and the print settings and preset labels (`Session::print`, which the slicer lays under what a
   slice is given). `save`, `open` and `new` commands; `open` and `new` start a new history, are in `bridge::REPLACES` (refused to a
@@ -91,11 +95,6 @@ After those, the P1 items below, roughly top to bottom within each area.
 **0.2 Real test prints (P0).** How: export a 20 mm calibration cube, a 0.4 mm single-wall box and a bridge test with `lamina-cli slice`.
 Print each on one Marlin and one Klipper printer. Measure with calipers. Write the results, with photos, in `docs/PRINT-TESTS.md`. Fix
 what is wrong before adding features.
-
-**0.4 Booleans in a child process (P1).** csgrs recurses, and if it ever recursed without end the stack overflow would abort the whole app
-instead of returning an error. How: run each boolean in a child process. Start the app's own binary with a hidden `--boolean-child`
-flag, pass the two meshes on stdin as binary STL, and read the result from stdout, with a timeout. BIMCraft's `crates/dwg` does exactly
-this (`in_child`, `child_main`) for its DWG reader. Test: a child that is killed returns an error, and the app carries on.
 
 **0.5 Tilted cylinders in booleans (P1).** These are the last weak case: about 50% of tilted cylinder pairs are refused. How: a tilted
 cap is only flat to f32 rounding, because the world mesh is stored as f32 after the transform. Give `lamina_csg::boolean` each

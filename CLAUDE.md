@@ -52,7 +52,8 @@ CI (`.github/workflows/ci.yml`) runs the same three on Linux, Windows and macOS 
   is read before it is committed.
 - `crates/csg`: `boolean(op, a, b)`, the only code that knows csgrs, and the `union`, `difference` and `intersect` commands. A result is
   returned only if `sound` accepts it (closed, possible volume and bounds): refuse, never return a broken mesh. The crack repair it
-  runs is `lamina_core::repair::close_with`. `vendor/core2` is a
+  runs is `lamina_core::repair::close_with`. `child.rs`: the apps run each boolean in a copy of themselves (`--boolean-child`), so a
+  crash in csgrs is an error, not the end of the app; every app's `main` calls `child_main` first. `vendor/core2` is a
   stand-in for a yanked crate csgrs asks for (see the root `Cargo.toml`).
 - `crates/assistant`: the AI chat, ported from BIMCraft. `skills/*.md` are the notes the model reads with `read_skill`
   (modelling, designing for FDM, slicer settings, working from a picture), written for Lamina's own commands: a test checks that every

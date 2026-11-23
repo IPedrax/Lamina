@@ -5,7 +5,7 @@ use lamina_core::{Command, Files, Mesh, Session};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::{Op, boolean};
+use crate::{Op, isolated};
 
 pub static COMMANDS: &[Command] = &[
     Command {
@@ -84,7 +84,7 @@ fn fold(s: &mut Session, op: Op, ids: &[u32], name: Option<String>) -> Result<Va
     let name = name.unwrap_or_else(|| s.scene.get(ids[0]).map(|o| o.name.clone()).unwrap_or_default());
     let mut result = worlds[0].clone();
     for other in &worlds[1..] {
-        result = boolean(op, &result, other)?;
+        result = isolated(op, &result, other)?;
     }
     if result.triangles.is_empty() {
         return Err(match op {

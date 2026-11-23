@@ -9,6 +9,15 @@ use std::sync::Arc;
 use lamina_desktop::{App, session};
 
 fn main() -> ExitCode {
+    // Started as the child that runs one boolean: do that and nothing else, with no window.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(code) = lamina_csg::child_main(&args) {
+        return code;
+    }
+    // Every boolean runs in a copy of this program, so a crash in the engine is an error in the window and not the end of it.
+    if let Ok(exe) = std::env::current_exe() {
+        lamina_csg::run_in_child(exe);
+    }
     // The assistant's only way out: HTTPS to the three provider hosts, and only once the user sends a message with a key.
     let net = Arc::new(lamina_assistant::net::Ureq::new());
     // The settings (print settings, presets, a remembered key) live in the user's settings folder, or where LAMINA_SETTINGS says.
