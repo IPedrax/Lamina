@@ -30,6 +30,10 @@ pub struct Profile {
     /// Whether the machine's zero is the middle of the plate (delta printers) rather than its front left corner.
     pub origin_center: bool,
     pub max_height: f64,
+    /// The printer's acceleration, mm/s2, and its junction deviation, mm (Marlin's; for Klipper's square corner velocity `scv`,
+    /// `scv^2 x 0.414 / acceleration`): what the time estimate plans moves with.
+    pub max_acceleration: f64,
+    pub junction_deviation: f64,
     pub nozzle: f64,
     pub filament_diameter: f64,
     /// G-code before and after the print. `[name]` is replaced by a setting (see `PLACEHOLDERS`); any other `[..]` is an error.
@@ -119,6 +123,8 @@ impl Default for Profile {
             bed: [220.0, 220.0],
             origin_center: false,
             max_height: 250.0,
+            max_acceleration: 1500.0,
+            junction_deviation: 0.013,
             nozzle: 0.4,
             filament_diameter: 1.75,
             start_gcode: "M140 S[first_layer_bed_temp]\nM104 S[first_layer_nozzle_temp]\nG28\nM190 S[first_layer_bed_temp]\nM109 S[first_layer_nozzle_temp]".into(),
@@ -187,6 +193,8 @@ impl Profile {
         within("bed", self.bed[0].min(self.bed[1]), 10.0, 2000.0)?;
         within("bed", self.bed[0].max(self.bed[1]), 10.0, 2000.0)?;
         within("max_height", self.max_height, 1.0, 2000.0)?;
+        within("max_acceleration", self.max_acceleration, 10.0, 100_000.0)?;
+        within("junction_deviation", self.junction_deviation, 0.0, 1.0)?;
         within("nozzle", self.nozzle, 0.1, 2.0)?;
         within("filament_diameter", self.filament_diameter, 1.0, 3.5)?;
         within("layer_height", self.layer_height, 0.02, self.nozzle * 0.8)?;

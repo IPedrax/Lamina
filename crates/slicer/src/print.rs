@@ -26,7 +26,8 @@ pub struct Output {
     pub layers: usize,
     /// Filament pushed, mm.
     pub filament_mm: f64,
-    /// A lower bound: distance over speed, with no acceleration.
+    /// As the printer's planner would take it: speeding up and slowing at `max_acceleration`, corners as the junction deviation
+    /// allows (`time.rs`).
     pub seconds: f64,
     pub warnings: Vec<String>,
     /// Filament pushed for each kind of move, mm, by its `;TYPE:` name.
@@ -136,7 +137,7 @@ pub fn gcode(objects: &[(u32, Mesh)], p: &Profile) -> Result<Output, String> {
         z: 0.0,
         retracted: true,
         filament: 0.0,
-        seconds: 0.0,
+        planner: crate::time::Planner::new(p.max_acceleration, p.junction_deviation),
         seams: Vec::new(),
         below: Vec::new(),
         feature: None,
@@ -224,7 +225,14 @@ pub fn gcode(objects: &[(u32, Mesh)], p: &Profile) -> Result<Output, String> {
     }
     g.retract();
     g.line(p.expand(&p.end_gcode)?);
-    Ok(Output { gcode: g.out, layers: count + below, filament_mm: g.filament, seconds: g.seconds, warnings, features: g.by_feature })
+    Ok(Output {
+        gcode: g.out,
+        layers: count + below,
+        filament_mm: g.filament,
+        seconds: g.planner.seconds(),
+        warnings,
+        features: g.by_feature,
+    })
 }
 
 /// Whether the straight move from `a` to `b` stays inside `r` (on its boundary counts).
@@ -618,7 +626,7 @@ struct Writer<'a> {
     z: f64,
     retracted: bool,
     filament: f64,
-    seconds: f64,
+    planner: crate::time::Planner,
     /// Where this layer's loops started, and the layer below's, for aligned seams.
     seams: Vec<P2>,
     below: Vec<P2>,
@@ -671,7 +679,7 @@ impl Writer<'_> {
                         let to = [at[0] + (q[0] - at[0]) * t, at[1] + (q[1] - at[1]) * t];
                         let (m, e) = (self.machine(to), len * (d * t) / self.p.wipe_distance);
                         self.line(format!("G1 X{:.3} Y{:.3} E-{e:.5} F{:.0}", m[0], m[1], self.p.travel_speed * 60.0));
-                        self.seconds += d * t / self.p.travel_speed;
+                        self.planner.xy(at, to, self.p.travel_speed);
                         (at, left) = (to, left - d * t);
                     }
                     // What the stroke was too short to wipe off goes back in place.
@@ -683,11 +691,11 @@ impl Writer<'_> {
                 }
                 _ => self.line(format!("G1 E-{len:.3} F{:.0}", speed * 60.0)),
             }
-            self.seconds += len / speed;
+            self.planner.other(len, speed);
             self.retracted = true;
             if self.p.z_hop > 0.0 {
                 self.line(format!("G1 Z{:.3} F{:.0}", self.z + self.p.z_hop, Z_SPEED * 60.0));
-                self.seconds += self.p.z_hop / Z_SPEED;
+                self.planner.other(self.p.z_hop, Z_SPEED);
                 self.hopped = true;
             }
         }
@@ -696,13 +704,13 @@ impl Writer<'_> {
     fn unretract(&mut self) {
         if self.hopped {
             self.line(format!("G1 Z{:.3} F{:.0}", self.z, Z_SPEED * 60.0));
-            self.seconds += self.p.z_hop / Z_SPEED;
+            self.planner.other(self.p.z_hop, Z_SPEED);
             self.hopped = false;
         }
         if self.retracted {
             let (len, speed) = (self.p.retract_length, self.p.retract_speed);
             self.line(format!("G1 E{len:.3} F{:.0}", speed * 60.0));
-            self.seconds += len / speed;
+            self.planner.other(len, speed);
             self.retracted = false;
         }
     }
@@ -713,7 +721,7 @@ impl Writer<'_> {
             self.feature = None;
             self.retract();
             self.line(format!("G1 Z{z:.3} F{:.0}", Z_SPEED * 60.0));
-            self.seconds += (z - self.z).abs() / Z_SPEED;
+            self.planner.other((z - self.z).abs(), Z_SPEED);
             self.z = z;
             self.hopped = false;
         }
@@ -729,7 +737,9 @@ impl Writer<'_> {
         self.wipe.clear();
         let m = self.machine(to);
         self.line(format!("G0 X{:.3} Y{:.3} F{:.0}", m[0], m[1], self.p.travel_speed * 60.0));
-        self.seconds += self.at.map_or(0.0, |from| dist(from, to)) / self.p.travel_speed;
+        if let Some(from) = self.at {
+            self.planner.xy(from, to, self.p.travel_speed);
+        }
         self.at = Some(to);
     }
 
@@ -745,7 +755,9 @@ impl Writer<'_> {
         if let Some(f) = self.feature {
             *self.by_feature.entry(f.name()).or_default() += e;
         }
-        self.seconds += len / speed;
+        if let Some(from) = self.at {
+            self.planner.xy(from, to, speed);
+        }
         self.at = Some(to);
     }
 
@@ -1142,6 +1154,28 @@ mod tests {
         assert!(wiped.lines().any(|l| l.starts_with("G1 X") && l.contains(" E-")), "a wiping retraction moves");
         let e = |g: &str| -> f64 { g.lines().filter_map(|l| l.split(" E").nth(1)?.split(' ').next()?.parse::<f64>().ok()).sum() };
         assert!((e(&wiped) - e(&gcode(&two, &Profile::default()).unwrap().gcode)).abs() < 0.5, "a wipe takes back what a retraction does");
+    }
+
+    #[test]
+    fn the_time_counts_acceleration_so_a_slower_machine_takes_longer() {
+        let p = Profile::default();
+        let quick = gcode(&cube(20.0), &Profile { max_acceleration: 5000.0, ..p.clone() }).unwrap().seconds;
+        let slow = gcode(&cube(20.0), &Profile { max_acceleration: 500.0, ..p.clone() }).unwrap().seconds;
+        assert!(slow > quick * 1.1, "{slow} {quick}");
+        // Never less than distance over speed would say: the plain sum of each move's time at its own speed.
+        let g = gcode(&cube(20.0), &p).unwrap();
+        let mut at: Option<(f64, f64)> = None;
+        let mut bound = 0.0;
+        for l in g.gcode.lines().filter(|l| l.starts_with("G1 X") || l.starts_with("G0 X")) {
+            let w: Vec<&str> = l.split(' ').collect();
+            let (x, y): (f64, f64) = (w[1][1..].parse().unwrap(), w[2][1..].parse().unwrap());
+            let f: f64 = w.last().unwrap()[1..].parse::<f64>().unwrap() / 60.0;
+            if let Some((px, py)) = at {
+                bound += (x - px).hypot(y - py) / f;
+            }
+            at = Some((x, y));
+        }
+        assert!(g.seconds > bound, "{} against at least {bound}", g.seconds);
     }
 
     #[test]

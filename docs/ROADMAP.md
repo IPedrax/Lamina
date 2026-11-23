@@ -124,6 +124,10 @@ Priorities:
   no retraction, however long (routing round holes is for later). `z_hop` lifts on each retraction and lowers before the next
   extrusion; `wipe_distance` spreads the retraction over a move along the stroke just printed. Retractions in the golden files
   fell by about half again (a 20 mm cube now retracts once a layer).
+- **4.10 Better time estimates.** `crates/slicer/src/time.rs`: each move a trapezoid (or a triangle) at `max_acceleration`, corners
+  as the junction deviation allows (Marlin's documented formula; Klipper's square corner velocity converts), a backward pass so
+  every move can stop and a forward pass so every speed is reachable. The Klipper presets set 3000 mm/s2. Not yet compared with a
+  real print (0.2).
 - **4.13 Feature types in the G-code.** Every stroke has a kind, written as `;TYPE:outer-wall` (inner-wall, solid-infill,
   sparse-infill, skirt, brim, support, support-interface, raft) before it, again after each layer change. `slice_check` returns
   the filament of each kind (`features`), so the assistant can count them.
@@ -187,9 +191,6 @@ the AI's skills what is not possible.
 a quarter line, is printed as single lines along its centre. Find the centreline with a straight skeleton or a Voronoi diagram:
 `boostvoronoi` is BSL-1.0 and permissive, BIMCraft has a straight skeleton (`skeleton.rs`). Vary the flow by width. Full
 variable-width walls (as in the public Arachne paper) are P2.
-
-**4.10 Better time estimates (P1).** How: printer fields for maximum acceleration and junction deviation, Marlin's or Klipper's.
-Estimate each move with a trapezoid speed profile instead of distance over speed. Compare with the printer's real time from 0.2.
 
 **4.11 Vase mode (P1).** How: one wall, no top, and z raised a little along each point of the loop, so it never stops. It is cheap
 to add and popular.
@@ -305,7 +306,7 @@ project files and can return after 1.1.
 ## Known limits today
 
 - Walls are constant width, so thin features vanish instead of getting gap fill. Supports are straight columns, not trees.
-- The skirt is an outline of the first layer, not a hull. Time is distance over speed, without acceleration.
+- The skirt is an outline of the first layer, not a hull. The time estimate has not been checked against a real print.
 - A mesh whose holes are too big to fill without guessing stays open, and prints with parts missing, with a warning. STL, 3MF, OBJ and glTF in; STL and 3MF out.
 - Booleans refuse about 1 in 100 random pairs (the rest of a sphere-with-sphere union mostly), and a boolean of a boolean's result
   works on its world mesh, so its tilted faces are flat only to f32.

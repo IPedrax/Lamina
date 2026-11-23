@@ -449,7 +449,7 @@ impl App {
                 let layers = preview::parse(&out.gcode);
                 let minutes = (out.seconds / 60.0).round() as u64;
                 let summary = format!(
-                    "{} layers, {:.2} m of filament, at least {}h {:02}m",
+                    "{} layers, {:.2} m of filament, about {}h {:02}m",
                     out.layers,
                     out.filament_mm / 1000.0,
                     minutes / 60,
