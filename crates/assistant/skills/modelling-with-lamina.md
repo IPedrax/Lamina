@@ -35,6 +35,8 @@ the result stands, as one undo step. The result keeps the first object's name un
 - Booleans are reliable on boxes, cylinders and spheres, upright or turned. A boolean that cannot give a clean solid says so and
   changes nothing: move or resize a shape by a hundredth of a millimetre and try again. Do turns before booleans where you can: the
   first boolean on an object sees its faces exactly flat, a later one only to the precision stored.
+- `cut {id, z}` splits an object at a height into two closed parts, the upper one turned onto its flat cut face beside the lower:
+  for a part too tall for the printer, or one that prints better in two halves.
 - Booleans take longer on shapes with many segments. Use 24 to 32 segments for a cutting tool.
 - Still missing: fillets and chamfers (a rounded box is the one rounded shape), text, threads and sweeps. Say so plainly, and offer the closest thing that works.
 

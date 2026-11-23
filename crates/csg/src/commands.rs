@@ -26,6 +26,15 @@ pub static COMMANDS: &[Command] = &[
         files: Files::None,
     },
     Command {
+        id: "cut",
+        params: "{id, z, keep?:\"both\"|\"lower\"|\"upper\" (default both), name?} cuts an object with the level plane at height `z` (mm, between \
+                 its bottom and top). The lower part stays where it is; the upper part is turned over onto its flat cut face and set beside it, \
+                 ready to print. Returns {ids}: the lower part's id first",
+        run: cut,
+        undoable: true,
+        files: Files::None,
+    },
+    Command {
         id: "intersect",
         params: "{ids:[a, b, ...], name?} keeps only the volume all the objects share, and errors when there is none. Returns {id, triangles, watertight, size}",
         run: intersect,
@@ -67,6 +76,63 @@ fn difference(s: &mut Session, p: &Value) -> Result<Value, String> {
     let mut all = vec![a.id];
     all.extend(&a.minus);
     fold(s, Op::Difference, &all, a.name)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Plane {
+    id: u32,
+    z: f64,
+    keep: Option<String>,
+    name: Option<String>,
+}
+
+fn cut(s: &mut Session, p: &Value) -> Result<Value, String> {
+    let a = Plane::deserialize(p).map_err(|e| format!("bad parameters: {e}"))?;
+    let (lower, upper) = match a.keep.as_deref().unwrap_or("both") {
+        "both" => (true, true),
+        "lower" => (true, false),
+        "upper" => (false, true),
+        other => return Err(format!("`keep` is both, lower or upper, not {other}")),
+    };
+    let o = s.scene.get(a.id)?.clone();
+    let (lo, hi) = o.bounds().ok_or("the object is empty")?;
+    if !a.z.is_finite() || a.z <= lo[2] + 1e-3 || a.z >= hi[2] - 1e-3 {
+        return Err(format!("`z` must be between the object's bottom ({:.3}) and top ({:.3}) mm", lo[2], hi[2]));
+    }
+    // A box larger than the object above the plane: what it shares with the object is the upper part, what it cuts away the lower.
+    let margin = 10.0;
+    let size = [hi[0] - lo[0] + 2.0 * margin, hi[1] - lo[1] + 2.0 * margin, hi[2] - a.z + margin];
+    let above = Mesh::cuboid(size).transformed(&Transform::translate([(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, a.z]));
+    let placed = (&*o.mesh, o.xf);
+    let name = a.name.unwrap_or_else(|| o.name.clone());
+    let mut parts: Vec<(String, Mesh)> = Vec::new();
+    if lower {
+        parts.push((format!("{name} lower"), isolated(Op::Difference, placed, (&above, Transform::IDENTITY))?));
+    }
+    if upper {
+        let top = isolated(Op::Intersect, placed, (&above, Transform::IDENTITY))?;
+        // Turned over about x so the cut face, which was its bottom, is on the plate, and set beside the object.
+        let (tlo, thi) = top.bounds().ok_or("the upper part is empty")?;
+        let c = [(tlo[0] + thi[0]) / 2.0, (tlo[1] + thi[1]) / 2.0, (tlo[2] + thi[2]) / 2.0];
+        let side = if lower { hi[0] - lo[0] + 5.0 } else { 0.0 };
+        let over = Transform::translate(c.map(|v| -v)).then(&Transform::rotate(0, 180.0)).then(&Transform::translate([
+            c[0] + side,
+            c[1],
+            (thi[2] - tlo[2]) / 2.0,
+        ]));
+        parts.push((format!("{name} upper"), top.transformed(&over)));
+    }
+    if parts.iter().any(|(_, m)| m.triangles.is_empty()) {
+        return Err("the cut left a part with nothing in it".into());
+    }
+    let scene = s.scene_mut();
+    scene.objects.retain(|x| x.id != a.id);
+    let mut ids = Vec::new();
+    for (n, m) in parts {
+        ids.push(scene.add_placed(&n, m)?);
+    }
+    Ok(json!({"ids": ids}))
 }
 
 /// The first of `ids` combined with each of the others in turn, the operands replaced by the result.
@@ -112,6 +178,31 @@ fn fold(s: &mut Session, op: Op, ids: &[u32], name: Option<String>) -> Result<Va
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_cut_makes_two_closed_parts_whose_volumes_add_up_the_upper_one_turned_onto_its_cut() {
+        let mut s = Session::new();
+        s.register(COMMANDS);
+        s.execute("add_primitive", &json!({"kind": "cylinder", "radius": 10, "height": 20, "segments": 32})).unwrap();
+        let whole = s.scene.get(1).unwrap().world().volume();
+        let r = s.execute("cut", &json!({"id": 1, "z": 8})).unwrap();
+        let ids: Vec<u32> = r["ids"].as_array().unwrap().iter().map(|v| v.as_u64().unwrap() as u32).collect();
+        assert_eq!(ids.len(), 2);
+        let (lower, upper) = (s.scene.get(ids[0]).unwrap(), s.scene.get(ids[1]).unwrap());
+        assert!(lower.world().is_watertight() && upper.world().is_watertight());
+        let (vl, vu) = (lower.world().volume(), upper.world().volume());
+        assert!((vl + vu - whole).abs() < 1e-3 * whole && (vl / whole - 0.4).abs() < 0.01, "{vl} {vu} {whole}");
+        let (llo, lhi) = lower.bounds().unwrap();
+        let (ulo, uhi) = upper.bounds().unwrap();
+        assert!((lhi[2] - 8.0).abs() < 1e-3 && (uhi[2] - 12.0).abs() < 1e-3 && ulo[2].abs() < 1e-6, "{lhi:?} {ulo:?} {uhi:?}");
+        assert!(ulo[0] > lhi[0], "the upper part stands beside the lower one: {llo:?} {ulo:?}");
+        s.execute("undo", &json!({})).unwrap();
+        assert_eq!(s.scene.objects.len(), 1, "one undo puts the whole back");
+        assert_eq!(s.execute("cut", &json!({"id": 1, "z": 5, "keep": "lower"})).unwrap()["ids"].as_array().unwrap().len(), 1);
+        for bad in [json!({"id": 1, "z": 30}), json!({"id": 9, "z": 3}), json!({"id": 2, "z": 3, "keep": "middle"})] {
+            assert!(s.execute("cut", &bad).is_err(), "{bad}");
+        }
+    }
 
     fn session() -> Session {
         let mut s = Session::new();

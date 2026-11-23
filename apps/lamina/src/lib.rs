@@ -92,6 +92,8 @@ pub struct App {
     pub status: String,
     pub failed: bool,
     nudge: [f64; 3],
+    /// The height the Cut button cuts the picked object at.
+    cut_z: f64,
     axis: usize,
     degrees: f64,
     factor: f64,
@@ -140,6 +142,7 @@ impl App {
             status: String::new(),
             failed: false,
             nudge: [10.0, 0.0, 0.0],
+            cut_z: 10.0,
             axis: 2,
             degrees: 90.0,
             factor: 1.5,
@@ -704,6 +707,17 @@ impl App {
             ui.add(egui::DragValue::new(&mut self.factor).speed(0.01).range(0.01..=100.0).prefix("x "));
             if ui.button("Scale").clicked() {
                 self.run("scale", json!({ "id": id, "factor": self.factor }));
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.add(egui::DragValue::new(&mut self.cut_z).speed(0.2).prefix("z ").suffix(" mm"));
+            if ui
+                .button("Cut")
+                .on_hover_text("Cut at this height: the top part is turned onto its cut face beside the bottom one")
+                .clicked()
+                && let Some(v) = self.run("cut", json!({ "id": id, "z": self.cut_z }))
+            {
+                self.selected = v["ids"].as_array().into_iter().flatten().filter_map(Value::as_u64).map(|i| i as u32).collect();
             }
         });
         ui.horizontal(|ui| {
