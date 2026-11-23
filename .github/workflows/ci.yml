@@ -58,5 +58,6 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+      # Every crate's tests run even after one fails, so a run shows all that is wrong on a system, not only its first crate.
       - name: Test
-        run: cargo test --workspace
+        run: cargo test --workspace --no-fail-fast
