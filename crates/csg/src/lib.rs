@@ -12,6 +12,7 @@ use std::collections::{HashMap, HashSet};
 
 use csgrs::mesh::{bsp::Node, polygon::Polygon, vertex::Vertex};
 use lamina_core::Mesh;
+use lamina_core::repair::{self, SNAP};
 use nalgebra::{Point3, Vector3};
 
 pub use commands::COMMANDS;
@@ -191,7 +192,7 @@ fn to_csg(m: &Mesh) -> Vec<Polygon<()>> {
     for tris in groups.values() {
         let Some(n) = normals[tris[0]] else { continue };
         if tris.len() > 1
-            && let Some(ring) = outline(m, tris).filter(|r| exactly_flat(m, r) && flat_and_convex(m, r))
+            && let Some(ring) = outline(m, tris).filter(|r| exactly_flat(m, r) && repair::flat_and_convex(m, r, 5.0 * WELD))
         {
             out.push(Polygon::new(ring.iter().map(|&i| Vertex::new(point(i), n)).collect(), None));
             continue;
@@ -289,311 +290,10 @@ fn from_csg(polys: &[Polygon<()>]) -> Result<Mesh, String> {
     close(Mesh::new(weld.at.iter().map(|p| p.map(|c| c as f32)).collect(), triangles)?)
 }
 
-/// Repairs what the BSP leaves: triangles are split at the vertices that lie on their edges (T-junctions), skins of no thickness and thin
-/// fins are dropped, slivers along an open edge are snapped shut, and holes are filled where a fan is surely the lost face. Each pass can expose the next, so it
-/// repeats until the mesh is closed or a pass changes nothing.
+/// Repairs what the BSP leaves (`lamina_core::repair::close_with`): T-junctions split, skins and fins dropped, slivers snapped,
+/// small holes filled, in passes until the mesh is closed or a pass changes nothing.
 fn close(m: Mesh) -> Result<Mesh, String> {
-    close_with(m, 4, 5.0 * WELD)
-}
-
-fn close_with(mut m: Mesh, passes: usize, tol: f64) -> Result<Mesh, String> {
-    for _ in 0..passes {
-        if m.is_watertight() {
-            break;
-        }
-        let before = (m.triangles.len(), m.vertices.len());
-        split_t_junctions(&mut m, tol);
-        drop_skins(&mut m);
-        drop_fins(&mut m);
-        if !m.is_watertight() {
-            snap_open(&mut m);
-            drop_skins(&mut m);
-        }
-        fill_holes(&mut m);
-        if (m.triangles.len(), m.vertices.len()) == before {
-            break;
-        }
-    }
-    Mesh::new(m.vertices, m.triangles)
-}
-
-fn undirected(m: &Mesh) -> HashMap<(u32, u32), u32> {
-    let mut uses: HashMap<(u32, u32), u32> = HashMap::new();
-    for t in &m.triangles {
-        for k in 0..3 {
-            let (a, b) = (t[k], t[(k + 1) % 3]);
-            *uses.entry((a.min(b), a.max(b))).or_default() += 1;
-        }
-    }
-    uses
-}
-
-fn split_t_junctions(m: &mut Mesh, tol: f64) {
-    let mut open: Vec<(u32, u32)> = undirected(m).into_iter().filter(|&(_, n)| n == 1).map(|(e, _)| e).collect();
-    if open.is_empty() {
-        return;
-    }
-    // Sorted, here and below, so a mesh is repaired the same way every time: hash maps iterate in a different order each run.
-    open.sort_unstable();
-    // Only vertices on an open edge can be the T of a T-junction, which keeps the search small.
-    let touching: std::collections::BTreeSet<u32> = open.iter().flat_map(|&(a, b)| [a, b]).collect();
-    let pos: Vec<[f64; 3]> = m.vertices.iter().map(|v| v.map(f64::from)).collect();
-    let at = |i: u32| pos[i as usize];
-    let mut splits: HashMap<(u32, u32), Vec<u32>> = HashMap::new();
-    for &(a, b) in &open {
-        let (pa, pb) = (at(a), at(b));
-        let mut on: Vec<(f64, u32)> =
-            touching.iter().filter(|&&p| p != a && p != b).filter_map(|&p| along(pa, pb, at(p), tol).map(|t| (t, p))).collect();
-        on.sort_by(|x, y| x.0.total_cmp(&y.0).then(x.1.cmp(&y.1)));
-        if !on.is_empty() {
-            splits.insert((a, b), on.into_iter().map(|(_, p)| p).collect());
-        }
-    }
-    if splits.is_empty() {
-        return;
-    }
-    let mut out = Vec::with_capacity(m.triangles.len());
-    for t in &m.triangles {
-        // The triangle's outline with each split edge's vertices put in, in its own direction.
-        let mut ring = Vec::new();
-        for k in 0..3 {
-            let (a, b) = (t[k], t[(k + 1) % 3]);
-            ring.push(a);
-            if let Some(on) = splits.get(&(a.min(b), a.max(b))) {
-                if a < b { ring.extend(on) } else { ring.extend(on.iter().rev()) }
-            }
-        }
-        if ring.len() == 3 {
-            out.push(*t);
-            continue;
-        }
-        // A new vertex in the middle joins each stretch of the outline, so no sliver of zero width is made.
-        let centre = m.vertices.len() as u32;
-        let mid = t.map(at).iter().fold([0.0; 3], |s, p| [s[0] + p[0] / 3.0, s[1] + p[1] / 3.0, s[2] + p[2] / 3.0]);
-        m.vertices.push(mid.map(|c| c as f32));
-        for k in 0..ring.len() {
-            out.push([centre, ring[k], ring[(k + 1) % ring.len()]]);
-        }
-    }
-    m.triangles = out;
-}
-
-/// Removes triangles that share their three vertices with another. Two facing opposite ways are a skin of no thickness the BSP leaves
-/// where the shapes' surfaces coincide, so both go; two facing the same way are one face drawn twice, so one goes.
-fn drop_skins(m: &mut Mesh) {
-    let mut by_corners: HashMap<[u32; 3], Vec<(usize, bool)>> = HashMap::new();
-    for (i, t) in m.triangles.iter().enumerate() {
-        let mut k = *t;
-        k.sort_unstable();
-        let even = (0..3).any(|r| [t[r], t[(r + 1) % 3], t[(r + 2) % 3]] == k);
-        by_corners.entry(k).or_default().push((i, even));
-    }
-    let mut gone = vec![false; m.triangles.len()];
-    for list in by_corners.values().filter(|l| l.len() > 1) {
-        let (mut up, mut down): (Vec<usize>, Vec<usize>) = (Vec::new(), Vec::new());
-        for &(i, even) in list {
-            if even { up.push(i) } else { down.push(i) }
-        }
-        // Opposite pairs cancel; of what is left, one face stays.
-        let pairs = up.len().min(down.len());
-        for &i in up.iter().take(pairs).chain(down.iter().take(pairs)) {
-            gone[i] = true;
-        }
-        for &i in up.iter().skip(pairs).skip(1).chain(down.iter().skip(pairs).skip(1)) {
-            gone[i] = true;
-        }
-    }
-    let mut it = gone.into_iter();
-    m.triangles.retain(|_| !it.next().unwrap_or(false));
-}
-
-/// A triangle this small (mm2, a tenth of a millimetre square) on an edge that three or more faces share is a fin the BSP left, not a
-/// surface; dropping it leaves a small hole that `fill_holes` closes.
-const FIN: f64 = 1e-2;
-
-fn drop_fins(m: &mut Mesh) {
-    let uses = undirected(m);
-    if uses.values().all(|&n| n <= 2) {
-        return;
-    }
-    let keep: Vec<bool> = (0..m.triangles.len())
-        .map(|i| {
-            let t = m.triangles[i];
-            let shared = (0..3).any(|k| uses.get(&(t[k].min(t[(k + 1) % 3]), t[k].max(t[(k + 1) % 3]))).is_some_and(|&n| n > 2));
-            !(shared && triangle_area(m, i) < FIN)
-        })
-        .collect();
-    let mut keep = keep.into_iter();
-    m.triangles.retain(|_| keep.next().unwrap_or(true));
-}
-
-fn triangle_area(m: &Mesh, i: usize) -> f64 {
-    let Some(t) = m.tri(i) else { return 0.0 };
-    let (u, v) = ([t[1][0] - t[0][0], t[1][1] - t[0][1], t[1][2] - t[0][2]], [t[2][0] - t[0][0], t[2][1] - t[0][1], t[2][2] - t[0][2]]);
-    let n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
-    0.5 * (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt()
-}
-
-/// The most edges of a hole that is filled whatever its shape. A bigger gap is filled only if it is flat and convex, where a fan is
-/// exactly the face the BSP lost; otherwise it is a real gap, and filling it would invent a surface.
-const SMALL_HOLE: usize = 16;
-const BIG_HOLE: usize = 512;
-
-/// Fills each loop of open edges that [`SMALL_HOLE`] and [`flat_and_convex`] allow with a fan, wound against the faces around it.
-fn fill_holes(m: &mut Mesh) {
-    let mut directed: HashSet<(u32, u32)> = HashSet::new();
-    for t in &m.triangles {
-        for k in 0..3 {
-            directed.insert((t[k], t[(k + 1) % 3]));
-        }
-    }
-    // An open edge is one whose reverse no face walks.
-    let mut next: HashMap<u32, Vec<u32>> = HashMap::new();
-    for &(a, b) in &directed {
-        if !directed.contains(&(b, a)) {
-            next.entry(a).or_default().push(b);
-        }
-    }
-    let mut used: HashSet<(u32, u32)> = HashSet::new();
-    let mut fill = Vec::new();
-    let mut starts: Vec<(u32, u32)> = next.iter().flat_map(|(&a, bs)| bs.iter().map(move |&b| (a, b))).collect();
-    starts.sort_unstable();
-    for outs in next.values_mut() {
-        outs.sort_unstable();
-    }
-    for (a, b) in starts {
-        if used.contains(&(a, b)) {
-            continue;
-        }
-        let (mut ring, mut at) = (vec![a], b);
-        let closed = loop {
-            if ring.len() > BIG_HOLE {
-                break false;
-            }
-            if at == a {
-                break true;
-            }
-            ring.push(at);
-            match next.get(&at).map(Vec::as_slice) {
-                Some([only]) => at = *only,
-                _ => break false, // the outline branches here: not a simple hole
-            }
-        };
-        for k in 0..ring.len() {
-            used.insert((ring[k], ring[(k + 1) % ring.len()]));
-        }
-        if closed && ring.len() >= 3 && (ring.len() <= SMALL_HOLE || flat_and_convex(m, &ring)) {
-            for k in 1..ring.len() - 1 {
-                fill.push([ring[0], ring[k + 1], ring[k]]);
-            }
-        }
-    }
-    m.triangles.extend(fill);
-}
-
-/// Whether the outline lies in one plane (within a few welds) and turns one way all round, so a fan from any corner covers it once.
-fn flat_and_convex(m: &Mesh, ring: &[u32]) -> bool {
-    let p: Vec<[f64; 3]> = ring.iter().map(|&i| m.vertices[i as usize].map(f64::from)).collect();
-    // Newell's normal: the outline's own, however many corners it has.
-    let mut n = [0.0; 3];
-    for k in 0..p.len() {
-        let (a, b) = (p[k], p[(k + 1) % p.len()]);
-        n[0] += (a[1] - b[1]) * (a[2] + b[2]);
-        n[1] += (a[2] - b[2]) * (a[0] + b[0]);
-        n[2] += (a[0] - b[0]) * (a[1] + b[1]);
-    }
-    let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
-    if len < 1e-12 {
-        return false;
-    }
-    let n = n.map(|c| c / len);
-    let d0 = n[0] * p[0][0] + n[1] * p[0][1] + n[2] * p[0][2];
-    if p.iter().any(|q| (n[0] * q[0] + n[1] * q[1] + n[2] * q[2] - d0).abs() > 5.0 * WELD) {
-        return false;
-    }
-    let mut sign = 0.0f64;
-    for k in 0..p.len() {
-        let (a, b, c) = (p[k], p[(k + 1) % p.len()], p[(k + 2) % p.len()]);
-        let (u, v) = ([b[0] - a[0], b[1] - a[1], b[2] - a[2]], [c[0] - b[0], c[1] - b[1], c[2] - b[2]]);
-        let turn = n[0] * (u[1] * v[2] - u[2] * v[1]) + n[1] * (u[2] * v[0] - u[0] * v[2]) + n[2] * (u[0] * v[1] - u[1] * v[0]);
-        if turn.abs() < 1e-9 {
-            continue; // corners on a straight stretch
-        }
-        if sign == 0.0 {
-            sign = turn.signum();
-        } else if turn.signum() != sign {
-            return false;
-        }
-    }
-    true
-}
-
-/// Vertices on an open edge closer than this (mm) are snapped together: what the BSP splits along an intersection curve leaves slivers
-/// a few microns wide, and collapsing them closes the cracks around them. 20 microns is a tenth of a fine layer, invisible in a print.
-const SNAP: f64 = 0.05;
-
-/// Snaps each vertex of an open or crowded edge to the first such vertex within [`SNAP`], then drops the triangles that collapse.
-fn snap_open(m: &mut Mesh) {
-    let uses = undirected(m);
-    let loose: HashSet<u32> = uses.iter().filter(|&(_, &n)| n != 2).flat_map(|(&(a, b), _)| [a, b]).collect();
-    if loose.is_empty() {
-        return;
-    }
-    let mut ids: Vec<u32> = loose.into_iter().collect();
-    ids.sort_unstable(); // the same mesh snaps the same way every time
-    let pos = |i: u32| m.vertices[i as usize].map(f64::from);
-    let mut cells: HashMap<[i64; 3], Vec<u32>> = HashMap::new();
-    let mut to: HashMap<u32, u32> = HashMap::new();
-    for &i in &ids {
-        let p = pos(i);
-        let c = p.map(|x| (x / SNAP).floor() as i64);
-        let mut target = None;
-        'search: for dx in -1..=1 {
-            for dy in -1..=1 {
-                for dz in -1..=1 {
-                    for &j in cells.get(&[c[0] + dx, c[1] + dy, c[2] + dz]).into_iter().flatten() {
-                        let q = pos(j);
-                        if (q[0] - p[0]).powi(2) + (q[1] - p[1]).powi(2) + (q[2] - p[2]).powi(2) <= SNAP * SNAP {
-                            target = Some(j);
-                            break 'search;
-                        }
-                    }
-                }
-            }
-        }
-        match target {
-            Some(j) => {
-                to.insert(i, j);
-            }
-            None => cells.entry(c).or_default().push(i),
-        }
-    }
-    if to.is_empty() {
-        return;
-    }
-    for t in &mut m.triangles {
-        for v in t.iter_mut() {
-            if let Some(&j) = to.get(v) {
-                *v = j;
-            }
-        }
-    }
-    m.triangles.retain(|t| t[0] != t[1] && t[1] != t[2] && t[0] != t[2]);
-}
-
-/// How far along `a` to `b` the point `p` lies (0 to 1, exclusive) if it is on that segment within five times [`WELD`].
-fn along(a: [f64; 3], b: [f64; 3], p: [f64; 3], tol: f64) -> Option<f64> {
-    let ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
-    let len2 = ab[0] * ab[0] + ab[1] * ab[1] + ab[2] * ab[2];
-    if len2 < 1e-18 {
-        return None;
-    }
-    let t = ((p[0] - a[0]) * ab[0] + (p[1] - a[1]) * ab[1] + (p[2] - a[2]) * ab[2]) / len2;
-    if t <= 0.0 || t >= 1.0 {
-        return None;
-    }
-    let near = [a[0] + t * ab[0] - p[0], a[1] + t * ab[1] - p[1], a[2] + t * ab[2] - p[2]];
-    ((near[0] * near[0] + near[1] * near[1] + near[2] * near[2]).sqrt() <= tol).then_some(t)
+    repair::close_with(m, 4, 5.0 * WELD).map(|(m, _)| m)
 }
 
 #[cfg(test)]
@@ -889,7 +589,7 @@ mod measure {
             .iter()
             .filter(|&(_, &c)| c > 2)
             .filter(|&(&(a, b), _)| {
-                m.triangles.iter().enumerate().any(|(i, t)| t.contains(&a) && t.contains(&b) && triangle_area(m, i) < 0.01)
+                m.triangles.iter().enumerate().any(|(i, t)| t.contains(&a) && t.contains(&b) && repair::triangle_area(m, i) < 0.01)
             })
             .count();
         // The holes: loops of open edges, how many, the longest, whether an outline branches, and the area a fan over each would cover.
@@ -940,7 +640,7 @@ mod measure {
                         .collect();
                     let mean = d.iter().sum::<f64>() / d.len() as f64;
                     worst_flat = d.iter().map(|x| (x - mean).abs()).fold(0.0, f64::max);
-                    convex = flat_and_convex(m, &ring);
+                    convex = repair::flat_and_convex(m, &ring, 5.0 * WELD);
                 }
             }
         }

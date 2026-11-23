@@ -29,6 +29,11 @@ Priorities:
   each sliced and compared line by line (numbers to just under their written precision, so CI on three systems agrees);
   `LAMINA_BLESS=1` writes the new output to be read in the diff. The first run found spikes and doubled points in walls on round
   shapes (offsetting points in a straight line), fixed by simplifying loops before they are offset.
+- **2.2 Mesh repair.** `crates/core/src/repair.rs` holds the passes the booleans used (T-junctions, skins, fins, snapping, hole
+  filling), now shared, and a new one that makes winding consistent across shared edges and turns each shell outward unless it lies
+  inside another (a void). `import_mesh` repairs on the way in and says what it did; `repair {id}` mends an object, as one undo step.
+- **2.3 Report problems clearly.** `info` gives `open_edges`, `nonmanifold_edges` and `flipped_faces` for each object; the plate
+  panel shows a warning sign with the problems on hover, and a Repair button for the picked object.
 - **7.1 File menu and drag and drop.** New, Open, Open recent, Save, Save as (with Ctrl shortcuts), Import mesh, Export G-code and
   Quit; the title shows the project and a star for unsaved changes; New, Open and closing ask first when something would be lost;
   files dropped on the window are opened (`.lamina`) or imported (meshes). `apps/lamina/src/files.rs`.
@@ -39,7 +44,7 @@ The P0 items, in the order that unblocks the most:
 
 1. Project files (1.1). Done.
 2. Golden G-code tests and real test prints (0.1, 0.2). The golden tests are done; the test prints need hardware.
-3. Mesh repair on import, and 3MF import (2.2, 2.3). Most models people download are imperfect STLs or 3MF files.
+3. Mesh repair on import, and 3MF import (2.2, 2.3). Repair is done.
 4. Supports and brim (4.1, 4.2). Without them, most real parts fail on the plate.
 5. Connected infill and seam placement (4.3, 4.4), so prints are clean and do not string.
 6. One undo step per chat turn (0.3), and continuous integration (8.1).
@@ -96,16 +101,6 @@ Ignore other slicers' embedded settings, or read only obvious fields. Export the
 **2.1 Mirror (P1).** How: `Mesh::transformed` must reverse each triangle's winding when the transform's determinant is negative. Add
 a `det()` to `Transform`, then a `mirror {id, axis}` command in `crates/core/src/commands.rs`. Test: a mirrored mesh stays watertight
 with positive volume.
-
-**2.2 Mesh repair (P0).** Downloaded meshes often have holes, flipped faces and duplicate triangles. How: move the repair steps out of
-`crates/csg/src/lib.rs` (`split_t_junctions`, `drop_skins`, `drop_fins`, `snap_open`, `fill_holes`) into a new
-`crates/core/src/repair.rs`, so import and booleans share them. Add one more step: make winding consistent by walking triangles
-across shared edges and flipping any that disagree, then flip everything if the volume is negative. Run it on `import_mesh`. Add a
-`repair {id}` command that reports what it changed: triangles dropped, faces flipped, holes filled, still open or not. Test with a cube
-missing a face, a cube with one flipped face, and a duplicated face.
-
-**2.3 Report problems clearly (P0).** How: `info` already says `watertight`. Add counts of open edges, non-manifold edges and flipped
-faces, and show a warning badge on the object in the plate panel.
 
 **2.4 Simplify heavy meshes (P2).** Imported scans can have millions of triangles. How: quadric edge collapse (Garland and Heckbert's
 public algorithm) in `crates/core/src/simplify.rs`, behind a `simplify {id, triangles}` command. The `meshopt` crate is C++ through
@@ -346,6 +341,6 @@ project files and can return after 1.1.
 
 - Walls are constant width, so thin features vanish instead of getting gap fill. No supports, so overhangs print in the air. No bridging.
 - Infill lines are separate strokes. The skirt is an outline of the first layer, not a hull. Time is distance over speed, without acceleration.
-- A mesh that is not closed prints with parts missing, with a warning. STL only.
+- A mesh whose holes are too big to fill without guessing stays open, and prints with parts missing, with a warning. STL only.
 - Booleans refuse about half of tilted cylinder pairs.
 - Nothing has been printed on real hardware.

@@ -11,6 +11,15 @@
 `bridge::run` sits on top for agents (the MCP server and the AI chat). It adds `Access::Read`, which refuses any command that
 changes the scene or its history, and the ones in `bridge::REPLACES` (`new`, `open`), which put another plate in the user's place.
 
+## Mesh repair
+
+`repair.rs` mends what files and the booleans get wrong. `repair` drops doubled faces and skins, makes the winding consistent
+(`orient` walks each shell across edges two faces share, turns the faces that disagree with the larger side, then turns a shell with
+negative volume outward unless a ray test finds it inside another shell, where it is a void), and then runs the booleans' passes:
+T-junctions split, fins dropped, open vertices snapped within 50 microns, holes filled with a fan when they have 16 edges or fewer or
+are flat and convex. A sound mesh comes back untouched. `problems` counts open edges, edges of three or more faces and flipped faces
+without changing anything; `info` reports them and the window shows a warning on the object.
+
 ## Projects
 
 `project.rs` writes and reads `.lamina` files: JSON with `format: 1`, each object's id, name, transform and local mesh (base64 of
@@ -29,7 +38,7 @@ desktop (lamina) ──────┘
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `lamina-core` | `Mesh`, `Transform`, STL read/write, `.lamina` projects, `Scene`, `Session`, `bridge`, built-in commands | serde |
+| `lamina-core` | `Mesh`, `Transform`, STL read/write, `.lamina` projects, mesh repair, `Scene`, `Session`, `bridge`, built-in commands | serde |
 | `lamina-slicer` | `slice` (mesh to loops), `geom` (polygon booleans and offsets on `i_overlay`), `print` (walls, infill, G-code), `profile`, the `slice` and `slicer_profile` commands | core, i_overlay |
 | `lamina-csg` | `boolean` over csgrs' BSP trees, crack repair, the soundness gate, the `union`, `difference` and `intersect` commands | core, csgrs |
 | `lamina-assistant` | provider clients, sealed key storage, tool layer, turn loop | core, ureq, ring |
@@ -122,7 +131,7 @@ clear licence (see [RESEARCH.md](RESEARCH.md)).
    overflows, which aborts the process. (Moving tilted corners onto their plane was tried and measured worse.)
 2. **The whole shapes go through the BSP.** csgrs' own `union` and `difference` set aside faces whose boxes miss the other shape's
    box, and a shape wholly inside the other then has nothing to be clipped against. `combine` uses its public `Node` directly.
-3. **The result is repaired**, in passes until it is closed or nothing changes: vertices are welded (a point within a micron of one
+3. **The result is repaired** (`lamina_core::repair::close_with`, shared with import), in passes until it is closed or nothing changes: vertices are welded (a point within a micron of one
    already there is that one); triangles are split at vertices lying on their edges (T-junctions); pairs of identical triangles facing
    opposite ways, skins of no thickness where the shapes' surfaces coincide, are dropped; fins under 0.01 mm2 on edges three faces share
    are dropped; vertices on open edges within 50 microns are snapped together, which closes the slivers along the intersection curve;

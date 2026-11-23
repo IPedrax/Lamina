@@ -7,6 +7,7 @@ pub mod commands;
 pub mod engine;
 pub mod mesh;
 pub mod project;
+pub mod repair;
 pub mod scene;
 pub mod stl;
 

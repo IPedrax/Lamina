@@ -38,7 +38,8 @@ cargo test --workspace
 
 - `crates/core`: `mesh.rs` (triangle mesh, primitives, `Transform`), `stl.rs` (read and write), `scene.rs` (objects on the plate),
   `engine.rs` (`Session`: execute, undo, script, catalog, the project's print settings), `commands.rs` (the built-in commands),
-  `project.rs` (`.lamina` files: `save`, `open`, `new`), `base64.rs`.
+  `project.rs` (`.lamina` files: `save`, `open`, `new`), `repair.rs` (mesh repair shared by import and the booleans, and the
+  problems `info` reports), `base64.rs`.
   `bridge.rs` (what an agent may ask: execute, script, catalog; read-only access; `REPLACES`, the commands that replace the plate).
 - `crates/slicer`: `slice.rs` (mesh to closed loops per layer), `geom.rs` (polygon booleans, offsets, line clipping on i_overlay),
   `print.rs` (walls, skins, infill, skirt, the G-code writer), `profile.rs` (settings, checks, `[name]` placeholders), `presets.rs`
@@ -47,7 +48,8 @@ cargo test --workspace
   `tests/golden/`: models whose G-code is compared line by line; a slicer change re-blesses them with `LAMINA_BLESS=1` and the diff
   is read before it is committed.
 - `crates/csg`: `boolean(op, a, b)`, the only code that knows csgrs, and the `union`, `difference` and `intersect` commands. A result is
-  returned only if `sound` accepts it (closed, possible volume and bounds): refuse, never return a broken mesh. `vendor/core2` is a
+  returned only if `sound` accepts it (closed, possible volume and bounds): refuse, never return a broken mesh. The crack repair it
+  runs is `lamina_core::repair::close_with`. `vendor/core2` is a
   stand-in for a yanked crate csgrs asks for (see the root `Cargo.toml`).
 - `crates/assistant`: the AI chat, ported from BIMCraft. `skills/*.md` are the notes the model reads with `read_skill`
   (modelling, designing for FDM, slicer settings, working from a picture), written for Lamina's own commands: a test checks that every

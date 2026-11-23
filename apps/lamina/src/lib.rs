@@ -22,6 +22,9 @@ use serde_json::{Value, json};
 use crate::settings::{Presets, Settings};
 use crate::view3d::Pick;
 
+/// The colour of a warning: a mesh with problems, a plate changed since its slice.
+const WARNING: Color32 = Color32::from_rgb(230, 180, 90);
+
 /// A session with every command: the core's, the slicer's and the booleans'.
 pub fn session() -> Session {
     let mut s = Session::new();
@@ -110,6 +113,8 @@ pub struct App {
     may_close: bool,
     closing: bool,
     title: String,
+    /// What is wrong with each mesh, by the address of its `Arc`, worked out once and kept while the mesh lives.
+    problems: std::collections::HashMap<usize, lamina_core::repair::Problems>,
 }
 
 impl App {
@@ -146,6 +151,7 @@ impl App {
             may_close: false,
             closing: false,
             title: String::new(),
+            problems: std::collections::HashMap::new(),
         }
         .ready()
     }
@@ -502,6 +508,19 @@ impl App {
         }
     }
 
+    /// What is wrong with object `id`'s mesh (none for a sound one), worked out once per mesh.
+    pub fn problems_of(&mut self, id: u32) -> Option<lamina_core::repair::Problems> {
+        let o = self.session.scene.get(id).ok()?;
+        let key = Arc::as_ptr(&o.mesh) as usize;
+        if !self.problems.contains_key(&key) {
+            // Forget meshes no longer on the plate before adding one.
+            let alive: Vec<usize> = self.session.scene.objects.iter().map(|o| Arc::as_ptr(&o.mesh) as usize).collect();
+            self.problems.retain(|k, _| alive.contains(k));
+            self.problems.insert(key, lamina_core::repair::problems(&o.mesh));
+        }
+        self.problems.get(&key).copied().filter(|p| p.any())
+    }
+
     fn plate_panel(&mut self, ui: &mut Ui) {
         ui.heading("Plate");
         let rows: Vec<(u32, String)> = self
@@ -514,15 +533,25 @@ impl App {
                 (o.id, format!("{}  {:.1} x {:.1} x {:.1}", o.name, hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]))
             })
             .collect();
+        let rows: Vec<(u32, String, Option<lamina_core::repair::Problems>)> =
+            rows.into_iter().map(|(id, text)| (id, text, self.problems_of(id))).collect();
         if rows.is_empty() {
             ui.label(
                 RichText::new("Nothing on the plate yet: add a shape, import or drop a mesh, open a project, or ask the assistant.").weak(),
             );
         }
-        for (id, text) in rows {
-            if ui.selectable_label(self.selected.contains(&id), text).clicked() {
-                self.pick(id, ui);
-            }
+        for (id, text, problems) in rows {
+            ui.horizontal(|ui| {
+                if ui.selectable_label(self.selected.contains(&id), text).clicked() {
+                    self.pick(id, ui);
+                }
+                if let Some(p) = problems {
+                    ui.label(RichText::new("\u{26a0}").color(WARNING)).on_hover_text(format!(
+                        "This mesh is not a clean solid: {}. Parts of it may not print; Repair mends what it can.",
+                        p.describe()
+                    ));
+                }
+            });
         }
         ui.label(RichText::new("Ctrl-click picks several.").small().weak());
         ui.separator();
@@ -557,6 +586,26 @@ impl App {
     }
 
     fn one_object(&mut self, ui: &mut Ui, id: u32) {
+        if let Some(p) = self.problems_of(id) {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(format!("\u{26a0} {}", p.describe())).color(WARNING));
+                if ui.button("Repair").on_hover_text("Drop doubled faces, turn flipped ones, close cracks and small holes").clicked()
+                    && let Some(r) = self.run("repair", json!({ "id": id }))
+                {
+                    self.status = format!(
+                        "Repaired: {} faces dropped, {} turned, {} holes filled; {}.",
+                        r["dropped"],
+                        r["flipped"],
+                        r["holes_filled"],
+                        if r["watertight"] == true {
+                            "it is closed now"
+                        } else {
+                            "it is still open: a hole is too big to fill without guessing"
+                        }
+                    );
+                }
+            });
+        }
         ui.label("Move by, mm");
         ui.horizontal(|ui| {
             for (k, axis) in ["x", "y", "z"].into_iter().enumerate() {
@@ -667,11 +716,11 @@ impl App {
         ui.horizontal(|ui| {
             ui.label(&sliced.summary);
             if sliced.scene != current {
-                ui.label(RichText::new("The plate changed since this slice: slice again.").color(Color32::from_rgb(230, 180, 90)));
+                ui.label(RichText::new("The plate changed since this slice: slice again.").color(WARNING));
             }
         });
         for w in &sliced.warnings {
-            ui.label(RichText::new(w).color(Color32::from_rgb(230, 180, 90)));
+            ui.label(RichText::new(w).color(WARNING));
         }
         let last = sliced.layers.len().saturating_sub(1);
         let z = sliced.layers.get(self.layer).map_or(0.0, |l| l.z);
@@ -981,6 +1030,23 @@ mod tests {
         assert_eq!(h.state().project.as_deref(), Some(project.as_path()));
         drop_file(&mut h, dir.path().join("notes.txt"));
         assert!(h.state().failed && h.state().status.contains(".lamina"), "{}", h.state().status);
+    }
+
+    #[test]
+    fn a_broken_mesh_is_flagged_and_repaired_from_the_panel() {
+        let mut h = window();
+        let mut open = Mesh::cuboid([10.0, 10.0, 10.0]);
+        open.triangles.pop();
+        let app = h.state_mut();
+        app.session.scene_mut().add("open box", open).unwrap();
+        app.selected = vec![1];
+        h.run();
+        assert!(h.state_mut().problems_of(1).is_some_and(|p| p.open_edges == 3));
+        h.get_by_label("Repair");
+        press(&mut h, "Repair");
+        assert!(h.state().status.contains("closed now"), "{}", h.state().status);
+        assert!(h.state_mut().problems_of(1).is_none());
+        assert!(h.state().session.scene.get(1).unwrap().mesh.is_watertight());
     }
 
     /// The whole window as a picture, for looking at: `cargo test -p lamina -- --ignored picture_of_the_window`.

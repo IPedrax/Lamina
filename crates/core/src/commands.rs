@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use crate::engine::{Command, Files, Session};
 use crate::mesh::{Mesh, P3, Transform};
 use crate::scene::Object;
-use crate::{project, stl};
+use crate::{project, repair, stl};
 
 const fn cmd(id: &'static str, params: &'static str, run: crate::engine::Run, undoable: bool, files: Files) -> Command {
     Command { id, params, run, undoable, files }
@@ -19,7 +19,7 @@ const fn cmd(id: &'static str, params: &'static str, run: crate::engine::Run, un
 pub static ALL: &[Command] = &[
     cmd(
         "import_mesh",
-        "{path, name?, at?:[x,y]} an STL file (binary or ASCII) put on the plate, centred on `at` (default the middle of the plate), its lowest point on the plate. Returns {id, triangles, watertight, size}",
+        "{path, name?, at?:[x,y]} an STL file (binary or ASCII) put on the plate, centred on `at` (default the middle of the plate), its lowest point on the plate. The mesh is repaired on the way in (doubled faces dropped, flipped faces turned, small holes filled). Returns {id, triangles, watertight, size, repaired?: {dropped, flipped, holes_filled}}",
         import_mesh,
         true,
         Files::Read,
@@ -46,11 +46,18 @@ pub static ALL: &[Command] = &[
         true,
         Files::None,
     ),
+    cmd(
+        "repair",
+        "{id} mends an object's mesh: doubled faces and skins dropped, faces wound like their neighbours and each shell outward, cracks closed and small holes filled. Returns {dropped, flipped, holes_filled, watertight}; a mesh that is still open has a hole too big to fill without guessing",
+        repair,
+        true,
+        Files::None,
+    ),
     cmd("drop_to_bed", "{id} lowers or raises an object so its lowest point touches the plate", drop_to_bed, true, Files::None),
     cmd("delete", "{id} removes an object", delete, true, Files::None),
     cmd(
         "info",
-        "{} every object: id, name, triangles, size, min, max, volume_mm3, watertight (a slicer can only fill a closed mesh)",
+        "{} every object: id, name, triangles, size, min, max, volume_mm3, watertight (a slicer can only fill a closed mesh), and its problems: open_edges (holes), nonmanifold_edges (edges of three or more faces), flipped_faces; `repair` mends what it can",
         info,
         false,
         Files::None,
@@ -133,7 +140,12 @@ fn import_mesh(s: &mut Session, p: &Value) -> Result<Value, String> {
     }
     let mesh = stl::read(&std::fs::read(path).map_err(|e| format!("{}: {e}", a.path))?)?;
     let name = a.name.unwrap_or_else(|| path.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "mesh".into()));
-    added(s, &name, mesh, a.at)
+    let (mesh, report) = repair::repair(&mesh)?;
+    let mut v = added(s, &name, mesh, a.at)?;
+    if report.changed() {
+        v["repaired"] = json!({"dropped": report.dropped, "flipped": report.flipped, "holes_filled": report.holes_filled});
+    }
+    Ok(v)
 }
 
 #[derive(Deserialize)]
@@ -252,6 +264,19 @@ fn drop_to_bed(s: &mut Session, p: &Value) -> Result<Value, String> {
     Ok(json!({}))
 }
 
+fn repair(s: &mut Session, p: &Value) -> Result<Value, String> {
+    let a: Id = parse(p)?;
+    let (mesh, r) = repair::repair(&s.scene.get(a.id)?.mesh)?;
+    if mesh.triangles.is_empty() {
+        return Err(format!("object {} would have nothing left: it is not a solid that can be mended", a.id));
+    }
+    // Only a change makes an undo step.
+    if r.changed() {
+        s.scene_mut().get_mut(a.id)?.mesh = std::sync::Arc::new(mesh);
+    }
+    Ok(json!({"dropped": r.dropped, "flipped": r.flipped, "holes_filled": r.holes_filled, "watertight": r.closed}))
+}
+
 fn delete(s: &mut Session, p: &Value) -> Result<Value, String> {
     let a: Id = parse(p)?;
     s.scene.get(a.id)?;
@@ -268,10 +293,12 @@ fn info(s: &mut Session, p: &Value) -> Result<Value, String> {
         .map(|o| {
             let world = o.world();
             let (lo, hi) = world.bounds().unwrap_or_default();
+            let problems = repair::problems(&o.mesh);
             json!({
                 "id": o.id, "name": o.name, "triangles": world.triangles.len(),
                 "size": [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]], "min": lo, "max": hi,
                 "volume_mm3": world.volume(), "watertight": world.is_watertight(),
+                "open_edges": problems.open_edges, "nonmanifold_edges": problems.nonmanifold_edges, "flipped_faces": problems.flipped_faces,
             })
         })
         .collect();
@@ -468,6 +495,44 @@ mod tests {
         assert!(run(&mut s, "open", json!({"path": "/nonexistent.lamina"})).is_err());
         assert!(run(&mut s, "new", json!({"keep": true})).is_err());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn an_imperfect_stl_is_repaired_on_import_and_info_reports_problems() {
+        let path = std::env::temp_dir().join(format!("lamina-broken-{}.stl", std::process::id()));
+        let mut broken = Mesh::cuboid([10.0, 10.0, 10.0]);
+        broken.triangles[0].swap(1, 2); // one face flipped
+        broken.triangles.truncate(10); // and one side missing
+        std::fs::write(&path, stl::write(&broken)).unwrap();
+        let mut s = Session::new();
+        let v = run(&mut s, "import_mesh", json!({"path": path})).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(v["watertight"], true);
+        assert_eq!((v["repaired"]["flipped"].as_u64(), v["repaired"]["holes_filled"].as_u64()), (Some(1), Some(1)));
+        let info = run(&mut s, "info", json!({})).unwrap();
+        assert_eq!((info["objects"][0]["open_edges"].as_u64(), info["objects"][0]["flipped_faces"].as_u64()), (Some(0), Some(0)));
+        assert!((info["objects"][0]["volume_mm3"].as_f64().unwrap() - 1000.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn repair_mends_an_object_in_one_undo_step_and_says_what_it_did() {
+        let mut s = Session::new();
+        let mut open = Mesh::cuboid([10.0, 10.0, 10.0]);
+        open.triangles.pop();
+        open.triangles[2].swap(1, 2);
+        s.scene_mut().add("open", open).unwrap();
+        let info = run(&mut s, "info", json!({})).unwrap();
+        assert_eq!(info["objects"][0]["watertight"], false);
+        assert!(info["objects"][0]["open_edges"].as_u64().unwrap() > 0 && info["objects"][0]["flipped_faces"] == 1);
+        let r = run(&mut s, "repair", json!({"id": 1})).unwrap();
+        assert_eq!((r["watertight"].as_bool(), r["flipped"].as_u64(), r["holes_filled"].as_u64()), (Some(true), Some(1), Some(1)));
+        assert!(s.scene.get(1).unwrap().mesh.is_watertight());
+        // A sound mesh is left alone and makes no undo step; undo takes the repair back.
+        let r = run(&mut s, "repair", json!({"id": 1})).unwrap();
+        assert_eq!((r["dropped"].as_u64(), r["flipped"].as_u64()), (Some(0), Some(0)));
+        run(&mut s, "undo", json!({})).unwrap();
+        assert!(!s.scene.get(1).unwrap().mesh.is_watertight());
+        assert!(run(&mut s, "repair", json!({"id": 7})).is_err());
     }
 
     #[test]
