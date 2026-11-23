@@ -205,6 +205,11 @@ Priorities:
   Anthropic, in a user message after the results for OpenAI and Gemini. Tested on the fake network, each provider's request
   carrying its image part. The picture skill uses it to compare a part with the user's photo, and the chat panel gains Attach (and
   takes a picture dropped on the window), so a photo can go with a message.
+- **9.2 More skills.** `troubleshooting-prints` (stringing, warping, layer shifts, sagging, gaps, blobs, the first layer),
+  `calibration` (a cube, single-wall flow through `filament_diameter` as Lamina has no flow multiplier, temperature by separate
+  prints as it has no temperature tower, retraction towers), `materials` (the five presets, nylon, PC, filled filaments, food and
+  heat) and `supports` (when they are needed, turning and cutting first, every support setting). The skill test now takes the
+  tools from `tools::all()`, so a skill may name `preview`.
 
 ## Order of work
 
@@ -299,10 +304,6 @@ DMG, each checked against the SHA-256 digest GitHub gives the asset. The release
 regressions are seen.
 
 ## 9. The assistant
-
-**9.2 More skills (P1).** Troubleshooting (stringing, warping, layer shift), calibration (flow, temperature, retraction), materials,
-and supports once 4.1 exists. Each is a Markdown file in `crates/assistant/skills/`, and the existing test checks every command it
-names.
 
 **9.3 Local models (P1).** These keep everything on the machine. How: an "OpenAI-compatible" provider with a base URL limited to
 `localhost` or `127.0.0.1` (Ollama, LM Studio). Add it to `net::allowed` by address, not by name, with a test that any other host is

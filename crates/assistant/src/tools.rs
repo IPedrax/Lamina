@@ -84,8 +84,9 @@ pub fn all() -> Vec<Tool> {
         },
         Tool {
             name: "read_skill",
-            about: "Skills are short notes on modelling for a printer, the slicer's settings and working from a picture. Call with no name for the \
-                    list, then with a name to read one. Read the ones that fit before you model, slice or change a setting.",
+            about: "Skills are short notes on modelling for a printer, the slicer's settings, supports, materials, calibration, fixing failed \
+                    prints and working from a picture. Call with no name for the list, then with a name to read one. Read the ones that fit \
+                    before you model, slice, change a setting or answer a question about a print.",
             schema: json!({"type": "object", "properties": {"name": {"type": "string", "description": "a skill's name, from the list"}}}),
         },
         Tool {

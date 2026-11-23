@@ -59,7 +59,7 @@ CI (`.github/workflows/ci.yml`) runs the same three on Linux, Windows and macOS 
   crash in csgrs is an error, not the end of the app; every app's `main` calls `child_main` first. `vendor/core2` is a
   stand-in for a yanked crate csgrs asks for (see the root `Cargo.toml`).
 - `crates/assistant`: the AI chat, ported from BIMCraft. `skills/*.md` are the notes the model reads with `read_skill`
-  (modelling, designing for FDM, slicer settings, working from a picture), written for Lamina's own commands: a test checks that every
+  (modelling, designing for FDM, slicer settings, supports, materials, calibration, troubleshooting, working from a picture), written for Lamina's own commands: a test checks that every
   command they name exists. A command a skill promises must exist, and a new command the model needs gets a line in the skill. Notes: [crates/assistant/CLAUDE.md](crates/assistant/CLAUDE.md). The only
   crate that may use `ring`, and with `crates/printer` the only ones that may use `ureq` (a test in `lamina-core` checks every manifest).
 - `crates/printer`: sending G-code to Moonraker or OctoPrint on the user's network (`send`, the `send_to_printer` command), and a
