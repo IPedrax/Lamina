@@ -48,3 +48,14 @@ Reads work.
 
 - The slice and the upload run in the frame, so the window waits for them (seconds on a home network). Running them on a thread
   with a spinner and Cancel is roadmap 7.2.
+
+## Blocked: real test prints (roadmap 0.2)
+
+- Printing the calibration cube, the single-wall box and the bridge test on a Marlin and a Klipper printer needs the printers, and
+  measuring them needs calipers. Not possible from a cloud session; nothing here has touched a printer. The golden G-code tests
+  (0.1) guard the output meanwhile. `lamina-cli slice` makes the three files when you are ready.
+
+## Not run: the picture of the window
+
+- `picture_of_the_window` (apps/lamina) needs a graphics adapter, which the session lacks, so no new screenshot was made of the
+  File menu, the printer connection or the new print settings. `docs/lamina-window.png` is the old one.
