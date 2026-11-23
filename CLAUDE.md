@@ -34,6 +34,8 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
+CI (`.github/workflows/ci.yml`) runs the same three on Linux, Windows and macOS for every push and pull request.
+
 ## Module map
 
 - `crates/core`: `mesh.rs` (triangle mesh, primitives, `Transform`), `stl.rs` (read and write), `scene.rs` (objects on the plate),

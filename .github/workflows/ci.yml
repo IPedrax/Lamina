@@ -1,0 +1,62 @@
+# The three checks CLAUDE.md asks for before anything is finished, on the three systems the desktop runs on, for every push and pull
+# request. Adapted from BIMCraft's CI (same author, MIT OR Apache-2.0). Pull requests from forks run with a read-only token and no
+# secrets: `pull_request`, never `pull_request_target`.
+#
+# The ignored tests stay manual: `success_matrix` and `curved_score` (crates/csg) measure the booleans and take minutes, and
+# `picture_of_the_window` (apps/lamina) needs a graphics adapter.
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch or pull request makes the run before it pointless.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Linux, runner: ubuntu-22.04 }
+          - { name: Windows, runner: windows-latest }
+          - { name: macOS, runner: macos-15 }
+    steps:
+      - uses: actions/checkout@v4
+
+      # The X11, Wayland and GL headers egui's window builds against.
+      - name: Linux libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libxkbcommon-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev
+
+      - name: Rust
+        shell: bash
+        run: rustup update stable && rustup default stable && rustup component add rustfmt clippy
+
+      # The dependencies' builds, kept between runs (egui and wgpu from scratch take many minutes). Only main saves the cache, so
+      # branch runs reuse it without filling the repository's caches with a copy each.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Format
+        if: runner.os == 'Linux'
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace

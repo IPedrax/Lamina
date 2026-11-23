@@ -24,6 +24,9 @@ Priorities:
   step, all or nothing, and `merge_steps` joins steps of one name (as BIMCraft's engine does). The chat runs each reply's calls in
   a transaction named for its turn and merges the turn's steps, so one undo takes back a whole turn over all its replies. The
   window's group delete (the Delete key, and Delete all for several picked objects) is one step.
+- **8.1 Continuous integration.** `.github/workflows/ci.yml` (adapted from BIMCraft's) runs `cargo fmt --check`, clippy with
+  `-D warnings` and `cargo test --workspace` on Linux, Windows and macOS for every push and pull request, with the build cache saved
+  from `main`. The ignored tests stay manual. Not yet seen running: pushing was refused overnight (see `QUESTIONS.md`).
 - **1.1 Project files.** `crates/core/src/project.rs`: `.lamina` JSON with `format: 1`, each object's id, name, transform and local
   mesh (base64 little-endian arrays), and the print settings and preset labels (`Session::print`, which the slicer lays under what a
   slice is given). `save`, `open` and `new` commands; `open` and `new` start a new history, are in `bridge::REPLACES` (refused to a
@@ -69,7 +72,7 @@ The P0 items, in the order that unblocks the most:
 3. Mesh repair on import, and 3MF import (2.2, 2.3, 1.4). Done.
 4. Supports and brim (4.1, 4.2). Done.
 5. Connected infill and seam placement (4.3, 4.4). Done.
-6. One undo step per chat turn (0.3, done), and continuous integration (8.1).
+6. One undo step per chat turn and continuous integration (0.3, 8.1). Done.
 7. Send to Moonraker and OctoPrint (6.1, 6.2).
 
 After those, the P1 items below, roughly top to bottom within each area.
@@ -289,10 +292,6 @@ each tag. Set `LAMINA_KEY_SECRET` as a CI secret, so a release's sealed keys are
 start. BIMCraft's `apps/bimcraft/src/startup.rs` has both.
 
 ## 8. Quality and infrastructure
-
-**8.1 Continuous integration (P0).** How: `.github/workflows/ci.yml` runs `cargo fmt --check`,
-`cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` on Linux, Windows and macOS, on every push and pull
-request. The ignored tests (`success_matrix`, `curved_score`, `picture_of_the_window`) stay manual.
 
 **8.2 Benchmarks (P2).** How: ignored tests that time slicing a 100,000-triangle mesh and a boolean of two detailed shapes, printed so
 regressions are seen.
