@@ -85,6 +85,19 @@ to `main` as they were. Nothing is left to do here.
   user may not know which their printer runs; it costs a standalone board one more request. Both pass the password in the query,
   as their APIs ask, to the address typed only.
 
+## Printing over a USB cable: untried on a printer (roadmap 6.4b)
+
+- Written from Marlin's documentation and tested against a Marlin in memory only. The port is the `serial2` crate (BSD-2-Clause or
+  Apache-2.0; `serialport` is MPL-2.0, so it was not taken). The first real print will tell.
+- Four lines in flight, Marlin's default command queue. A printer whose queue is smaller, or a serial line that drops characters at
+  that pace, would ask for resends more often; a pace of one line at a time is `Pace { window: 1, .. }`, not offered in the window.
+- A printer silent for a minute while lines wait is taken to have lost an `ok` once, then given up on after another minute. Marlin
+  says `busy:` every two seconds through a long command (its host keepalive, on by default), so only firmware built without it and
+  a command longer than two minutes (a large bed probe) would be stopped. Say if that should wait longer.
+- The print is a job of the window's: while it runs, slicing for the preview, the booleans and Export wait (modelling does not), and
+  closing the window stops the print. The status shows how far the stream has got, not the printer's temperatures.
+- Upload only (to the printer's SD card with `M28`) is not offered: Send to printer is greyed out for a USB cable.
+
 ## P2 items not started, and why
 
 Every P0 and P1 item is done except 0.2 (below). Of P2, these were left for a decision or a machine this session did not have:
@@ -98,8 +111,8 @@ Every P0 and P1 item is done except 0.2 (below). Of P2, these were left for a de
 - 7.6 Translations: the plumbing is BIMCraft's `crates/i18n`, but without translators there is nothing to show for it yet.
 - 4.17 Multi-material and sequential printing: each is a large slicer feature better started with test prints to check against
   (0.2). Tree supports (4.1b) are done now, checked through their output only.
-- 6.4b Bambu over the LAN, USB serial, Duet on a single-board computer, PrusaLink with a password: each needs the hardware, and
-  Bambu its own authorisation.
+- 6.4b Bambu over the LAN: left out, see below. PrusaLink with a password, Duet on a single-board computer and the USB cable are
+  done, tested against fakes only.
 - 3.11's bottom-edge chamfer for any object: it needs the object's bottom outline lofted to an inset of itself.
 
 ## Blocked: real test prints (roadmap 0.2)

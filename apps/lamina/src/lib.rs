@@ -2506,7 +2506,8 @@ fill_angle = 45
         h.get_by_label("Address");
         assert!(h.query_by_label("User").is_none(), "Moonraker asks for no user name");
         let app = h.state_mut();
-        app.link.connection = printer::Connection { kind: lamina_printer::Kind::PrusaLink, address, user: "maker".into() };
+        app.link.connection =
+            printer::Connection { kind: lamina_printer::Kind::PrusaLink, address, user: "maker".into(), ..Default::default() };
         app.link.key = "pass word".into();
         h.run();
         h.get_by_label("User");
@@ -2518,6 +2519,23 @@ fill_angle = 45
         let got = got.lock().unwrap();
         let auth = got[1].header("Authorization").unwrap();
         assert!(auth.contains(r#"username="maker""#) && !auth.contains("pass word"), "{auth}");
+    }
+
+    #[test]
+    fn a_printer_on_a_usb_cable_is_only_printed_on_at_a_port() {
+        let mut h = window();
+        press(&mut h, "Add box");
+        let app = h.state_mut();
+        let kind = lamina_printer::Kind::Serial;
+        app.link.connection = printer::Connection { kind, address: "printer.local".into(), baud: Some(250_000), ..Default::default() };
+        app.send_to_printer(false);
+        app.wait();
+        assert!(app.failed && app.status.contains("Send and print"), "{}", app.status);
+        app.send_to_printer(true);
+        app.wait();
+        assert!(app.failed && app.status.contains("not a serial port"), "{}", app.status);
+        let printer = lamina_printer::Printer { kind, address: "/dev/ttyUSB7".into(), ..Default::default() };
+        assert_eq!(lamina_printer::status(&printer).unwrap().state, "not printing from Lamina", "the port is not opened to ask");
     }
 
     /// The window's 3D view on a real graphics card, through egui's own renderer: the card's picture shown in the window, a click

@@ -6,7 +6,7 @@ models it, and Lamina slices it to G-code for a real printer.
 **Status: early.** The desktop app, a CLI and an MCP server work today: build a plate from primitives, STL, 3MF, OBJ or glTF files, move objects by dragging them in 3D, rotate
 and scale them, join and cut them (`union`, `difference`, `intersect`), slice them to Marlin-style G-code (walls, solid and
 sparse infill, skirt, retraction, time and filament estimates), look through the layers, and ask the built-in assistant to do any
-of it, and send the result to a Moonraker or OctoPrint printer. A plate and its print settings are saved as a `.lamina` project. Nothing has been printed on real hardware yet. The plan is in [docs/ROADMAP.md](docs/ROADMAP.md).
+of it, and send the result to a Moonraker, OctoPrint, PrusaLink or Duet printer, or print over a USB cable. A plate and its print settings are saved as a `.lamina` project. Nothing has been printed on real hardware yet. The plan is in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ![The Lamina window: objects on the plate in 3D, their tools and the print settings on the left, the assistant on the right](docs/lamina-window.png)
 
@@ -39,7 +39,8 @@ command that fails, panics or leaves the scene invalid changes nothing, and each
 - `crates/csg`: `union`, `difference` and `intersect` of objects, on csgrs (pure Rust).
 - `crates/assistant`: the AI chat (Anthropic, OpenAI, Gemini; your own key). With `crates/printer` and `crates/update`, the only code
   that touches the network.
-- `crates/printer`: sending the G-code to Moonraker (Klipper) or OctoPrint on your network.
+- `crates/printer`: sending the G-code to Moonraker (Klipper), OctoPrint, PrusaLink or a Duet on your network, or streaming it to a
+  printer on a USB cable.
 - `crates/update`: the window's updater, which asks GitHub for a newer release and installs it when you click
   (`LAMINA_NO_UPDATE_CHECK=1` turns it off).
 - `apps/lamina`: the desktop app, `lamina`: a 3D view of the plate, the objects' tools, print settings, a layer preview and the assistant.

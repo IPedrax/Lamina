@@ -37,9 +37,10 @@ mod network_boundary {
                 let Ok(text) = std::fs::read_to_string(entry.path().join("Cargo.toml")) else { continue };
                 manifests += 1;
                 // The assistant talks to the AI providers and seals keys with ring. The printer crate (roadmap 6.1) sends G-code to the
-                // one printer address the user typed, with the same ureq and rustls, and needs no ring of its own. The updater (roadmap
-                // 7.9) asks api.github.com for the latest release and downloads its installer from GitHub's release hosts, with the
-                // same ureq and rustls and ring's SHA-256 to check it. Nothing else may.
+                // one printer address the user typed, with the same ureq and rustls, and needs no ring of its own: its digest login
+                // hashes with its own MD5 and SHA-256, and its USB cable (serial2) is a local port, not the network. The updater
+                // (roadmap 7.9) asks api.github.com for the latest release and downloads its installer from GitHub's release hosts, with
+                // the same ureq and rustls and ring's SHA-256 to check it. Nothing else may.
                 let allowed: &[&str] = match entry.file_name().to_str() {
                     Some("assistant") | Some("update") => &["ureq", "ring", "rustls"],
                     Some("printer") => &["ureq", "rustls"],

@@ -2,6 +2,7 @@
 //! Duet boards (`duet.rs`), from their public API documentation. To the address the user typed and nowhere else: an upload of the
 //! file, which may also start the print, and [`status`], what the printer is doing, which the window asks while the user watches.
 //! With the assistant, this is the only crate that reaches the network (the `network_boundary` test in `lamina-core` lists both).
+//! A printer on a USB cable (`serial.rs`) is not on the network: the G-code is streamed to the port the user named while it prints.
 //!
 //! What goes out is the user's file and, for OctoPrint (or a Moonraker or PrusaLink that asks for one), the user's API key in the
 //! `X-Api-Key` header, never in an address or a message. A PrusaLink password is only hashed (HTTP digest, `digest.rs`). A redirect
@@ -13,6 +14,7 @@ pub mod digest;
 mod dsf;
 mod duet;
 mod prusalink;
+pub mod serial;
 
 use std::io::Read;
 use std::time::Duration;
@@ -43,6 +45,8 @@ pub enum Kind {
     /// A Duet board, on its own (`rr_upload`) or run by a single-board computer (DSF's `PUT /machine/file`), whichever answers; the
     /// board's password in the key field.
     Duet,
+    /// A printer on a USB cable (Marlin and its kin): the G-code streamed line by line as it prints, the port as the address.
+    Serial,
 }
 
 impl Kind {
@@ -52,10 +56,11 @@ impl Kind {
             Kind::Octoprint => "OctoPrint",
             Kind::PrusaLink => "PrusaLink",
             Kind::Duet => "Duet",
+            Kind::Serial => "USB cable",
         }
     }
 
-    pub const ALL: [Kind; 4] = [Kind::Moonraker, Kind::Octoprint, Kind::PrusaLink, Kind::Duet];
+    pub const ALL: [Kind; 5] = [Kind::Moonraker, Kind::Octoprint, Kind::PrusaLink, Kind::Duet, Kind::Serial];
 
     fn path(self) -> &'static str {
         match self {
@@ -146,6 +151,8 @@ pub struct Printer {
     pub key: Option<String>,
     /// PrusaLink's user name, when it asks for a user name and password (digest) rather than an API key: `key` is the password then.
     pub user: Option<String>,
+    /// A printer on a USB cable: the port's speed (default [`serial::BAUD`]).
+    pub baud: Option<u32>,
 }
 
 /// Not the key.
@@ -153,11 +160,12 @@ impl std::fmt::Debug for Printer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Printer {{ kind: {:?}, address: {:?}, key: {}, user: {:?} }}",
+            "Printer {{ kind: {:?}, address: {:?}, key: {}, user: {:?}, baud: {:?} }}",
             self.kind,
             self.address,
             if self.key.is_some() { "set" } else { "none" },
-            self.user
+            self.user,
+            self.baud
         )
     }
 }
@@ -175,6 +183,9 @@ pub fn send(printer: &Printer, name: &str, gcode: &[u8], print: bool) -> Result<
     if gcode.len() as u64 > MAX_GCODE {
         return Err(format!("the G-code is {} bytes, more than the {MAX_GCODE} sent", gcode.len()));
     }
+    if printer.kind == Kind::Serial {
+        return serial::send(&printer.address, printer.baud, &file_name(name), gcode, print);
+    }
     let base = base(&printer.address)?;
     let user = user(printer)?;
     let key = match printer.key.as_deref().map(str::trim).filter(|k| !k.is_empty()) {
@@ -189,7 +200,7 @@ pub fn send(printer: &Printer, name: &str, gcode: &[u8], print: bool) -> Result<
     match printer.kind {
         Kind::PrusaLink => return prusalink::send(&base, key, user, &name, gcode, print),
         Kind::Duet => return duet::send(&base, key, &name, gcode, print),
-        Kind::Moonraker | Kind::Octoprint => {}
+        Kind::Moonraker | Kind::Octoprint | Kind::Serial => {}
     }
     let flag = if print { "true" } else { "false" };
     let fields: Vec<(&str, &str)> = match printer.kind {
@@ -322,6 +333,7 @@ pub fn status(printer: &Printer) -> Result<Status, String> {
             prusalink::status(&base(&printer.address)?, password.or(key), user)
         }
         Kind::Duet => duet::status(&base(&printer.address)?, key),
+        Kind::Serial => Ok(serial::status(&printer.address)),
         Kind::Moonraker => {
             let v = get(printer, "/printer/objects/query?print_stats&virtual_sdcard&extruder&heater_bed")?;
             let s = &v["result"]["status"];

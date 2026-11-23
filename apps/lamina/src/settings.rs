@@ -218,6 +218,7 @@ mod tests {
                 kind: lamina_printer::Kind::PrusaLink,
                 address: "mk4.local".into(),
                 user: "maker".into(),
+                ..Default::default()
             }),
             connection_key: Some(seal::seal("ABCDEF0123456789").unwrap()),
             look: Some(crate::comfort::Look::Light),

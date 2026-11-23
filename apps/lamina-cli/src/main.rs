@@ -15,8 +15,8 @@ const USAGE: &str = "USAGE:
   lamina-cli run [FILE] [--cmd 'ID {json}']... [--script FILE]...
       Open FILE (a .lamina project, or a mesh put on the plate) or start empty, then run the commands and scripts in the order
       given (a script is one `ID {json}` per line). Each result is printed as a line of JSON. `export_mesh {\"path\": \"out.stl\"}`
-      writes the plate, `save {\"path\": \"plate.lamina\"}` the project, and after `slice`, `send_to_printer` uploads the
-      G-code to Moonraker or OctoPrint (see `lamina-cli commands`).
+      writes the plate, `save {\"path\": \"plate.lamina\"}` the project, and after `slice`, `send_to_printer` sends the
+      G-code to a printer: Moonraker, OctoPrint, PrusaLink, a Duet, or a USB cable (see `lamina-cli commands`).
   lamina-cli slice FILE OUT.gcode [PROFILE.json]
                                  slice a mesh, or a project with its own print settings, to G-code. PROFILE.json holds only the
                                  settings that differ (`lamina-cli run --cmd slicer_profile` prints them all)

@@ -9,12 +9,14 @@ use crate::{Kind, MAX_GCODE, Printer, send};
 
 pub static COMMANDS: &[Command] = &[Command {
     id: "send_to_printer",
-    params: "{path, printer:\"moonraker\"|\"octoprint\"|\"prusalink\"|\"duet\", address, key?, user?, name?, print?} sends the \
-             G-code file at `path` to a printer on the user's network: Moonraker (Klipper), OctoPrint, PrusaLink or a Duet at `address` \
-             (such as 192.168.1.20 or http://printer.local:7125). OctoPrint needs its API `key`. PrusaLink takes its API `key`, or a \
-             `user` (usually maker) with the password in `key`. A Duet's `key` is its password, alone or run by a single-board \
-             computer. `name` is the file's name on the printer (default the file's own); `print: true` starts printing it (default \
-             false: upload only). Returns {name, printing}",
+    params: "{path, printer:\"moonraker\"|\"octoprint\"|\"prusalink\"|\"duet\"|\"serial\", address, key?, user?, baud?, name?, \
+             print?} sends the G-code file at `path` to a printer: Moonraker (Klipper), OctoPrint, PrusaLink or a Duet on the user's \
+             network at `address` (such as 192.168.1.20 or http://printer.local:7125). OctoPrint needs its API `key`. PrusaLink takes \
+             its API `key`, or a `user` (usually maker) with the password in `key`. A Duet's `key` is its password, alone or run by a \
+             single-board computer. `serial` is a printer on a USB cable: `address` is the port (/dev/ttyUSB0, /dev/ttyACM0, COM3) and \
+             `baud` its speed (default 115200; some take 250000); the G-code is streamed as it prints, so it needs `print: true` and \
+             returns when the last line is taken. `name` is the file's name on the printer (default the file's own); `print: true` \
+             starts printing it (default false: upload only). Returns {name, printing}",
     run: send_to_printer,
     undoable: false,
     files: Files::Read,
@@ -28,6 +30,7 @@ struct Args {
     address: String,
     key: Option<String>,
     user: Option<String>,
+    baud: Option<u32>,
     name: Option<String>,
     print: Option<bool>,
 }
@@ -42,7 +45,12 @@ fn send_to_printer(_: &mut Session, p: &Value) -> Result<Value, String> {
     let name = a.name.unwrap_or_else(|| {
         std::path::Path::new(&a.path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "lamina.gcode".into())
     });
-    let sent = send(&Printer { kind: a.printer, address: a.address, key: a.key, user: a.user }, &name, &gcode, a.print.unwrap_or(false))?;
+    let sent = send(
+        &Printer { kind: a.printer, address: a.address, key: a.key, user: a.user, baud: a.baud },
+        &name,
+        &gcode,
+        a.print.unwrap_or(false),
+    )?;
     Ok(json!({"name": sent.name, "printing": sent.printing}))
 }
 
@@ -67,6 +75,8 @@ mod tests {
             json!({"path": path, "printer": "moonraker", "address": address, "start": true}),
             json!({"path": "/nonexistent.gcode", "printer": "moonraker", "address": address}),
             json!({"path": path, "printer": "moonraker", "address": "ftp://x"}),
+            json!({"path": path, "printer": "serial", "address": "/etc/passwd", "print": true}),
+            json!({"path": path, "printer": "serial", "address": "/dev/ttyUSB0", "baud": "fast", "print": true}),
         ] {
             assert!(s.execute("send_to_printer", &bad).is_err(), "{bad}");
         }

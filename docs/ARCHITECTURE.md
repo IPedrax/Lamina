@@ -55,7 +55,7 @@ desktop (lamina) ──────┘
 | `lamina-slicer` | `slice` (mesh to loops), `geom` (polygon booleans and offsets on `i_overlay`), `print` (walls, infill, G-code), `profile`, the `slice` and `slicer_profile` commands | core, i_overlay |
 | `lamina-csg` | `boolean` over csgrs' BSP trees, crack repair, the soundness gate, the `union`, `difference` and `intersect` commands | core, csgrs |
 | `lamina-assistant` | provider clients, sealed key storage, tool layer, turn loop | core, ureq, ring |
-| `lamina-printer` | uploads to Moonraker and OctoPrint, the `send_to_printer` command | core, ureq |
+| `lamina-printer` | uploads to Moonraker, OctoPrint, PrusaLink and Duet, streams to a printer on a USB cable, the `send_to_printer` command | core, ureq, serial2 |
 | `lamina-update` | the updater: the latest release from GitHub, its installer downloaded and checked, put in place | ureq, ring, semver |
 | `lamina` (apps/lamina) | the desktop window: 3D view, objects panel, settings, layer preview, assistant panel, printer connection, update banner | core, slicer, csg, assistant, printer, update, eframe (wgpu), rfd, pollster |
 | `lamina-cli` | `lamina-cli` binary, MCP server | core, slicer, csg, printer |
@@ -113,6 +113,11 @@ printer's challenge, then the upload carries the answer. The password is only ev
 A Duet (`duet.rs`) is asked DuetSoftwareFramework's `/machine/connect` first (`dsf.rs`): a board run by a single-board computer
 answers with a session key and is reached through DSF's own API (`PUT /machine/file`, `POST /machine/code`, `GET /machine/model`);
 a board on its own answers otherwise and gets RepRapFirmware's `rr_` requests.
+
+A printer on a USB cable (`serial.rs`) is not reached over the network: the G-code is streamed to the port the user named while it
+prints, with line numbers and checksums, `ok` counted, resends answered and at most four lines in flight. The protocol is written
+over `Read + Write`, so it is tested against a printer in memory; `serial2` opens the real port. The port is opened only to print
+(opening it restarts many boards), so its status is what the stream in this program says.
 
 `status` asks what the printer is doing (Moonraker's printer objects; OctoPrint's job and printer): state, file, progress and
 temperatures, read leniently, five seconds at most. The window asks every five seconds while the user ticks Show what it is doing,

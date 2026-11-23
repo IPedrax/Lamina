@@ -130,7 +130,13 @@ mod tests {
         const GCODE: &[u8] = b"G28\nM84\n";
         for sha256 in [true, false] {
             let (address, got) = printer(sha256);
-            let mut p = Printer { kind: Kind::PrusaLink, address, key: Some("secret pass".into()), user: Some("maker".into()) };
+            let mut p = Printer {
+                kind: Kind::PrusaLink,
+                address,
+                key: Some("secret pass".into()),
+                user: Some("maker".into()),
+                ..Default::default()
+            };
             assert_eq!(crate::send(&p, "part", GCODE, true).unwrap().name, "part.gcode");
             assert_eq!(crate::status(&p).unwrap().state, "idle");
             {
@@ -164,7 +170,7 @@ mod tests {
     #[test]
     fn a_challenge_lamina_cannot_answer_is_said() {
         let (address, got) = serve(|_| (401, vec![("WWW-Authenticate".into(), r#"Basic realm="x""#.into())], String::new()));
-        let p = Printer { kind: Kind::PrusaLink, address, key: Some("pw".into()), user: Some("maker".into()) };
+        let p = Printer { kind: Kind::PrusaLink, address, key: Some("pw".into()), user: Some("maker".into()), ..Default::default() };
         assert!(crate::send(&p, "a", b"G28\n", false).unwrap_err().contains("does not know"));
         assert_eq!(got.lock().unwrap().len(), 1, "the file was never sent");
     }

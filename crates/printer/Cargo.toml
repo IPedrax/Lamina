@@ -1,6 +1,6 @@
 [package]
 name = "lamina-printer"
-description = "Lamina's printer connections: send G-code to Moonraker (Klipper) or OctoPrint on the user's own network"
+description = "Lamina's printer connections: send G-code to Moonraker, OctoPrint, PrusaLink or a Duet on the user's own network, or stream it over a USB cable"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -19,3 +19,5 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 # HTTP to the printer the user names (HTTPS with rustls when the address asks for it), the same ureq the assistant uses.
 ureq = { version = "3", default-features = false, features = ["rustls"] }
+# The serial port a printer on a USB cable is, on Linux, macOS and Windows (BSD-2-Clause or Apache-2.0; serialport is MPL-2.0).
+serial2 = "0.2"

@@ -68,7 +68,8 @@ CI (`.github/workflows/ci.yml`) runs the same three on Linux, Windows and macOS 
   `crates/update` the only crates that may use `ring`, and with `crates/printer` and `crates/update` the only ones that may use `ureq`
   (a test in `lamina-core` checks every manifest).
 - `crates/printer`: sending G-code to Moonraker, OctoPrint, PrusaLink (`prusalink.rs`, with an API key or a user name and password by
-  HTTP digest, `digest.rs`) or a Duet (`duet.rs` on its own, `dsf.rs` run by a single-board computer) on the user's network (`send`, the `send_to_printer` command), what
+  HTTP digest, `digest.rs`) or a Duet (`duet.rs` on its own, `dsf.rs` run by a single-board computer) on the user's network, or
+  streamed to a printer on a USB cable (`serial.rs`, over `Read + Write`, the port from `serial2`) (`send`, the `send_to_printer` command), what
   it is doing (`status`, the window's watch, not a command so no agent can point it elsewhere), and a
   fake printer for tests (`testing`, a feature). With the assistant and the updater, the only crates that may use `ureq`.
 - `crates/update` (`lamina-update`): the updater, lifted from BIMCraft's. `lib.rs` (the latest release from GitHub's API, its tag

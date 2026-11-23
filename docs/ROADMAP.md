@@ -225,6 +225,13 @@ Priorities:
   `GET /machine/connect` with the password for a session key in `X-Session-Key`, `PUT /machine/file/0:/gcodes/NAME`,
   `POST /machine/code` with `M32` to start it, and `GET /machine/model` for the status. A Duet is asked DSF's connect first; a board on its
   own answers it with RepRapFirmware's `err`, a page or 404, and gets its `rr_` requests as before. Tested against fakes of both.
+- **6.4b Printing over a USB cable.** `crates/printer/src/serial.rs`, from Marlin's G-code documentation and RepRap's checksum rule:
+  `M110 N0`, then each line as `N<n> <line>*<xor>`, `ok` counted, `Resend: N` and `rs N` answered from line N (the refused lines
+  sent before it, and their `ok`s, not counted twice), `busy:` waited through, at most four lines in flight, a silence taken as one
+  lost `ok` and then given up on, a restart at the port's opening started over, a firmware error, a restart part way or the same
+  line asked for again and again stopping it, and Cancel stopping it; each stop turns the heaters off. Written over `Read + Write`
+  and tested against a Marlin in memory and a fuzzed one; the port is the `serial2` crate (BSD-2-Clause or Apache-2.0).
+  `send_to_printer` takes `printer: "serial"` and `baud`; the window a USB cable with Port and Baud, and the progress as status.
 - **7.1 File menu and drag and drop.** New, Open, Open recent, Save, Save as (with Ctrl shortcuts), Import mesh, Export G-code and
   Quit; the title shows the project and a star for unsaved changes; New, Open and closing ask first when something would be lost;
   files dropped on the window are opened (`.lamina`) or imported (meshes). `apps/lamina/src/files.rs`.
@@ -352,8 +359,8 @@ sequential printing a check of the print head's clearance.
 
 ## 6. Printers
 
-**6.4b More printers still (P2).** Bambu over the LAN (MQTT and FTPS, now limited by Bambu's own authorization), USB serial with
-line numbers and resends. Each its own module in `crates/printer`.
+**6.4b More printers still (P2).** Bambu over the LAN (MQTT and FTPS, now limited by Bambu's own authorization), its own module in
+`crates/printer` if it is ever done.
 
 ## 7. Desktop
 
