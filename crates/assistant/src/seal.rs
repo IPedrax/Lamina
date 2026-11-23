@@ -125,6 +125,13 @@ fn random() -> Result<([u8; SALT], [u8; NONCE]), String> {
     Ok((salt, nonce))
 }
 
+/// 128 random bits from the system, as 32 hex digits: the token that lets an agent into a window's control port.
+pub fn token() -> Result<String, String> {
+    let mut bytes = [0u8; 16];
+    SystemRandom::new().fill(&mut bytes).map_err(|_| "the system has no random numbers".to_string())?;
+    Ok(hex(&bytes))
+}
+
 /// [`seal`] with the secret, salt, nonce and iterations given: for the test that the format is the standards'. Never reuse a nonce for a key.
 pub fn seal_with(secret: &str, key: &str, salt: &[u8], nonce: &[u8], iterations: u32) -> Result<String, String> {
     seal_as(Kind::BuiltIn, secret, key, salt, nonce, iterations)

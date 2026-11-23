@@ -97,6 +97,11 @@ only through `Session::execute`, so the assistant, a button and a script do the 
   shows. On Windows a start that fails says so in a message box, as a release build has no console. A start that dies without a
   word leaves `graphics.json` marked unfinished, and on Windows the next start tries DirectX 12, then Vulkan, then OpenGL; the
   one that stays up 15 s is kept. `WGPU_BACKEND` overrides it all.
+- **Agents on the open plate (`control.rs`).** With Let agents work on this plate ticked (or `lamina --control PORT`), the window
+  listens on 127.0.0.1 and writes `bridge.json` beside the settings, with the port and a 128-bit token, readable by the user
+  alone. `lamina-cli mcp --connect` reads it, and its tools run on the window's plate: each request in the frame, as a button's
+  command, so it is the user's to see and undo. A connection without the token in its first line is dropped, lines are capped,
+  eight agents at most. Agents may be let only read, and never run `new`, `open` or `send_to_printer`.
 - **Long work (`work.rs`).** Slicing, the booleans and the cut, writing G-code and sending it run on a thread, as the chat's requests
   do, so the window keeps drawing; the status bar shows a spinner, the time so far and Cancel. A job runs on a sibling session that
   shares the scene, so it still goes through `Session::execute`, and its new scene comes back with `Session::adopt` as one undo
@@ -241,9 +246,10 @@ BIMCraft is `/mnt/ai/RevCraft` (github.com/IPedrax/BIMCraft), same author, MIT O
 | From BIMCraft | In Lamina | State |
 |---|---|---|
 | `crates/core/src/engine.rs`, `commands.rs` (command catalog, rollback, undo, script) | `core/engine.rs`, `commands.rs` | rewritten smaller: one `Session`, static command sets |
-| `crates/core/src/bridge.rs` (read-only agents) | `core/bridge.rs` | trimmed to Hello, Execute, Script, Catalog |
+| `crates/core/src/bridge.rs` (read-only agents, the control port's protocol and token) | `core/bridge.rs` | trimmed to Hello, Execute, Script, Catalog; no Context op |
 | `crates/assistant` (3 providers, sealed key, attachments, turn loop) | `crates/assistant` | ported, 53 tests. Dropped Co-Work and saved chats |
-| `apps/bimcraft-cli/src/mcp.rs` | `apps/lamina-cli/src/mcp.rs` | ported, own session only |
+| `apps/bimcraft-cli/src/mcp.rs` | `apps/lamina-cli/src/mcp.rs` | ported; its own session, or a window's with `--connect` |
+| `apps/bimcraft-cli/src/window.rs`, `crates/ui-egui/src/control.rs` (the control port) | `apps/lamina-cli/src/window.rs`, `apps/lamina/src/control.rs` | lifted; the Agents section in the plate panel instead of a settings page and app bar button |
 | `crates/core/src/mesh_in.rs` (OBJ and glTF readers, "knows no element") | `core/mesh_in.rs` | lifted with its reader tests; `import_mesh` makes objects of what it reads |
 | `crates/core/src/autosave.rs` | `apps/lamina/src/autosave.rs` | simpler: one window, one file |
 | `apps/bimcraft/src/startup.rs` (log, graphics fallback) | `apps/lamina/src/startup.rs` | lifted; no translations, no old-mark reading |

@@ -215,6 +215,12 @@ Priorities:
   this computer and writes `localhost` as 127.0.0.1; `net::allowed` lets plain HTTP through to 127.0.0.1 and ::1 only, by address,
   with tests that every other host is refused. No key is needed. The window shows the server's address and a free model field,
   kept in the settings file. A whole turn is tested against a server on this machine.
+- **9.4 Agents on the open window.** BIMCraft's control port, lifted: the protocol, the token and the bridge file in
+  `lamina_core::bridge`; the listener in `apps/lamina/src/control.rs` (127.0.0.1 only, a 128-bit token in its first line or the
+  connection is dropped, capped lines, eight agents, answered in the frame as a button's command); `lamina-cli mcp --connect
+  [PORT]` in `apps/lamina-cli/src/window.rs`. The Agents section of the plate panel (or `lamina --control PORT`) opens it, kept in
+  the settings file, with read-only as an option. A window's agent never replaces the plate or sends it to a printer. Tested with
+  a real port: an agent adds a box that becomes an undo step in the window.
 
 ## Order of work
 
@@ -309,10 +315,6 @@ DMG, each checked against the SHA-256 digest GitHub gives the asset. The release
 regressions are seen.
 
 ## 9. The assistant
-
-**9.4 Agents on the open window (P1).** How: let an external agent drive the window's plate through `lamina-cli mcp --connect`. Lift
-BIMCraft's control port: `bridge.rs` request parsing with a token, `apps/bimcraft-cli/src/window.rs`, and the window's listener. It is
-local only, the token is in a file beside the settings, and read-only is an option.
 
 **9.5 Saved chats (P2).** How: keep each project's conversation beside it. BIMCraft's `saved.rs` was removed from the port for lack of
 project files and can return after 1.1.

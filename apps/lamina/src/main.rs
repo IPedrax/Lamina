@@ -34,8 +34,21 @@ fn main() -> ExitCode {
         Some(path) => App::with_settings(session(), net, path),
         None => App::new(session(), net),
     };
-    if let Some(file) = std::env::args().nth(1) {
-        app.open(&file);
+    // `--control PORT` lets agents work on this window's plate (0: any free port), as the Agents section does; any other argument is
+    // a file to open.
+    let mut rest = args.iter();
+    while let Some(a) = rest.next() {
+        if a == "--control" {
+            match rest.next().and_then(|p| p.parse::<u16>().ok()) {
+                Some(port) => {
+                    app.agents.port = port;
+                    app.open_control();
+                }
+                None => eprintln!("lamina: --control needs a port number (0 for any free one)"),
+            }
+        } else {
+            app.open(a);
+        }
     }
     let mut options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()

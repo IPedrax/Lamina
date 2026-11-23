@@ -1328,3 +1328,11 @@ fn a_turn_with_a_local_model_needs_no_key_and_goes_to_this_computer() {
     assert!(!chat.busy());
     assert!(matches!(chat.log.last(), Some(Line::Note(n)) if n.contains("this computer")), "{:?}", chat.log.last());
 }
+
+#[test]
+fn a_control_port_token_is_128_random_bits_in_hex() {
+    let (a, b) = (seal::token().unwrap(), seal::token().unwrap());
+    assert_eq!(a.len(), 32);
+    assert!(a.bytes().all(|c| c.is_ascii_hexdigit()));
+    assert_ne!(a, b);
+}

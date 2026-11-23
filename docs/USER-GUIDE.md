@@ -87,6 +87,14 @@ Printer connection, in the plate panel, takes the kind of server (Moonraker for 
 asks for one. Lamina sends only to that address, and only when you press Send. The key is kept like the assistant's: in memory, or
 sealed in the settings file when Remember is ticked.
 
+## Letting an agent work on your plate
+
+An AI agent outside Lamina (Claude Code, Codex, or any MCP client) can model on the plate you have open. In the plate panel, open
+Agents and tick Let agents work on this plate, then point the agent's MCP settings at `lamina-cli mcp --connect`. What it does
+appears in the window as it does it, and Undo takes it back. Untick Agents may change the plate to let it only look. An agent can
+never start a new plate, open another, or send yours to a printer. Only programs on this computer that can read your settings
+folder get in: the window listens on this computer's own address, with a key it writes to `bridge.json` beside the settings.
+
 ## Projects and autosave
 
 Save writes a `.lamina` project: the plate, each object's recipe and its own settings, and the print settings and presets chosen.

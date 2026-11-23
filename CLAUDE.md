@@ -19,7 +19,9 @@ Lamina is a 3D slicer and modelling tool with a built-in AI chat, a CLI and an M
   from elsewhere is read for its ideas and never used as code.
 - **The core has no UI and no network.** `lamina-core` must not depend on a UI toolkit or an HTTP client, so front ends stay swappable.
   Only two crates reach the network: the AI chat (`crates/assistant`) and the printer connection (`crates/printer`, to the one
-  address the user typed). The `network_boundary` test in `lamina-core` checks every manifest.
+  address the user typed). The `network_boundary` test in `lamina-core` checks every manifest. The one other socket is the
+  window's control port for agents (`apps/lamina/src/control.rs`, and `apps/lamina-cli/src/window.rs` that asks it): 127.0.0.1
+  only, with a token, never another address.
 - **Clean-room slicing.** PrusaSlicer, OrcaSlicer, Bambu Studio and Cura are AGPL or LGPL: read their documentation and behave
   alike, never copy their code. Prefer permissively licensed crates (MIT or Apache-2.0), and check the licence before adding one.
 - **Units.** Millimetres, x east, y north, z up. The scene's origin is the middle of the plate, z = 0 is the plate's surface. A
@@ -45,7 +47,8 @@ CI (`.github/workflows/ci.yml`) runs the same three on Linux, Windows and macOS 
   problems `info` reports), `threemf.rs` and `zip.rs` (3MF in and out), `mesh_in.rs` (OBJ and glTF in, lifted from BIMCraft), `sketch.rs` (outlines extruded into solids), `render.rs` (the orbit camera and CPU rasterizer
   the 3D view, the thumbnails and the assistant's picture share, `draw_paths` for the 3D G-code preview, and a PNG writer), `base64.rs`, `fuzz.rs` (the seeded generator every crate's fuzz tests use), `cancel.rs` (the flag a worker thread's slice or
   boolean stops on).
-  `bridge.rs` (what an agent may ask: execute, script, catalog; read-only access; `REPLACES`, the commands that replace the plate).
+  `bridge.rs` (what an agent may ask: execute, script, catalog; read-only access; `REPLACES`, the commands that replace the plate;
+  the control port's protocol, token and bridge file, and `settings_file`, the settings folder the desktop and the CLI share).
 - `crates/slicer`: `slice.rs` (mesh to closed loops per layer), `geom.rs` (polygon booleans, offsets, line clipping on i_overlay),
   `print.rs` (walls, skins, infill, skirt, the G-code writer), `infill.rs` (sparse infill patterns), `gap.rs` (gap fill and thin walls), `time.rs` (the print time planner), `support.rs` (overhangs,
   supports and their interface), `profile.rs` (settings, `LIMITS` and `ABOUT`, checks, `[name]` placeholders), `presets.rs`
@@ -70,11 +73,13 @@ CI (`.github/workflows/ci.yml`) runs the same three on Linux, Windows and macOS 
   `lamina_core::render`, picking, the gizmo and the tools), `preview.rs` (layers read back from the G-code with each extrusion's kind, drawn in 3D up to the
   chosen layer and coloured by kind, or one layer from above), `chat.rs` (the assistant panel, with Remember and a passphrase for the key), `printer.rs` (the printer connection and the Send
   buttons), `work.rs` (slicing, booleans, export and sending on a thread, with a spinner and Cancel), `comfort.rs` (shortcuts,
-  the right-click menu, the Edit menu with the undo history, the theme), `icon.rs` (the app icon, drawn, and its PNG, ICO and ICNS files), `startup.rs` (`lamina.log` beside the settings, panics
+  the right-click menu, the Edit menu with the undo history, the theme), `control.rs` (the control port: agents work on the
+  window's plate through `lamina-cli mcp --connect`; from BIMCraft), `icon.rs` (the app icon, drawn, and its PNG, ICO and ICNS files), `startup.rs` (`lamina.log` beside the settings, panics
   and failed starts, and another graphics backend after a start that died; from BIMCraft), `settings.rs` (the settings file: print settings,
   presets, sealed keys; read hostilely, written whole and owner-only). Thin: it changes the scene only through `Session::execute`. UI behaviour is tested with
   egui_kittest; `picture_of_the_window` (ignored, needs a GPU) renders it to a PNG to look at.
-- `apps/lamina-cli`: the `lamina-cli` binary and `mcp.rs`, the MCP server.
+- `apps/lamina-cli`: the `lamina-cli` binary, `mcp.rs` (the MCP server) and `window.rs` (`mcp --connect`: the tools run on an
+  open window's plate through its control port).
 - `tools/notices` (`lamina-notices`): checks every dependency's licence (a test runs it on the whole tree) and writes the
   THIRD-PARTY-NOTICES.txt each release carries.
 - `packaging/` and `.github/workflows/release.yml`: the AppImage and tarball, the MSI and the DMG, built and published on each tag

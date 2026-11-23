@@ -6,6 +6,7 @@
 pub mod autosave;
 pub mod chat;
 pub mod comfort;
+pub mod control;
 pub mod files;
 pub mod icon;
 pub mod preview;
@@ -46,7 +47,7 @@ fn hint(name: &str) -> String {
 }
 
 /// The colour of a warning: a mesh with problems, a plate changed since its slice.
-const WARNING: Color32 = Color32::from_rgb(230, 180, 90);
+pub(crate) const WARNING: Color32 = Color32::from_rgb(230, 180, 90);
 
 /// A session with every command: the core's, the slicer's, the booleans' and the printer connection's.
 pub fn session() -> Session {
@@ -177,6 +178,12 @@ pub struct App {
     /// The log beside the settings file, where each error the status bar shows is written once.
     pub log: Option<PathBuf>,
     logged: String,
+    /// The control port agents reach the plate through, when it is open; the Agents section as the settings keep it; why the port
+    /// could not be opened; and where the bridge file goes (beside the settings; none in a test that does not ask).
+    pub control: Option<control::Control>,
+    pub agents: control::Agents,
+    pub agents_failed: Option<String>,
+    pub bridge_file: Option<PathBuf>,
 }
 
 impl App {
@@ -229,6 +236,10 @@ impl App {
             applied_look: None,
             log: None,
             logged: String::new(),
+            control: None,
+            agents: control::Agents::default(),
+            agents_failed: None,
+            bridge_file: None,
         }
         .ready()
     }
@@ -270,6 +281,13 @@ impl App {
         app.recovery = a.path.exists().then(|| a.path.clone());
         app.autosave = Some(a);
         app.log = Some(startup::Files::beside(&path).log);
+        app.bridge_file = Some(path.with_file_name(lamina_core::bridge::FILE));
+        if let Some(a) = s.agents.clone() {
+            app.agents = a;
+        }
+        if app.agents.listen {
+            app.open_control();
+        }
         app.settings_path = Some(path);
         app.mark_saved();
         app
@@ -292,6 +310,7 @@ impl App {
             look: Some(self.look).filter(|l| *l != comfort::Look::default()),
             local_url: Some(self.chat.chat.local_url.clone()).filter(|u| u != lamina_assistant::local::DEFAULT_URL),
             local_model: Some(self.chat.local_model.clone()).filter(|m| m != lamina_assistant::Provider::Local.default_model()),
+            agents: Some(self.agents.clone()).filter(|a| *a != control::Agents::default()),
         }
     }
 
@@ -607,6 +626,7 @@ impl App {
             self.toolbar(ui);
         });
         self.poll_work(&ctx);
+        self.answer_agents(&ctx);
         Panel::bottom("status").show(ui, |ui| {
             ui.horizontal(|ui| {
                 self.work_ui(ui);
@@ -841,6 +861,7 @@ impl App {
         self.presets_ui(ui);
         self.print_settings(ui);
         self.printer_ui(ui);
+        self.agents_ui(ui);
     }
 
     /// A boolean or a cut, on a thread: its result replaces the plate as one undo step, and what it made is picked.
@@ -1762,6 +1783,58 @@ mod tests {
         // The next window has them back.
         let next = App::with_settings(session(), Arc::new(lamina_assistant::testing::Fake::default()), path);
         assert_eq!((next.chat.chat.local_url.as_str(), next.chat.local_model.as_str()), ("localhost:1234", "llama3.2:3b"));
+    }
+
+    #[test]
+    fn an_agent_works_on_the_window_s_plate_through_its_port() {
+        use std::io::{BufRead, BufReader, Write};
+        let dir = tempfile::tempdir().unwrap();
+        let mut h = window();
+        h.state_mut().bridge_file = Some(dir.path().join(lamina_core::bridge::FILE));
+        h.state_mut().open_control();
+        let entry = lamina_core::bridge::read_entry(&dir.path().join(lamina_core::bridge::FILE)).expect("the bridge file");
+        assert_eq!(Some(entry.port), h.state().control.as_ref().map(|c| c.entry.port));
+        // The agent, on a thread of its own, as lamina-cli would be; the window answers in its frames.
+        let agent = std::thread::spawn(move || {
+            let stream = std::net::TcpStream::connect(("127.0.0.1", entry.port)).unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut writer = stream;
+            let mut ask = |request: Value| {
+                let mut request = request;
+                request["token"] = json!(entry.token);
+                writeln!(writer, "{request}").unwrap();
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                serde_json::from_str::<Value>(&line).unwrap()
+            };
+            vec![
+                ask(json!({"op": "hello"})),
+                ask(json!({"op": "execute", "command": "add_primitive", "params": {"kind": "box", "size": [10, 10, 10]}})),
+                ask(json!({"op": "execute", "command": "new"})),
+                ask(json!({"op": "script", "text": "info\nsend_to_printer {}"})),
+                ask(json!({"op": "execute", "command": "delete", "params": {"id": 1}, "read_only": true})),
+                ask(json!({"op": "execute", "command": "info"})),
+            ]
+        });
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while !agent.is_finished() {
+            assert!(std::time::Instant::now() < until, "the agent was not answered");
+            h.step();
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let said = agent.join().unwrap();
+        assert_eq!(said[0]["ok"]["app"], "lamina");
+        assert_eq!(said[1]["ok"]["id"], 1, "{}", said[1]);
+        assert!(said[2]["error"].as_str().unwrap().contains("not for an agent"), "{}", said[2]);
+        assert!(said[3]["error"].as_str().unwrap().contains("send_to_printer"), "{}", said[3]);
+        assert!(said[4]["error"].as_str().unwrap().contains("only read"), "{}", said[4]);
+        assert_eq!(said[5]["ok"]["objects"].as_array().map(Vec::len), Some(1), "{}", said[5]);
+        // What the agent made is on the window's plate, one undo step the user can take back.
+        assert_eq!(h.state().session.scene.objects.len(), 1);
+        assert_eq!(h.state().session.undo_label(), Some("add_primitive"));
+        // Closing the port removes the bridge file.
+        h.state_mut().close_control();
+        assert!(!dir.path().join(lamina_core::bridge::FILE).exists());
     }
 
     #[test]

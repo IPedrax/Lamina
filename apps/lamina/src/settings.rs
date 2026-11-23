@@ -53,27 +53,14 @@ pub struct Settings {
     pub local_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub local_model: Option<String>,
+    /// The Agents section: whether the window lets agents in, on which port, and whether they may change the plate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agents: Option<crate::control::Agents>,
 }
 
-/// Where the settings file is: `LAMINA_SETTINGS` when set, else `settings.json` in the user's settings folder (found as BIMCraft
-/// finds its own: `%APPDATA%\Lamina`, `~/Library/Application Support/Lamina`, or `$XDG_CONFIG_HOME/lamina`, `~/.config/lamina`).
+/// Where the settings file is (`lamina_core::bridge::settings_file`, which the CLI reads too, to find the window's bridge file).
 pub fn default_path() -> Option<PathBuf> {
-    if let Some(path) = std::env::var_os("LAMINA_SETTINGS").filter(|p| !p.is_empty()) {
-        return Some(PathBuf::from(path));
-    }
-    let home = || std::env::var_os("HOME").filter(|h| !h.is_empty()).map(PathBuf::from);
-    let folder = if cfg!(target_os = "windows") {
-        PathBuf::from(std::env::var_os("APPDATA").filter(|p| !p.is_empty())?).join("Lamina")
-    } else if cfg!(target_os = "macos") {
-        home()?.join("Library").join("Application Support").join("Lamina")
-    } else {
-        std::env::var_os("XDG_CONFIG_HOME")
-            .filter(|p| !p.is_empty())
-            .map(PathBuf::from)
-            .or_else(|| home().map(|h| h.join(".config")))?
-            .join("lamina")
-    };
-    Some(folder.join("settings.json"))
+    lamina_core::bridge::settings_file()
 }
 
 impl Settings {
@@ -145,6 +132,12 @@ impl Settings {
             match v.as_str().filter(|m| lamina_assistant::model_ok_for(Provider::Local, m)) {
                 Some(m) => s.local_model = Some(m.to_string()),
                 None => notes.push("The local model's name was left out: it is not a model id".into()),
+            }
+        }
+        if let Some(v) = all.get("agents") {
+            match serde_json::from_value::<crate::control::Agents>(v.clone()) {
+                Ok(a) => s.agents = Some(a),
+                Err(_) => notes.push("The Agents settings were left out: they do not read".into()),
             }
         }
         if let Some(v) = all.get("look") {

@@ -2,6 +2,7 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 mod mcp;
+mod window;
 
 use std::io::Write;
 use std::process::ExitCode;
@@ -21,7 +22,9 @@ const USAGE: &str = "USAGE:
                                  settings that differ (`lamina-cli run --cmd slicer_profile` prints them all)
   lamina-cli info FILE               the plate at a glance: size, volume, triangles, whether each object is closed
   lamina-cli commands                every command and its parameters
-  lamina-cli mcp [--read-only]       an MCP server on stdio, for agents; with --read-only the agent may look at the scene, never change it
+  lamina-cli mcp [--read-only] [--connect [PORT]]
+                                 an MCP server on stdio, for agents; with --read-only the agent may look at the scene, never change
+                                 it; with --connect it works on the plate of the open window that lets agents in (its Agents section)
   lamina-cli --version";
 
 /// A session with every command registered: the built-in ones, and each crate's.
@@ -93,7 +96,17 @@ fn main_with(args: &[String], out: &mut impl Write) -> Result<(), String> {
         Some("commands") => print(out, &session().catalog()),
         Some("mcp") => {
             let access = if args.iter().any(|a| a == "--read-only") { Access::Read } else { Access::Edit };
-            mcp::Server::new(session(), access).serve(std::io::stdin().lock(), std::io::stdout().lock()).map_err(|e| format!("mcp: {e}"))
+            let mut server = match args.iter().position(|a| a == "--connect") {
+                Some(at) => {
+                    let port = match args.get(at + 1).filter(|p| !p.starts_with("--")) {
+                        Some(p) => Some(p.parse::<u16>().map_err(|_| format!("`--connect {p}`: a port is a number"))?),
+                        None => None,
+                    };
+                    mcp::Server::window(window::Window::connect(port)?, access)
+                }
+                None => mcp::Server::new(session(), access),
+            };
+            server.serve(std::io::stdin().lock(), std::io::stdout().lock()).map_err(|e| format!("mcp: {e}"))
         }
         Some("--version") => print(out, &json!(env!("CARGO_PKG_VERSION"))),
         _ => Err(USAGE.into()),

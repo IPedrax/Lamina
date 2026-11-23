@@ -40,7 +40,8 @@ command that fails, panics or leaves the scene invalid changes nothing, and each
 - `crates/assistant`: the AI chat (Anthropic, OpenAI, Gemini; your own key). With `crates/printer`, the only code that touches the network.
 - `crates/printer`: sending the G-code to Moonraker (Klipper) or OctoPrint on your network.
 - `apps/lamina`: the desktop app, `lamina`: a 3D view of the plate, the objects' tools, print settings, a layer preview and the assistant.
-- `apps/lamina-cli`: `lamina-cli` and its MCP server (`lamina-cli mcp`, `--read-only` to let an agent look but not change).
+- `apps/lamina-cli`: `lamina-cli` and its MCP server (`lamina-cli mcp`, `--read-only` to let an agent look but not change,
+  `--connect` to work on the plate open in the window).
 
 To let an agent outside the app model for you, point your MCP client at `lamina-cli mcp`. The assistant inside the app needs an
 Anthropic, OpenAI or Gemini key, typed in its panel or set in the provider's usual environment variable (`ANTHROPIC_API_KEY`,

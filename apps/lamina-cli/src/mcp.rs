@@ -1,6 +1,7 @@
 //! Lamina's MCP server: JSON-RPC 2.0 over stdio, one message per line (MCP's stdio transport). Ported from BIMCraft's.
 //! Its tools run the same commands as the CLI and scripts, through `bridge::run`, so an agent started with `--read-only` can look at
-//! the scene and never change it.
+//! the scene and never change it. With `--connect` they run on the plate of an open window instead (`window.rs`), by the same rules,
+//! the window's own on top.
 
 use std::io::{BufRead, Write};
 
@@ -22,11 +23,20 @@ object, list_commands (with a filter such as scale or slice) shows a command's p
 add_primitive {kind: \"box\", size: [20, 20, 10]}, move {id, by: [x, y, z]}, rotate {id, axis: \"z\", degrees: 45}, scale {id, factor: 2}; or send \
 several at once with script, one `command {json}` per line. A command that fails changes nothing.";
 
+const WINDOW_NOTE: &str = " You are working on the plate the user has open in the Lamina window: they see what you do as you do it, and can \
+undo it. You cannot start, open or replace their plate, or send it to a printer.";
+
 const READ_ONLY_NOTE: &str = " The scene is read-only for you: inspect it and read the catalog, but every command that would change it, or step \
 through its undo history, is refused.";
 
+/// Where the tools run: a session of the server's own, or an open window's plate.
+pub enum Target {
+    Own(Session),
+    Window(crate::window::Window),
+}
+
 pub struct Server {
-    session: Session,
+    target: Target,
     access: Access,
 }
 
@@ -59,7 +69,23 @@ fn tools() -> Value {
 
 impl Server {
     pub fn new(session: Session, access: Access) -> Server {
-        Server { session, access }
+        Server { target: Target::Own(session), access }
+    }
+
+    /// A server whose tools run on an open window's plate; `access` Read asks the window to let it only read.
+    pub fn window(mut window: crate::window::Window, access: Access) -> Server {
+        window.read_only = access == Access::Read;
+        // A window that lets agents only read is read-only for this server too, so it says so.
+        let access = if window.window_read_only { Access::Read } else { access };
+        Server { target: Target::Window(window), access }
+    }
+
+    /// Runs a request where the tools run.
+    fn ask(&mut self, request: &Request) -> Result<Value, String> {
+        match &mut self.target {
+            Target::Own(session) => bridge::run(session, request, self.access),
+            Target::Window(window) => window.ask(request),
+        }
     }
 
     /// Serve until `input` closes. Logs go to stderr: stdout carries only protocol messages.
@@ -115,6 +141,9 @@ impl Server {
                 let asked = params.get("protocolVersion").and_then(Value::as_str).unwrap_or(PROTOCOL_VERSION);
                 let version = if SUPPORTED.contains(&asked) { asked } else { PROTOCOL_VERSION };
                 let mut instructions = INSTRUCTIONS.to_string();
+                if matches!(self.target, Target::Window(_)) {
+                    instructions.push_str(WINDOW_NOTE);
+                }
                 if self.access == Access::Read {
                     instructions.push_str(READ_ONLY_NOTE);
                 }
@@ -153,24 +182,22 @@ impl Server {
                 return Err((INVALID_PARAMS, format!("`{name}` needs `{key}`")));
             }
         }
-        let (session, access) = (&mut self.session, self.access);
         let result = match name {
             "execute" => {
                 let params = args.get("params").cloned().unwrap_or_else(|| json!({}));
-                let request = Request::Execute { command: args["command"].as_str().unwrap_or_default().into(), params };
-                bridge::run(session, &request, access)
+                self.ask(&Request::Execute { command: args["command"].as_str().unwrap_or_default().into(), params })
             }
-            "script" => bridge::run(session, &Request::Script { text: args["text"].as_str().unwrap_or_default().into() }, access),
+            "script" => self.ask(&Request::Script { text: args["text"].as_str().unwrap_or_default().into() }),
             "list_commands" => {
                 let filter = args["filter"].as_str().map(str::to_ascii_lowercase).unwrap_or_default();
                 let has = |v: &Value| v.as_str().is_some_and(|t| t.to_ascii_lowercase().contains(&filter));
-                bridge::run(session, &Request::Catalog, access).map(|all| {
+                self.ask(&Request::Catalog).map(|all| {
                     all.as_array()
                         .map(|cmds| cmds.iter().filter(|c| has(&c["id"]) || has(&c["params"])).cloned().collect())
                         .unwrap_or_default()
                 })
             }
-            _ => bridge::run(session, &Request::Execute { command: "info".into(), params: json!({}) }, access),
+            _ => self.ask(&Request::Execute { command: "info".into(), params: json!({}) }),
         };
         Ok(match result {
             Ok(v) => text(&v),
@@ -223,6 +250,23 @@ mod tests {
         assert_eq!(ask(&mut s, json!({"jsonrpc": "2.0", "id": 3, "method": "x"}))["error"]["code"], METHOD_NOT_FOUND);
         let garbage: Value = serde_json::from_str(&s.handle_line("{not json").unwrap()).unwrap();
         assert_eq!(garbage["error"]["code"], PARSE_ERROR);
+    }
+
+    #[test]
+    fn connected_to_a_window_the_tools_run_on_its_plate() {
+        let window = crate::window::Window::connect_to(&crate::window::tests::stand_in(usize::MAX)).unwrap();
+        let mut s = Server::window(window, Access::Edit);
+        let hello = ask(&mut s, json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}));
+        assert!(hello["result"]["instructions"].as_str().unwrap().contains("the Lamina window"));
+        let made = call(&mut s, "execute", json!({"command": "add_primitive", "params": {"kind": "box", "size": [8, 8, 8]}}));
+        assert!(made["result"]["isError"].is_null(), "{made}");
+        let seen = call(&mut s, "inspect_scene", json!({}));
+        assert!(seen["result"]["content"][0]["text"].as_str().unwrap().contains("\"id\": 1"), "{seen}");
+        // Asked to only read, the window refuses what would change its plate.
+        let window = crate::window::Window::connect_to(&crate::window::tests::stand_in(usize::MAX)).unwrap();
+        let mut ro = Server::window(window, Access::Read);
+        let no = call(&mut ro, "execute", json!({"command": "add_primitive", "params": {"kind": "box", "size": [8, 8, 8]}}));
+        assert_eq!(no["result"]["isError"], true, "{no}");
     }
 
     #[test]
