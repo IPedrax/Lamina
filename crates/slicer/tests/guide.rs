@@ -12,7 +12,9 @@ const END: &str = "<!-- settings:end -->";
 fn default_of(v: &Value) -> String {
     match v {
         Value::String(s) if s.contains('\n') || s.len() > 30 => "see the window".to_string(),
+        Value::String(s) if s.is_empty() => "none".to_string(),
         Value::String(s) => format!("`{s}`"),
+        Value::Array(a) if a.is_empty() => "none".to_string(),
         Value::Array(a) => a.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(" x "),
         other => other.to_string(),
     }

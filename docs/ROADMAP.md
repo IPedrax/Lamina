@@ -192,6 +192,18 @@ Priorities:
   the tolerance at the points and at each chord's middle, turning one way, radius 0.5 to 500 mm) into one `G2` or `G3` with
   `I J`, its plastic the arc's length; a hexagon stays a hexagon. The time planner still walks the points, and the preview's
   reader draws arcs. A 128-sided rod's G-code is a quarter shorter with the same plastic.
+- **4.17 Several extruders.** `extruders` (1 to 8) and an `extruder` for each object (a per-object field, from 1). Each layer
+  prints one extruder's objects, then the next's, the one in use first, so a tool changes at most once per extruder per layer. A
+  change retracts, sets the old tool to its standby (`standby_temp_delta` below its own, off after its last layer), runs
+  `toolchange_gcode` (with `[previous_tool]`, `[next_tool]`, `[layer_z]`), writes `T<n>` and waits: `M104 T`/`M109 T` on Marlin
+  and Klipper (both document the `T` index), `G10 P R S` and `M116 P` on RepRapFirmware. `extruder_temps` gives the extruders
+  after the first their own temperature. The purge tower (`tower_x`, `tower_y`, `tower_size`) is refused off the plate or over an
+  object's box; each change wipes across it, then lays `purge_volume` mm3 as lines taken in turn from its inside
+  (`;TYPE:purge`), and the rest of the layer is one line in three (`;TYPE:purge-tower`), on every layer up to the last change; a
+  layer whose purges do not fit is refused. The tower is in the footprint, so a brim, a raft and the skirt go round it too. One
+  extruder slices as before (the golden files are unchanged). In the window: an Extruders group, the tool change G-code, and
+  Extruder in This object's settings. Tool offsets are left to the firmware (Marlin `M218`, RepRapFirmware `G10 P X Y`, a
+  Klipper macro).
 - **5.1 Process presets.** A third kind in `presets.rs`, setting only the layers and the strength (`PROCESS_FIELDS`): 0.12 mm Fine,
   0.20 mm Standard, 0.28 mm Draft and Strong. `slice` and `slice_check` take `process` (after the printer and the filament, before
   `profile`); `slicer_presets` lists them; the window has a Process picker and Save process, kept in the settings file and the
@@ -361,8 +373,7 @@ what is wrong before adding features.
 
 ## 4. Slicer
 
-**4.17 Multi-material and sequential printing (P2).** These need tool changes, a purge tower, an extruder per object, and for
-sequential printing a check of the print head's clearance.
+**4.17b Sequential printing (P2).** One object at a time, with a check of the print head's clearance.
 
 ## 5. Profiles and settings
 
@@ -391,4 +402,7 @@ through it.
   refused more often: 9 steps in 10 come through in `chain_score` (73 of 120 chains of 4 to 6 booleans clean), and what fails is
   refused, never wrong. A boolean's result keeps the repair's slivers and fans, and works on its world mesh, so its tilted faces are
   flat only to f32.
+- Tool changes are for a nozzle per extruder: a single nozzle fed several filaments (a multi-material unit, with its ramming and
+  long purges) is not handled. The purge tower is checked against each object's bounding box, not its outline, and the time
+  estimate leaves out the wait for a tool to heat. None of it has run on a printer with two extruders.
 - Nothing has been printed on real hardware.

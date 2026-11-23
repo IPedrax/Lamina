@@ -146,7 +146,33 @@ pub struct Profile {
     pub tree_tip_spacing: f64,
     pub tree_branch_angle: f64,
     pub tree_max_radius: f64,
+    // Several extruders
+    /// How many extruders (or tools) the printer has, 1 to 8; `T0` is the first. Each tool's offset is the firmware's to apply.
+    pub extruders: u32,
+    /// The extruder that prints, from 1: the plate's for every object, or an object's own (`set_object_settings`).
+    pub extruder: u32,
+    /// The nozzle temperature of each extruder after the first, in order (the first prints at `nozzle_temp`); one left out prints
+    /// at `nozzle_temp` too.
+    pub extruder_temps: Vec<f64>,
+    /// An idle extruder waits this much below its own temperature, and heats again before it prints.
+    pub standby_temp_delta: f64,
+    /// G-code at each tool change, before the `T` the slicer writes; `[previous_tool]`, `[next_tool]` and `[layer_z]` as well as
+    /// the settings.
+    pub toolchange_gcode: String,
+    /// The purge tower: a square `tower_size` mm wide, its middle at `tower_x`, `tower_y` (the plate's middle is 0, 0), on which
+    /// each tool change lays `purge_volume` mm3.
+    pub tower_x: f64,
+    pub tower_y: f64,
+    pub tower_size: f64,
+    pub purge_volume: f64,
 }
+
+/// The most extruders a printer may have.
+pub const MAX_EXTRUDERS: u32 = 8;
+
+/// The placeholders the tool-change G-code has besides the settings: the tools from and to (as `T` counts them, from 0) and the
+/// layer's height; each with a value to check the G-code with before a slice.
+pub const TOOL_PLACEHOLDERS: &[(&str, f64)] = &[("previous_tool", 0.0), ("next_tool", 1.0), ("layer_z", 0.2)];
 
 pub const PLACEHOLDERS: &[&str] = &[
     "nozzle_temp",
@@ -233,6 +259,15 @@ impl Default for Profile {
             tree_tip_spacing: 3.0,
             tree_branch_angle: 40.0,
             tree_max_radius: 3.0,
+            extruders: 1,
+            extruder: 1,
+            extruder_temps: Vec::new(),
+            standby_temp_delta: 30.0,
+            toolchange_gcode: String::new(),
+            tower_x: 60.0,
+            tower_y: 60.0,
+            tower_size: 20.0,
+            purge_volume: 20.0,
         }
     }
 }
@@ -291,6 +326,13 @@ pub const LIMITS: &[(&str, f64, f64)] = &[
     ("tree_tip_spacing", 1.0, 20.0),
     ("tree_branch_angle", 5.0, 60.0),
     ("tree_max_radius", 1.0, 20.0),
+    ("extruders", 1.0, 8.0),
+    ("extruder", 1.0, 8.0),
+    ("standby_temp_delta", 0.0, 300.0),
+    ("tower_x", -1000.0, 1000.0),
+    ("tower_y", -1000.0, 1000.0),
+    ("tower_size", 5.0, 200.0),
+    ("purge_volume", 0.0, 1000.0),
 ];
 
 /// A number field's range, from [`LIMITS`].
@@ -372,6 +414,27 @@ pub const ABOUT: &[(&str, &str)] = &[
     ("tree_tip_spacing", "How far apart a tree's tips touch the overhang, mm: closer holds a flatter underside."),
     ("tree_branch_angle", "How far a tree's branches may lean from vertical, degrees, as they gather into trunks and go round the part."),
     ("tree_max_radius", "The thickest a tree's trunk grows, mm: a branch thickens with the tips it carries and as it goes down."),
+    (
+        "extruders",
+        "How many extruders or tools the printer has; T0 is the first. The firmware applies each tool's offset, and Klipper needs a T0, T1... macro for each.",
+    ),
+    ("extruder", "The extruder that prints, from 1: set it for one object to print that object in another filament."),
+    (
+        "extruder_temps",
+        "The nozzle temperature of each extruder after the first, C, in order; one left out prints at the nozzle temperature.",
+    ),
+    (
+        "standby_temp_delta",
+        "How far an idle extruder cools below its own temperature while another prints, C; it heats again before it prints.",
+    ),
+    (
+        "toolchange_gcode",
+        "G-code run at each tool change, before the T: [previous_tool], [next_tool] and [layer_z] as well as the settings.",
+    ),
+    ("tower_x", "Where the purge tower's middle stands, mm east of the plate's middle."),
+    ("tower_y", "Where the purge tower's middle stands, mm north of the plate's middle."),
+    ("tower_size", "The side of the purge tower, a square each tool change purges on, mm; it prints on every layer up to the last change."),
+    ("purge_volume", "Plastic each tool change lays on the purge tower, mm3, so the new nozzle prints clean."),
 ];
 
 /// What a setting does, from [`ABOUT`]; empty for a name that is not a setting.
@@ -415,8 +478,23 @@ impl Profile {
                 self.min_layer_height, self.layer_height
             ));
         }
+        if self.extruder > self.extruders {
+            return Err(format!("`extruder` is {}, but the printer has {} (`extruders`)", self.extruder, self.extruders));
+        }
+        if self.extruder_temps.len() >= self.extruders as usize {
+            return Err(format!(
+                "`extruder_temps` lists the extruders after the first: at most {} for {} extruders, not {}",
+                self.extruders - 1,
+                self.extruders,
+                self.extruder_temps.len()
+            ));
+        }
+        for &t in &self.extruder_temps {
+            within("extruder_temps", t, 0.0, 400.0)?;
+        }
         self.expand(&self.start_gcode)?;
         self.expand(&self.end_gcode)?;
+        self.expand_with(&self.toolchange_gcode, TOOL_PLACEHOLDERS)?;
         Ok(())
     }
 
@@ -440,6 +518,12 @@ impl Profile {
 
     /// `text` with each `[name]` replaced by that setting and each `{expr}` by its value (`crate::expr`); `{{` is a `{`.
     pub fn expand(&self, text: &str) -> Result<String, String> {
+        self.expand_with(text, &[])
+    }
+
+    /// The same, with the values `extra` names as well (a tool change's).
+    pub fn expand_with(&self, text: &str, extra: &[(&str, f64)]) -> Result<String, String> {
+        let look = |n: &str| self.placeholder(n).or_else(|| extra.iter().find(|(k, _)| *k == n).map(|&(_, v)| v));
         let mut out = String::new();
         let mut rest = text;
         while let Some(open) = rest.find(['[', '{']) {
@@ -454,12 +538,13 @@ impl Profile {
             let close = after.find(closer).ok_or_else(|| format!("a `{what}` in the G-code is never closed"))?;
             let inside = &after[..close];
             if what == "[" {
-                let v = self
-                    .placeholder(inside)
-                    .ok_or_else(|| format!("unknown placeholder `[{inside}]` in the G-code; known: {}", PLACEHOLDERS.join(", ")))?;
+                let v = look(inside).ok_or_else(|| {
+                    let known: Vec<&str> = PLACEHOLDERS.iter().copied().chain(extra.iter().map(|&(k, _)| k)).collect();
+                    format!("unknown placeholder `[{inside}]` in the G-code; known: {}", known.join(", "))
+                })?;
                 out.push_str(&format!("{v}"));
             } else {
-                let v = crate::expr::eval(inside, &|n| self.placeholder(n)).map_err(|e| format!("in `{{{inside}}}`: {e}"))?;
+                let v = crate::expr::eval(inside, &look).map_err(|e| format!("in `{{{inside}}}`: {e}"))?;
                 out.push_str(&crate::expr::show(v));
             }
             rest = &after[close + 1..];
@@ -505,9 +590,26 @@ mod tests {
             json!({"support_style": "tree", "tree_max_radius": 0.1}),
             json!({"support_style": "tree", "tree_max_radius": "big"}),
             json!({"tree_tip_spcing": 3}),
+            json!({"extruders": 0}),
+            json!({"extruders": 9}),
+            json!({"extruders": 2.5}),
+            json!({"extruder": 2}),
+            json!({"extruders": 2, "extruder": 3}),
+            json!({"extruders": 2, "extruder_temps": [200, 210]}),
+            json!({"extruders": 3, "extruder_temps": [9999]}),
+            json!({"extruders": 3, "extruder_temps": [-1]}),
+            json!({"extruder_temps": "hot"}),
+            json!({"toolchange_gcode": "T[tool]"}),
+            json!({"toolchange_gcode": "G1 Z{layer_z +"}),
+            json!({"tower_size": 0}),
+            json!({"tower_x": 1e9}),
+            json!({"purge_volume": -1}),
+            json!({"standby_temp_delta": 1e9}),
         ] {
             assert!(Profile::from_json(&bad).is_err(), "{bad}");
         }
+        let good = json!({"extruders": 3, "extruder": 3, "extruder_temps": [230], "toolchange_gcode": "M117 [next_tool] {layer_z + 1}"});
+        assert!(Profile::from_json(&good).is_ok());
     }
 
     #[test]

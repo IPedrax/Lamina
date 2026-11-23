@@ -72,8 +72,21 @@ presets live in the app's settings panel, not in these commands.
 ## One object unlike the others
 
 `set_object_settings {id, profile: {infill_density: 0.5, perimeters: 4}}` gives one object settings of its own (walls, top and
-bottom layers, infill, seam, speeds, supports); the printer, the filament and the layer heights stay the plate's. `profile: {}`
-clears them; `inspect_scene` shows them.
+bottom layers, infill, seam, speeds, supports, its extruder); the printer, the filament and the layer heights stay the plate's.
+`profile: {}` clears them; `inspect_scene` shows them.
+
+## Two colours or materials
+
+On a printer with several extruders or a tool changer, `extruders` (1 to 8) is the count, and each object prints with its
+`extruder` (from 1): `set_object_settings {id, profile: {extruder: 2}}`, then `slice_check {profile: {extruders: 2}}`. A part in
+two colours is two objects, one for each, placed together. Each layer prints one extruder's objects, then the next's, one tool
+change per extruder per layer. The old tool cools by `standby_temp_delta` (30), the new one heats to its own temperature first:
+`extruder_temps` lists the extruders after the first (`[235]` for a second at 235; the first uses `nozzle_temp`). After each
+change the nozzle purges `purge_volume` mm3 (20) on the purge tower, a square `tower_size` mm wide (20) at `tower_x`, `tower_y`
+(60, 60; mm from the plate's middle), which rises to the last change. The slice refuses a tower off the plate, over an object
+(move it clear), or too small for one layer's purges (more `tower_size` or less `purge_volume`). `features` shows `purge` and
+`purge-tower`: the plastic the changes cost. `toolchange_gcode` runs before each `T`, with `[previous_tool]`, `[next_tool]` (from
+0, as `T` counts) and `[layer_z]`. Offsets between nozzles are set in the printer's firmware, not here.
 
 ## Reading the result
 
@@ -88,5 +101,5 @@ clears them; `inspect_scene` shows them.
 
 ## What is not there yet
 
-Walls of varying width and multi-material. Say so when a model needs one, instead of letting the
-user find out at the printer. Nothing has been verified on a real printer, so never promise that a print will succeed.
+Walls of varying width, and a single nozzle fed several filaments (a multi-material unit): Lamina's tool changes are for printers
+with a nozzle for each extruder. Say so when a model needs one, instead of letting the user find out at the printer. Nothing has been verified on a real printer, so never promise that a print will succeed.

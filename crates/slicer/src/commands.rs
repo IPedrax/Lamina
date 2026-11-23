@@ -24,7 +24,7 @@ pub static COMMANDS: &[Command] = &[
     },
     Command {
         id: "slice_check",
-        params: "{ids?, printer?, filament?, process?, profile?} the same slice as `slice`, with no file written: what would print and whether it can. Returns {layers, filament_mm, print_seconds, print_time, warnings, features (filament mm by kind: outer-wall, inner-wall, solid-infill, sparse-infill, skirt, brim, support, support-interface, raft)}, or an error saying what does not fit the plate (off it, below it, too tall) or what a setting must be. Use it to check a model before the user exports it",
+        params: "{ids?, printer?, filament?, process?, profile?} the same slice as `slice`, with no file written: what would print and whether it can. Returns {layers, filament_mm, print_seconds, print_time, warnings, features (filament mm by kind: outer-wall, inner-wall, solid-infill, sparse-infill, skirt, brim, support, support-interface, raft, purge-tower, purge)}, or an error saying what does not fit the plate (off it, below it, too tall) or what a setting must be. Use it to check a model before the user exports it",
         run: slice_check,
         undoable: false,
         files: Files::None,
@@ -32,8 +32,8 @@ pub static COMMANDS: &[Command] = &[
     Command {
         id: "set_object_settings",
         params: "{id, profile} gives one object slicer settings of its own, laid over the plate's for it alone: perimeters, top_layers, \
-                 bottom_layers, infill_density, infill_pattern, seam, perimeter_speed, infill_speed and the support fields. `profile: {}` or \
-                 null clears them. The printer, the filament and the layer heights are the plate's. `info` shows each object's settings",
+                 bottom_layers, infill_density, infill_pattern, seam, perimeter_speed, infill_speed, the support fields, ironing, fuzzy_skin \
+                 and `extruder` (from 1: which extruder prints it, up to the printer's `extruders`). `profile: {}` or null clears them. The printer, the filament and the layer heights are the plate's. `info` shows each object's settings",
         run: set_object_settings,
         undoable: true,
         files: Files::None,
@@ -157,6 +157,7 @@ pub const PER_OBJECT_FIELDS: &[&str] = &[
     "tree_max_radius",
     "ironing",
     "fuzzy_skin",
+    "extruder",
 ];
 
 /// Each object's own profile, its settings laid over the plate's, or none where it has none.
@@ -186,7 +187,8 @@ fn set_object_settings(s: &mut Session, p: &Value) -> Result<Value, String> {
     if let Some(k) = fields.keys().find(|k| !PER_OBJECT_FIELDS.contains(&k.as_str())) {
         return Err(format!("`{k}` is the plate's, not an object's; an object may set {}", PER_OBJECT_FIELDS.join(", ")));
     }
-    presets::apply(&Profile::default(), &fields)?;
+    // The printer's extruder count is the slice's, checked then; here any extruder a printer may have.
+    presets::apply(&Profile { extruders: crate::profile::MAX_EXTRUDERS, ..Profile::default() }, &fields)?;
     let o = s.scene_mut().get_mut(a.id)?;
     o.settings = if fields.is_empty() { None } else { Some(std::sync::Arc::new(Value::Object(fields))) };
     Ok(json!({}))
@@ -362,6 +364,21 @@ mod tests {
         }
         s.execute("set_object_settings", &json!({"id": 2, "profile": null})).unwrap();
         assert!((s.execute("slice_check", &json!({})).unwrap()["filament_mm"].as_f64().unwrap() - plain).abs() < 1e-6);
+    }
+
+    #[test]
+    fn an_object_may_print_with_another_extruder_the_printer_has() {
+        let mut s = session();
+        s.execute("add_primitive", &json!({"kind": "box", "size": [10, 10, 4], "at": [-20, 0]})).unwrap();
+        s.execute("add_primitive", &json!({"kind": "box", "size": [10, 10, 4], "at": [20, 0]})).unwrap();
+        s.execute("set_object_settings", &json!({"id": 2, "profile": {"extruder": 2}})).unwrap();
+        let e = s.execute("slice_check", &json!({})).unwrap_err();
+        assert!(e.contains("object 2's own settings") && e.contains("`extruders`"), "{e}");
+        let r = s.execute("slice_check", &json!({"profile": {"extruders": 2}})).unwrap();
+        assert!(r["features"]["purge"].as_f64().unwrap() > 0.0 && r["features"]["purge-tower"].as_f64().unwrap() > 0.0);
+        for bad in [json!({"id": 2, "profile": {"extruder": 9}}), json!({"id": 2, "profile": {"extruder": 0}})] {
+            assert!(s.execute("set_object_settings", &bad).is_err(), "{bad}");
+        }
     }
 
     #[test]

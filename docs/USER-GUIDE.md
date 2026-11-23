@@ -70,7 +70,20 @@ all, set the environment variable `LAMINA_NO_UPDATE_CHECK=1`: the menu items and
   deletes. View, Keyboard shortcuts lists them all.
 - With one object picked, the panel also has Move by, Rotate, Mirror, Scale, Cut into pieces, Duplicate and Drop to plate. With
   several, Union, Subtract and Intersect. A boolean that cannot give a sound solid says so and changes nothing.
-- **This object's settings** lets one object print differently from the rest: its own walls, infill, seam, speeds or supports.
+- **This object's settings** lets one object print differently from the rest: its own walls, infill, seam, speeds or supports,
+  or its own extruder.
+
+## Several extruders
+
+On a printer with two to eight extruders or a tool changer, set the count in the Extruders group of the print settings, and give
+each object its extruder under This object's settings. Each layer prints one extruder's objects, then the next's, so a tool
+changes at most once per extruder per layer: the old one retracts and cools to its standby temperature (off once it has nothing
+left to print), the new one is chosen with `T` and waited for at its own temperature (Extruder 2 nozzle, and so on; one left
+alone prints at the nozzle temperature). After each change the new nozzle wipes and purges on the purge tower, a square you place
+with Tower x and y (from the middle of the plate) and Tower size, clear of every object; the tower rises on every layer up to the
+last change so it stays solid. The slice says so when the tower is off the plate, over an object, or too small for the purges of
+one layer. The tool change G-code, in the Start and end G-code group, runs before each `T`. The firmware applies each tool's
+offset; on Klipper, `T0`, `T1` and so on are macros in your printer's config.
 - **Undo** takes back a whole step, a drag or a chat turn alike; Edit, History goes back several at once.
 
 ## Cutting a part into pieces
@@ -247,4 +260,13 @@ The same text is the tooltip in the window. The names are the ones a profile fil
 | `tree_tip_spacing` | How far apart a tree's tips touch the overhang, mm: closer holds a flatter underside. | 1 to 20 | 3.0 |
 | `tree_branch_angle` | How far a tree's branches may lean from vertical, degrees, as they gather into trunks and go round the part. | 5 to 60 | 40.0 |
 | `tree_max_radius` | The thickest a tree's trunk grows, mm: a branch thickens with the tips it carries and as it goes down. | 1 to 20 | 3.0 |
+| `extruders` | How many extruders or tools the printer has; T0 is the first. The firmware applies each tool's offset, and Klipper needs a T0, T1... macro for each. | 1 to 8 | 1 |
+| `extruder` | The extruder that prints, from 1: set it for one object to print that object in another filament. | 1 to 8 | 1 |
+| `extruder_temps` | The nozzle temperature of each extruder after the first, C, in order; one left out prints at the nozzle temperature. |  | none |
+| `standby_temp_delta` | How far an idle extruder cools below its own temperature while another prints, C; it heats again before it prints. | 0 to 300 | 30.0 |
+| `toolchange_gcode` | G-code run at each tool change, before the T: [previous_tool], [next_tool] and [layer_z] as well as the settings. |  | none |
+| `tower_x` | Where the purge tower's middle stands, mm east of the plate's middle. | -1000 to 1000 | 60.0 |
+| `tower_y` | Where the purge tower's middle stands, mm north of the plate's middle. | -1000 to 1000 | 60.0 |
+| `tower_size` | The side of the purge tower, a square each tool change purges on, mm; it prints on every layer up to the last change. | 5 to 200 | 20.0 |
+| `purge_volume` | Plastic each tool change lays on the purge tower, mm3, so the new nozzle prints clean. | 0 to 1000 | 20.0 |
 <!-- settings:end -->

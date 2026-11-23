@@ -34,6 +34,8 @@ pub const PRINTER_FIELDS: &[&str] = &[
     "retract_length",
     "retract_speed",
     "travel_speed",
+    "extruders",
+    "toolchange_gcode",
 ];
 /// The fields a process preset may set: the layers and the strength, never the machine or the filament.
 pub const PROCESS_FIELDS: &[&str] = &[
@@ -47,8 +49,16 @@ pub const PROCESS_FIELDS: &[&str] = &[
     "infill_density",
     "infill_pattern",
 ];
-pub const FILAMENT_FIELDS: &[&str] =
-    &["nozzle_temp", "first_layer_nozzle_temp", "bed_temp", "first_layer_bed_temp", "fan_speed", "pressure_advance"];
+pub const FILAMENT_FIELDS: &[&str] = &[
+    "nozzle_temp",
+    "first_layer_nozzle_temp",
+    "bed_temp",
+    "first_layer_bed_temp",
+    "fan_speed",
+    "pressure_advance",
+    "extruder_temps",
+    "standby_temp_delta",
+];
 
 const KLIPPER_START: &str = "PRINT_START BED=[first_layer_bed_temp] EXTRUDER=[first_layer_nozzle_temp]";
 

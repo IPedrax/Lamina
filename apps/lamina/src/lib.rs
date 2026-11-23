@@ -1265,9 +1265,25 @@ impl App {
                     changed = Some(());
                 }
             });
+            let mut extruder = mine.get("extruder").and_then(Value::as_u64).map(|e| e as u32);
+            let mut own_extruder = extruder.is_some();
+            ui.horizontal(|ui| {
+                ui.checkbox(&mut own_extruder, "Extruder").on_hover_text(hint("extruder"));
+                let mut e = extruder.unwrap_or(self.profile.extruder);
+                let range = 1..=self.profile.extruders.max(1);
+                if ui.add_enabled(own_extruder, egui::DragValue::new(&mut e).range(range)).changed() || own_extruder != extruder.is_some() {
+                    extruder = own_extruder.then_some(e);
+                    changed = Some(());
+                }
+            });
             if changed.is_some() {
                 let mut fields = mine.clone();
-                for (k, v) in [("infill_density", infill.map(Value::from)), ("perimeters", walls.map(Value::from))] {
+                let own = [
+                    ("infill_density", infill.map(Value::from)),
+                    ("perimeters", walls.map(Value::from)),
+                    ("extruder", extruder.map(Value::from)),
+                ];
+                for (k, v) in own {
                     match v {
                         Some(v) => fields.insert(k.into(), v),
                         None => fields.remove(k),
@@ -1517,6 +1533,26 @@ impl App {
             field(ui, "Tree branch lean, deg", "tree_branch_angle", &mut p.tree_branch_angle, 1.0);
             field(ui, "Tree trunk radius, mm", "tree_max_radius", &mut p.tree_max_radius, 0.1);
         });
+        group(ui, "Extruders", &mut |ui| {
+            field(ui, "How many", "extruders", &mut p.extruders, 0.05);
+            // Fewer extruders: what named the ones gone goes with them, so the settings stay valid.
+            p.extruder = p.extruder.min(p.extruders);
+            p.extruder_temps.truncate(p.extruders.saturating_sub(1) as usize);
+            for i in 1..p.extruders as usize {
+                let mut t = p.extruder_temps.get(i - 1).copied().unwrap_or(p.nozzle_temp);
+                ui.label(format!("Extruder {} nozzle, C", i + 1)).on_hover_text(hint("extruder_temps"));
+                if ui.add(egui::DragValue::new(&mut t).range(0.0..=400.0)).on_hover_text(hint("extruder_temps")).changed() {
+                    p.extruder_temps.resize(p.extruder_temps.len().max(i), p.nozzle_temp);
+                    p.extruder_temps[i - 1] = t;
+                }
+                ui.end_row();
+            }
+            field(ui, "Standby, C below", "standby_temp_delta", &mut p.standby_temp_delta, 1.0);
+            field(ui, "Tower x, mm", "tower_x", &mut p.tower_x, 1.0);
+            field(ui, "Tower y, mm", "tower_y", &mut p.tower_y, 1.0);
+            field(ui, "Tower size, mm", "tower_size", &mut p.tower_size, 0.5);
+            field(ui, "Purge, mm3", "purge_volume", &mut p.purge_volume, 1.0);
+        });
         group(ui, "Machine", &mut |ui| {
             field(ui, "Nozzle, mm", "nozzle", &mut p.nozzle, 0.05);
             field(ui, "Filament, mm", "filament_diameter", &mut p.filament_diameter, 0.05);
@@ -1566,8 +1602,15 @@ impl App {
             ui.add(egui::TextEdit::multiline(&mut p.start_gcode).code_editor().desired_rows(4));
             ui.label("End");
             ui.add(egui::TextEdit::multiline(&mut p.end_gcode).code_editor().desired_rows(4));
-            for text in [&p.start_gcode, &p.end_gcode] {
-                if let Err(e) = p.expand(text) {
+            let tool = lamina_slicer::profile::TOOL_PLACEHOLDERS;
+            ui.label(format!(
+                "Tool change, before the T; also {}",
+                tool.iter().map(|(n, _)| format!("[{n}]")).collect::<Vec<_>>().join(" ")
+            ))
+            .on_hover_text(hint("toolchange_gcode"));
+            ui.add(egui::TextEdit::multiline(&mut p.toolchange_gcode).code_editor().desired_rows(2));
+            for (text, extra) in [(&p.start_gcode, &[][..]), (&p.end_gcode, &[][..]), (&p.toolchange_gcode, tool)] {
+                if let Err(e) = p.expand_with(text, extra) {
                     ui.label(RichText::new(e).color(WARNING));
                 }
             }
@@ -2024,6 +2067,7 @@ mod tests {
             ("Skirt", "Loops"),
             ("Cooling", "Shortest layer, s"),
             ("Support details", "Gap above, mm"),
+            ("Extruders", "Purge, mm3"),
             ("Machine", "Junction deviation, mm"),
         ] {
             press(&mut h, group);
