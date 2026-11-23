@@ -199,6 +199,10 @@ Priorities:
 - **6.3 Printer status.** `lamina_printer::status`: Moonraker's printer objects, or OctoPrint's job and printer, read leniently
   (state, file, progress, nozzle and bed temperatures) with a five-second limit. Printer connection's Show what it is doing asks
   every five seconds on a thread. Not a command, so no agent can turn it on other addresses. Tested against the fake printer.
+- **6.4 PrusaLink and Duet.** `crates/printer/src/prusalink.rs` (one `PUT /api/v1/files/usb/NAME` with `Print-After-Upload`, the key in
+  `X-Api-Key`; `GET /api/v1/status`) and `duet.rs` (`rr_connect` with the board's password, then `rr_upload` into `0:/gcodes/` and
+  `M32` through `rr_gcode`, with the session key; `rr_status`), from their published API descriptions. Both in `send_to_printer`,
+  the window's Printer connection and its status line. Tested against the fake printer only.
 - **7.1 File menu and drag and drop.** New, Open, Open recent, Save, Save as (with Ctrl shortcuts), Import mesh, Export G-code and
   Quit; the title shows the project and a star for unsaved changes; New, Open and closing ask first when something would be lost;
   files dropped on the window are opened (`.lamina`) or imported (meshes). `apps/lamina/src/files.rs`.
@@ -300,8 +304,9 @@ sequential printing a check of the print head's clearance.
 
 ## 6. Printers
 
-**6.4 More printers (P2).** PrusaLink (`PUT /api/v1/files/...`), Duet (`rr_upload` or DSF), Bambu over the LAN (MQTT and FTPS, now
-limited by Bambu's own authorization), and USB serial with line numbers and resends. Each is its own module in `crates/printer`.
+**6.4b More printers still (P2).** Bambu over the LAN (MQTT and FTPS, now limited by Bambu's own authorization), USB serial with
+line numbers and resends, a Duet run by a single-board computer (DSF's own API), and PrusaLink printers set to a user name and
+password (digest authentication) rather than an API key. Each its own module in `crates/printer`.
 
 ## 7. Desktop
 

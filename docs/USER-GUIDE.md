@@ -89,9 +89,10 @@ and it cannot start a new plate. Each of its turns is one undo step.
 
 ## Sending to a printer
 
-Printer connection, in the plate panel, takes the kind of server (Moonraker for Klipper, or OctoPrint) and its address, such as
-`192.168.1.20` or `http://printer.local:7125`. OctoPrint needs an API key (from its settings, Application Keys); Moonraker only if it
-asks for one. Lamina sends only to that address, and only when you press Send. Tick Show what it is doing to see the printer's
+Printer connection, in the plate panel, takes the kind of server (Moonraker for Klipper, OctoPrint, PrusaLink for Prusa's
+printers, or a Duet board) and its address, such as
+`192.168.1.20` or `http://printer.local:7125`. OctoPrint needs an API key (from its settings, Application Keys) and so does PrusaLink (the
+printer's Settings, Network); Moonraker only if it asks for one; for a Duet, the key field is the board's password, if it has one. Lamina sends only to that address, and only when you press Send. Tick Show what it is doing to see the printer's
 state, file, progress and temperatures, asked every five seconds. The key is kept like the assistant's: in memory, or
 sealed in the settings file when Remember is ticked.
 

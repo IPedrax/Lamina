@@ -131,7 +131,7 @@ impl App {
             egui::Grid::new("printer").num_columns(2).show(ui, |ui| {
                 ui.label("Server");
                 egui::ComboBox::from_id_salt("printer kind").selected_text(p.connection.kind.name()).show_ui(ui, |ui| {
-                    for k in [Kind::Moonraker, Kind::Octoprint] {
+                    for k in Kind::ALL {
                         ui.selectable_value(&mut p.connection.kind, k, k.name());
                     }
                 });
@@ -142,6 +142,8 @@ impl App {
                 ui.label("API key");
                 ui.add(egui::TextEdit::singleline(&mut p.key).password(true).hint_text(match p.connection.kind {
                     Kind::Octoprint => "OctoPrint's settings, Application Keys",
+                    Kind::PrusaLink => "the printer's Settings, Network, PrusaLink",
+                    Kind::Duet => "the board's password, if it has one",
                     Kind::Moonraker => "only if Moonraker asks for one",
                 }));
                 ui.end_row();

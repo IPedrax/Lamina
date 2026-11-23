@@ -65,7 +65,7 @@ CI (`.github/workflows/ci.yml`) runs the same three on Linux, Windows and macOS 
   (modelling, designing for FDM, slicer settings, supports, materials, calibration, troubleshooting, working from a picture), written for Lamina's own commands: a test checks that every
   command they name exists. A command a skill promises must exist, and a new command the model needs gets a line in the skill. Notes: [crates/assistant/CLAUDE.md](crates/assistant/CLAUDE.md). The only
   crate that may use `ring`, and with `crates/printer` the only ones that may use `ureq` (a test in `lamina-core` checks every manifest).
-- `crates/printer`: sending G-code to Moonraker or OctoPrint on the user's network (`send`, the `send_to_printer` command), what
+- `crates/printer`: sending G-code to Moonraker, OctoPrint, PrusaLink (`prusalink.rs`) or a Duet (`duet.rs`) on the user's network (`send`, the `send_to_printer` command), what
   it is doing (`status`, the window's watch, not a command so no agent can point it elsewhere), and a
   fake printer for tests (`testing`, a feature). With the assistant, the only crate that may use `ureq`.
 - `apps/lamina`: the desktop app (`lamina`): `lib.rs` (the window: toolbar, plate panel, settings, tabs), `files.rs` (the File menu,

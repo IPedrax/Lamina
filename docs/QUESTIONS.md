@@ -78,6 +78,12 @@ Reads work.
   brace (a Klipper macro pasted in, say) now fails its check with a message saying where, rather than going out changed. Taken
   because PrusaSlicer's start G-code uses braces the same way, so users expect it. Say if a different escape is wanted.
 
+## PrusaLink and Duet: untried on a printer (roadmap 6.4)
+
+- Both are written from their published API descriptions and tested only against the fake printer on this machine, as the brief
+  asks. Not covered: a PrusaLink printer set to a user name and password (digest authentication; Lamina sends `X-Api-Key`), and a
+  Duet run by a single-board computer (DSF), whose API differs. Both are 6.4b. The first real upload to each will tell.
+
 ## Blocked: real test prints (roadmap 0.2)
 
 - Printing the calibration cube, the single-wall box and the bridge test on a Marlin and a Klipper printer needs the printers, and

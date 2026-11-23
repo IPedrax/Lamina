@@ -9,9 +9,10 @@ use crate::{Kind, MAX_GCODE, Printer, send};
 
 pub static COMMANDS: &[Command] = &[Command {
     id: "send_to_printer",
-    params: "{path, printer:\"moonraker\"|\"octoprint\", address, key?, name?, print?} sends the G-code file at `path` to a printer on \
-             the user's network: Moonraker (Klipper) or OctoPrint at `address` (such as 192.168.1.20 or http://printer.local:7125). \
-             OctoPrint needs its API `key`. `name` is the file's name on the printer (default the file's own); `print: true` starts \
+    params: "{path, printer:\"moonraker\"|\"octoprint\"|\"prusalink\"|\"duet\", address, key?, name?, print?} sends the G-code file at \
+             `path` to a printer on the user's network: Moonraker (Klipper), OctoPrint, PrusaLink or a Duet at `address` (such as \
+             192.168.1.20 or http://printer.local:7125). OctoPrint needs its API `key`, PrusaLink usually does, and a Duet's `key` is its \
+             password. `name` is the file's name on the printer (default the file's own); `print: true` starts \
              printing it (default false: upload only). Returns {name, printing}",
     run: send_to_printer,
     undoable: false,
@@ -60,7 +61,7 @@ mod tests {
         assert!(r["name"].as_str().unwrap().starts_with("lamina-send-"));
         assert!(got.lock().unwrap()[0].body_text().contains("G28\nM84\n"));
         for bad in [
-            json!({"path": path, "printer": "prusalink", "address": address}),
+            json!({"path": path, "printer": "bambu", "address": address}),
             json!({"path": path, "printer": "moonraker", "address": address, "start": true}),
             json!({"path": "/nonexistent.gcode", "printer": "moonraker", "address": address}),
             json!({"path": path, "printer": "moonraker", "address": "ftp://x"}),
