@@ -46,7 +46,7 @@ CI (`.github/workflows/ci.yml`) runs the same three on Linux, Windows and macOS 
   the 3D view, the thumbnails and the assistant's picture share, and a PNG writer), `base64.rs`, `fuzz.rs` (the seeded generator every crate's fuzz tests use).
   `bridge.rs` (what an agent may ask: execute, script, catalog; read-only access; `REPLACES`, the commands that replace the plate).
 - `crates/slicer`: `slice.rs` (mesh to closed loops per layer), `geom.rs` (polygon booleans, offsets, line clipping on i_overlay),
-  `print.rs` (walls, skins, infill, skirt, the G-code writer), `infill.rs` (sparse infill patterns), `support.rs` (overhangs,
+  `print.rs` (walls, skins, infill, skirt, the G-code writer), `infill.rs` (sparse infill patterns), `gap.rs` (gap fill and thin walls), `time.rs` (the print time planner), `support.rs` (overhangs,
   supports and their interface), `profile.rs` (settings, checks, `[name]` placeholders), `presets.rs`
   (built-in printers and filaments, each setting only its own fields; `apply` and `capture`), `commands.rs`
   (`slice`, `slice_check`, `slicer_presets`, `slicer_profile`; an app adds them with `session.register(lamina_slicer::COMMANDS)`).

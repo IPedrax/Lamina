@@ -117,6 +117,11 @@ Priorities:
 - **4.6 Bridging.** The solid infill not over the layer below (without slivers) is a bridge: lines at the angle, in steps of 15
   degrees, whose ends rest on the layer below the most (a point a line's width past each end is tested), else the shortest; printed
   at `bridge_speed` with `bridge_flow` and `bridge_fan`, the fan set back after. A golden span between two pillars.
+- **4.7 Gap fill and thin walls.** `crates/slicer/src/gap.rs`: what the walls (each a band a line wide round its path) and the
+  infill (where at least a line wide) leave, wider than a quarter line, is printed along its middle: the gap's outline split at its
+  two points farthest apart, one side walked in half-line steps, each centre halfway to the other side, the width there setting
+  the flow (in runs of similar width). A fin thinner than a line now prints. The centre is a fair approximation for strips, not a
+  straight skeleton; walls of varying width (Arachne) are P2. A golden fin.
 - **4.8 Cooling.** `min_layer_time` (5 s): a layer whose moves would take less is slowed in proportion, no move below
   `min_print_speed`. The fan is off on the first layer and comes up in equal steps to `fan_speed` by `fan_full_layer`; bridges
   have their own fan (4.6).
@@ -198,11 +203,6 @@ the AI's skills what is not possible.
 ## 4. Slicer
 
 **4.1b Tree supports (P2).** Branches that grow from the plate toward each overhang, using less plastic than the straight columns of 4.1.
-
-**4.7 Gap fill and thin walls (P1).** Today a wall thinner than a line vanishes. How: what the wall insets leave unprinted, wider than
-a quarter line, is printed as single lines along its centre. Find the centreline with a straight skeleton or a Voronoi diagram:
-`boostvoronoi` is BSL-1.0 and permissive, BIMCraft has a straight skeleton (`skeleton.rs`). Vary the flow by width. Full
-variable-width walls (as in the public Arachne paper) are P2.
 
 **4.15 Adaptive layer height (P2).** How: choose each layer's height from the steepest surface it crosses, thin where faces are close to
 flat. `slice::layers` takes a function from z to height instead of one number.
@@ -304,7 +304,7 @@ project files and can return after 1.1.
 
 ## Known limits today
 
-- Walls are constant width, so thin features vanish instead of getting gap fill. Supports are straight columns, not trees.
+- Walls are constant width; a thin feature gets one gap-fill line, not walls of varying width. Supports are straight columns, not trees.
 - The skirt is an outline of the first layer, not a hull. The time estimate has not been checked against a real print.
 - A mesh whose holes are too big to fill without guessing stays open, and prints with parts missing, with a warning. STL, 3MF, OBJ and glTF in; STL and 3MF out.
 - Booleans refuse about 1 in 100 random pairs (the rest of a sphere-with-sphere union mostly), and a boolean of a boolean's result

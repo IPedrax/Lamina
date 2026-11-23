@@ -11,7 +11,7 @@ use lamina_core::Mesh;
 use crate::geom::{self, Region};
 use crate::profile::{Firmware, Profile, Seam};
 use crate::slice::{self, P2};
-use crate::{infill, support};
+use crate::{gap, infill, support};
 
 /// Vertical moves are slow and fixed, mm/s.
 const Z_SPEED: f64 = 20.0;
@@ -64,10 +64,11 @@ pub enum Feature {
     SupportInterface,
     Raft,
     Bridge,
+    GapFill,
 }
 
 impl Feature {
-    pub const ALL: [Feature; 10] = [
+    pub const ALL: [Feature; 11] = [
         Feature::OuterWall,
         Feature::InnerWall,
         Feature::SolidInfill,
@@ -78,6 +79,7 @@ impl Feature {
         Feature::SupportInterface,
         Feature::Raft,
         Feature::Bridge,
+        Feature::GapFill,
     ];
 
     /// The name after `;TYPE:`.
@@ -93,6 +95,7 @@ impl Feature {
             Feature::SupportInterface => "support-interface",
             Feature::Raft => "raft",
             Feature::Bridge => "bridge",
+            Feature::GapFill => "gap-fill",
         }
     }
 
@@ -426,6 +429,26 @@ fn plan(mesh: &Mesh, p: &Profile, w: f64) -> Result<ObjectPlan, String> {
                     flow: 1.0,
                     spiral: false,
                 }));
+            }
+        }
+        // Gap fill: what the walls and the infill leave, as lines along the middle, in runs whose flow follows the gap's width.
+        for (pts, widths) in gap::gaps(&regions[k], p.perimeters, w, &inner[k]) {
+            let mut start = 0;
+            while start + 1 < pts.len() {
+                let mut end = start + 1;
+                while end + 1 < pts.len() && (widths[end + 1] - widths[start]).abs() <= 0.1 * w {
+                    end += 1;
+                }
+                let mean = widths[start..=end].iter().sum::<f64>() / (end - start + 1) as f64;
+                strokes.push(Stroke {
+                    pts: pts[start..=end].to_vec(),
+                    closed: false,
+                    speed: speed(p.perimeter_speed),
+                    kind: Feature::GapFill,
+                    flow: (mean / w).clamp(0.25, 2.0),
+                    spiral: false,
+                });
+                start = end;
             }
         }
         let covered = covered(&inner, k, p.top_layers as usize, p.bottom_layers as usize);
@@ -820,6 +843,9 @@ impl Writer<'_> {
     }
 
     fn travel(&mut self, to: P2) {
+        if self.at.is_some_and(|from| dist(from, to) < 1e-9) {
+            return; // already there: the next run of a line goes on from where the last ended
+        }
         let far = self.at.is_none_or(|from| dist(from, to) >= self.p.retract_min_travel);
         // Combing: a travel that stays inside the part crosses no gap, so nothing strings and no retraction is needed.
         let inside = self.p.combing && self.at.is_some_and(|from| stays_inside(&self.region, from, to));
@@ -1149,7 +1175,8 @@ mod tests {
         };
         // Rear: every loop starts at its point of greatest y, straight behind the centre.
         let rear = starts(Seam::Rear);
-        assert!(rear.len() >= 60 && rear.iter().all(|q| (q[0] - 110.0).abs() < 1e-3 && q[1] > 110.0), "{rear:?}");
+        // (A loop that starts right above where the last layer's ended needs no travel, so not every start shows as one.)
+        assert!(rear.len() >= 30 && rear.iter().all(|q| (q[0] - 110.0).abs() < 1e-3 && q[1] > 110.0), "{rear:?}");
         // Aligned: the seams line up from layer to layer, so they all lie close to one line up the side.
         let aligned = starts(Seam::Aligned);
         assert!(aligned.windows(2).all(|w| dist(w[0], w[1]) < 1.0), "{aligned:?}");
@@ -1349,6 +1376,21 @@ mod tests {
         assert!(g.lines().skip(begin + 1).take(end - begin - 1).all(|l| l.len() <= 80));
         assert_eq!(&lamina_core::base64::decode(&text).unwrap()[..8], b"\x89PNG\r\n\x1a\n");
         assert!(begin < g.find("M140").map_or(usize::MAX, |i| g[..i].lines().count()), "before the start G-code");
+    }
+
+    #[test]
+    fn a_wall_thinner_than_a_line_prints_as_gap_fill_instead_of_vanishing() {
+        // A fin 0.3 mm thick and 20 mm long, standing on a small base so it slices.
+        let fin = Mesh::cuboid([20.0, 0.3, 5.0]).transformed(&lamina_core::Transform::translate([0.0, 0.0, 1.0]));
+        let base = Mesh::cuboid([4.0, 4.0, 1.0]);
+        let out = gcode(&[(1, Mesh::merged([&base, &fin]))], &Profile::default()).unwrap();
+        let layer = out.gcode.split(";LAYER:15\n").nth(1).unwrap().split(";LAYER:").next().unwrap();
+        assert!(layer.contains(";TYPE:gap-fill"), "{layer}");
+        let xs: Vec<f64> = layer.lines().filter(|l| l.starts_with("G1 X")).filter_map(|l| l[4..].split(' ').next()?.parse().ok()).collect();
+        let span = xs.iter().copied().fold(f64::MIN, f64::max) - xs.iter().copied().fold(f64::MAX, f64::min);
+        assert!(span > 18.0, "the fin is printed along its length: {span}");
+        // Thinner than a line, so less plastic a millimetre than a full line pushes.
+        assert!(out.features["gap-fill"] > 0.0);
     }
 
     #[test]

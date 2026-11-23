@@ -74,5 +74,5 @@ clears them; `inspect_scene` shows them.
 
 ## What is not there yet
 
-Tree supports, gap fill and multi-material. Say so when a model needs one, instead of letting the
+Tree supports, walls of varying width and multi-material. Say so when a model needs one, instead of letting the
 user find out at the printer. Nothing has been verified on a real printer, so never promise that a print will succeed.
