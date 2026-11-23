@@ -48,7 +48,7 @@ CI (`.github/workflows/ci.yml`) runs the same three on Linux, Windows and macOS 
   `bridge.rs` (what an agent may ask: execute, script, catalog; read-only access; `REPLACES`, the commands that replace the plate).
 - `crates/slicer`: `slice.rs` (mesh to closed loops per layer), `geom.rs` (polygon booleans, offsets, line clipping on i_overlay),
   `print.rs` (walls, skins, infill, skirt, the G-code writer), `infill.rs` (sparse infill patterns), `gap.rs` (gap fill and thin walls), `time.rs` (the print time planner), `support.rs` (overhangs,
-  supports and their interface), `profile.rs` (settings, checks, `[name]` placeholders), `presets.rs`
+  supports and their interface), `profile.rs` (settings, `LIMITS` and `ABOUT`, checks, `[name]` placeholders), `presets.rs`
   (built-in printers and filaments, each setting only its own fields; `apply` and `capture`), `commands.rs`
   (`slice`, `slice_check`, `slicer_presets`, `slicer_profile`; an app adds them with `session.register(lamina_slicer::COMMANDS)`).
   `tests/golden/`: models whose G-code is compared line by line; a slicer change re-blesses them with `LAMINA_BLESS=1` and the diff
@@ -69,7 +69,8 @@ CI (`.github/workflows/ci.yml`) runs the same three on Linux, Windows and macOS 
   and offered back after an unclean exit), `view3d.rs` (the 3D view on
   `lamina_core::render`, picking, the gizmo and the tools), `preview.rs` (layers read back from the G-code with each extrusion's kind, drawn in 3D up to the
   chosen layer and coloured by kind, or one layer from above), `chat.rs` (the assistant panel, with Remember and a passphrase for the key), `printer.rs` (the printer connection and the Send
-  buttons), `work.rs` (slicing, booleans, export and sending on a thread, with a spinner and Cancel), `settings.rs` (the settings file: print settings,
+  buttons), `work.rs` (slicing, booleans, export and sending on a thread, with a spinner and Cancel), `comfort.rs` (shortcuts,
+  the right-click menu, the Edit menu with the undo history, the theme), `settings.rs` (the settings file: print settings,
   presets, sealed keys; read hostilely, written whole and owner-only). Thin: it changes the scene only through `Session::execute`. UI behaviour is tested with
   egui_kittest; `picture_of_the_window` (ignored, needs a GPU) renders it to a PNG to look at.
 - `apps/lamina-cli`: the `lamina-cli` binary and `mcp.rs`, the MCP server.

@@ -175,6 +175,11 @@ Priorities:
   chosen one in 3D (`lamina_core::render::draw_paths`: each line as wide as it prints, shaded round, depth-tested), coloured by kind
   with a legend; the layer view from above stays one click away. Triangles and lines are now cut at the near plane, so the plate
   seen from close by is drawn up to the eye in the 3D view too.
+- **7.5 Comfort.** Shortcuts: G, L and M pick the move, lay flat and measure tools (rotating is the gizmo's rings, in the move tool),
+  R turns the picked objects 90 degrees, F frames them, A arranges, Ctrl+D duplicates, Ctrl+A picks all. A right-click menu on
+  objects in the 3D view and the plate list. Edit, History lists the undo and redo steps (`Session::history`). Every setting has a
+  tooltip from `profile::ABOUT` (a sentence for each field, checked by a test) and its range. A light theme, or the system's, in the
+  View menu, kept in the settings file. Vase mode is in the window now.
 
 ## Order of work
 
@@ -256,9 +261,6 @@ limited by Bambu's own authorization), and USB serial with line numbers and rese
 
 **7.4 GPU viewport (P2).** The CPU view slows past a few hundred thousand triangles. How: render the scene with wgpu into a texture
 egui shows (`register_native_texture`), as BIMCraft's `crates/ui-egui/src/gpu.rs` does, and keep the CPU path as the fallback.
-
-**7.5 Comfort (P1).** Keyboard shortcuts (G to move, R to rotate, F to frame), a right-click menu on objects, an undo history list,
-tooltips on every field, and a light theme.
 
 **7.6 Translations (P2).** How: lift BIMCraft's `crates/i18n` (PO files compiled in, English fallback) and pass every interface string
 through it.

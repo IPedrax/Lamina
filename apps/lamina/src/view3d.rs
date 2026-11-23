@@ -293,6 +293,8 @@ pub struct Shown {
     pub moved: Option<(Vec<u32>, Change)>,
     pub face: Option<(u32, usize)>,
     pub point: Option<P3>,
+    /// What a right click landed on, for the menu it opens.
+    pub context: Option<Pick>,
 }
 
 /// Moves `camera` with the pointer over `response`: a primary drag orbits (when `orbit`), a secondary or middle drag pans, the wheel
@@ -328,8 +330,9 @@ pub struct View {
     pub tool: Tool,
     /// Points measured, drawn joined over the picture.
     pub marks: Vec<P3>,
-    /// Where the view was last drawn in the window.
+    /// Where the view was last drawn in the window, and its response, for the right-click menu.
     pub rect: Option<Rect>,
+    pub response: Option<egui::Response>,
 }
 
 impl View {
@@ -449,6 +452,13 @@ impl View {
                 Tool::Measure => shown.point = pic.and_then(|pic| pic.point_at(&self.camera, x, y)),
             }
         }
+        if response.secondary_clicked()
+            && let Some(p) = response.interact_pointer_pos()
+        {
+            let (x, y) = (((p.x - rect.min.x) * ppp).max(0.0) as usize, ((p.y - rect.min.y) * ppp).max(0.0) as usize);
+            shown.context = Some(self.picture.as_ref().and_then(|pic| pic.id_at(x, y)).map_or(Pick::Nothing, Pick::Object));
+        }
+        self.response = Some(response);
         shown
     }
 }

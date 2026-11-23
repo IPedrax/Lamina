@@ -5,6 +5,7 @@
 
 pub mod autosave;
 pub mod chat;
+pub mod comfort;
 pub mod files;
 pub mod preview;
 pub mod printer;
@@ -25,12 +26,21 @@ use serde_json::{Value, json};
 use crate::settings::{Presets, Settings};
 use crate::view3d::Pick;
 
-/// A number setting with its label, its range from the profile's table, and the range on hover.
+/// A number setting with its label, its range from the profile's table, and on hover what it does and its range.
 fn field<N: egui::emath::Numeric>(ui: &mut Ui, label: &str, name: &str, value: &mut N, speed: f64) {
     let (lo, hi) = lamina_slicer::profile::limits(name).unwrap_or((0.0, 1e6));
-    ui.label(label);
-    ui.add(egui::DragValue::new(value).speed(speed).range(N::from_f64(lo)..=N::from_f64(hi))).on_hover_text(format!("from {lo} to {hi}"));
+    ui.label(label).on_hover_text(hint(name));
+    ui.add(egui::DragValue::new(value).speed(speed).range(N::from_f64(lo)..=N::from_f64(hi))).on_hover_text(hint(name));
     ui.end_row();
+}
+
+/// What a setting does, and its range when it is a number: every field's tooltip.
+fn hint(name: &str) -> String {
+    let about = lamina_slicer::profile::about(name);
+    match lamina_slicer::profile::limits(name) {
+        Some((lo, hi)) => format!("{about} From {lo} to {hi}."),
+        None => about.to_string(),
+    }
 }
 
 /// The colour of a warning: a mesh with problems, a plate changed since its slice.
@@ -159,6 +169,9 @@ pub struct App {
     /// The preview in 3D (every layer up to the chosen one) or the chosen layer alone from above.
     pub preview_3d: bool,
     pub preview: preview::Preview3d,
+    /// The theme chosen, and the one last set on the window.
+    pub look: comfort::Look,
+    applied_look: Option<comfort::Look>,
 }
 
 impl App {
@@ -207,6 +220,8 @@ impl App {
             job: None,
             preview_3d: true,
             preview: preview::Preview3d::default(),
+            look: comfort::Look::default(),
+            applied_look: None,
         }
         .ready()
     }
@@ -228,6 +243,7 @@ impl App {
         (app.printer, app.filament, app.my_printers, app.my_filaments) =
             (s.printer.clone(), s.filament.clone(), s.printers.clone(), s.filaments.clone());
         app.recent = s.recent.clone();
+        app.look = s.look.unwrap_or_default();
         (app.process, app.my_processes) = (s.process.clone(), s.processes.clone());
         let (panel, note) = printer::PrinterPanel::restore(s.connection.clone(), s.connection_key.clone());
         app.link = panel;
@@ -259,6 +275,7 @@ impl App {
             recent: self.recent.clone(),
             connection: Some(self.link.connection.clone()).filter(|c| !c.address.trim().is_empty()),
             connection_key: self.link.sealed.clone(),
+            look: Some(self.look).filter(|l| *l != comfort::Look::default()),
         }
     }
 
@@ -452,6 +469,10 @@ impl App {
         self.open_file(std::path::Path::new(path));
     }
 
+    fn add_box(&mut self) {
+        self.add(json!({"kind": "box", "size": [20, 20, 20]}), 20.0);
+    }
+
     /// Adds a shape `width` mm wide to the right of what is on the plate, so it does not land inside another, and selects it.
     fn add(&mut self, params: Value, width: f64) {
         self.add_with("add_primitive", params, width);
@@ -559,8 +580,14 @@ impl App {
         self.dropped(&ctx);
         self.file_keys(&ctx);
         self.keys(&ctx);
+        self.shortcuts(&ctx);
+        self.apply_look(&ctx);
         Panel::top("toolbar").show(ui, |ui| {
-            egui::MenuBar::new().ui(ui, |ui| self.file_menu(ui));
+            egui::MenuBar::new().ui(ui, |ui| {
+                self.file_menu(ui);
+                self.edit_menu(ui);
+                self.view_menu(ui);
+            });
             self.toolbar(ui);
         });
         self.poll_work(&ctx);
@@ -617,7 +644,7 @@ impl App {
     fn toolbar(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
             if ui.button("Add box").clicked() {
-                self.add(json!({"kind": "box", "size": [20, 20, 20]}), 20.0);
+                self.add_box();
             }
             if ui.button("Add cylinder").clicked() {
                 self.add(json!({"kind": "cylinder", "radius": 10, "height": 20}), 20.0);
@@ -656,33 +683,29 @@ impl App {
                 self.import(&p);
             }
             ui.separator();
-            if ui.button("Undo").clicked() {
+            let undo = self.session.undo_label().map_or("Nothing to undo".to_string(), |l| format!("Undo {l} (Ctrl+Z)"));
+            if ui.button("Undo").on_hover_text(undo).clicked() {
                 self.run("undo", json!({}));
             }
-            if ui.button("Redo").clicked() {
+            if ui.button("Redo").on_hover_text("Bring back what undo took (Ctrl+Y)").clicked() {
                 self.run("redo", json!({}));
             }
-            if ui.button("Frame all").clicked() {
+            if ui.button("Frame all").on_hover_text("Look at everything on the plate (F frames the picked objects)").clicked() {
                 self.frame_all();
             }
-            if ui.button("Arrange").on_hover_text("Lay every object out on the plate, none touching").clicked() {
-                let bed = self.profile.bed;
-                if let Some(v) = self.run("arrange", json!({ "bed": bed })) {
-                    if v["fits"] == false {
-                        (self.failed, self.status) = (true, "They do not all fit the plate: some stand off it.".into());
-                    }
-                    self.frame_all();
-                }
+            if ui.button("Arrange").on_hover_text("Lay every object out on the plate, none touching (A)").clicked() {
+                self.arrange();
             }
             ui.separator();
             {
                 use crate::view3d::Tool;
                 let before = self.view.tool;
-                ui.selectable_value(&mut self.view.tool, Tool::Move, "Move").on_hover_text("Pick objects and drag them with the arrows");
+                ui.selectable_value(&mut self.view.tool, Tool::Move, "Move")
+                    .on_hover_text("Pick objects and drag them with the arrows (G)");
                 ui.selectable_value(&mut self.view.tool, Tool::LayFlat, "Lay flat")
-                    .on_hover_text("Click a face to turn it down onto the plate");
+                    .on_hover_text("Click a face to turn it down onto the plate (L)");
                 ui.selectable_value(&mut self.view.tool, Tool::Measure, "Measure")
-                    .on_hover_text("Click two points to measure between them");
+                    .on_hover_text("Click two points to measure between them (M)");
                 if self.view.tool != before {
                     self.view.marks.clear();
                 }
@@ -691,10 +714,10 @@ impl App {
             ui.selectable_value(&mut self.tab, Tab::Prepare, "Prepare");
             ui.selectable_value(&mut self.tab, Tab::Preview, "Preview");
             ui.separator();
-            if ui.button("Slice").clicked() {
+            if ui.button("Slice").on_hover_text("Slice the plate with these settings and show the layers").clicked() {
                 self.slice();
             }
-            if ui.button("Export G-code...").clicked() {
+            if ui.button("Export G-code...").on_hover_text("Slice the plate into a G-code file").clicked() {
                 self.export();
             }
         });
@@ -747,9 +770,14 @@ impl App {
         }
         for (id, text, problems) in rows {
             ui.horizontal(|ui| {
-                if ui.selectable_label(self.selected.contains(&id), text).clicked() {
+                let row = ui.selectable_label(self.selected.contains(&id), text);
+                if row.clicked() {
                     self.pick(id, ui);
                 }
+                if row.secondary_clicked() {
+                    self.context_pick(Some(id));
+                }
+                row.context_menu(|ui| self.object_menu(ui));
                 if let Some(p) = problems {
                     ui.label(RichText::new("\u{26a0}").color(WARNING)).on_hover_text(format!(
                         "This mesh is not a clean solid: {}. Parts of it may not print; Repair mends what it can.",
@@ -758,7 +786,7 @@ impl App {
                 }
             });
         }
-        ui.label(RichText::new("Ctrl-click picks several.").small().weak());
+        ui.label(RichText::new("Ctrl-click picks several; right-click for more.").small().weak());
         ui.separator();
         match self.selected.as_slice() {
             [] => {}
@@ -991,25 +1019,33 @@ impl App {
             let max_layer = p.nozzle * 0.8;
             egui::Grid::new("settings").num_columns(2).show(ui, |ui| {
                 ui.label("Layer height, mm");
-                ui.add(egui::DragValue::new(&mut p.layer_height).speed(0.01).range(0.02..=max_layer));
+                ui.add(egui::DragValue::new(&mut p.layer_height).speed(0.01).range(0.02..=max_layer)).on_hover_text(hint("layer_height"));
                 ui.end_row();
                 ui.label("First layer, mm");
-                ui.add(egui::DragValue::new(&mut p.first_layer_height).speed(0.01).range(0.02..=max_layer));
+                ui.add(egui::DragValue::new(&mut p.first_layer_height).speed(0.01).range(0.02..=max_layer))
+                    .on_hover_text(hint("first_layer_height"));
                 ui.end_row();
                 ui.label("Walls");
-                ui.add(egui::DragValue::new(&mut p.perimeters).range(0..=10));
+                ui.add(egui::DragValue::new(&mut p.perimeters).range(0..=10)).on_hover_text(hint("perimeters"));
                 ui.end_row();
                 ui.label("Top / bottom layers");
                 ui.horizontal(|ui| {
-                    ui.add(egui::DragValue::new(&mut p.top_layers).range(0..=50));
-                    ui.add(egui::DragValue::new(&mut p.bottom_layers).range(0..=50));
+                    ui.add(egui::DragValue::new(&mut p.top_layers).range(0..=50)).on_hover_text(hint("top_layers"));
+                    ui.add(egui::DragValue::new(&mut p.bottom_layers).range(0..=50)).on_hover_text(hint("bottom_layers"));
                 });
                 ui.end_row();
                 ui.label("Infill");
                 let mut percent = p.infill_density * 100.0;
-                if ui.add(egui::DragValue::new(&mut percent).speed(1.0).range(0.0..=100.0).suffix(" %")).changed() {
+                if ui
+                    .add(egui::DragValue::new(&mut percent).speed(1.0).range(0.0..=100.0).suffix(" %"))
+                    .on_hover_text(lamina_slicer::profile::about("infill_density"))
+                    .changed()
+                {
                     p.infill_density = percent / 100.0;
                 }
+                ui.end_row();
+                ui.label("");
+                ui.checkbox(&mut p.vase, "Vase mode").on_hover_text(hint("vase"));
                 ui.end_row();
                 ui.label("Infill pattern");
                 {
@@ -1021,23 +1057,29 @@ impl App {
                         Pattern::Gyroid => "Gyroid",
                         Pattern::Honeycomb => "Honeycomb",
                     };
-                    egui::ComboBox::from_id_salt("infill pattern").selected_text(name(p.infill_pattern)).show_ui(ui, |ui| {
-                        for x in [Pattern::Lines, Pattern::Grid, Pattern::Triangles, Pattern::Gyroid, Pattern::Honeycomb] {
-                            ui.selectable_value(&mut p.infill_pattern, x, name(x));
-                        }
-                    });
+                    egui::ComboBox::from_id_salt("infill pattern")
+                        .selected_text(name(p.infill_pattern))
+                        .show_ui(ui, |ui| {
+                            for x in [Pattern::Lines, Pattern::Grid, Pattern::Triangles, Pattern::Gyroid, Pattern::Honeycomb] {
+                                ui.selectable_value(&mut p.infill_pattern, x, name(x));
+                            }
+                        })
+                        .response
+                        .on_hover_text(hint("infill_pattern"));
                 }
                 ui.end_row();
                 ui.label("Nozzle / bed, C");
                 ui.horizontal(|ui| {
-                    ui.add(egui::DragValue::new(&mut p.nozzle_temp).range(0.0..=400.0));
-                    ui.add(egui::DragValue::new(&mut p.bed_temp).range(0.0..=400.0));
+                    ui.add(egui::DragValue::new(&mut p.nozzle_temp).range(0.0..=400.0)).on_hover_text(hint("nozzle_temp"));
+                    ui.add(egui::DragValue::new(&mut p.bed_temp).range(0.0..=400.0)).on_hover_text(hint("bed_temp"));
                 });
                 ui.end_row();
                 ui.label("First layer nozzle / bed");
                 ui.horizontal(|ui| {
-                    ui.add(egui::DragValue::new(&mut p.first_layer_nozzle_temp).range(0.0..=400.0));
-                    ui.add(egui::DragValue::new(&mut p.first_layer_bed_temp).range(0.0..=400.0));
+                    ui.add(egui::DragValue::new(&mut p.first_layer_nozzle_temp).range(0.0..=400.0))
+                        .on_hover_text(hint("first_layer_nozzle_temp"));
+                    ui.add(egui::DragValue::new(&mut p.first_layer_bed_temp).range(0.0..=400.0))
+                        .on_hover_text(hint("first_layer_bed_temp"));
                 });
                 ui.end_row();
                 ui.label("Seam");
@@ -1057,15 +1099,13 @@ impl App {
                             }
                         })
                         .response
-                        .on_hover_text("Where each wall starts and ends, which leaves a small mark");
+                        .on_hover_text(hint("seam"));
                 }
                 ui.end_row();
                 ui.label("Brim, mm / raft layers");
                 ui.horizontal(|ui| {
-                    ui.add(egui::DragValue::new(&mut p.brim_width).speed(0.5).range(0.0..=50.0))
-                        .on_hover_text("Loops round the first layer that hold its edges down; 0 for none");
-                    ui.add(egui::DragValue::new(&mut p.raft_layers).range(0..=10))
-                        .on_hover_text("Layers of lines under the part, which is lifted onto them; 0 for none");
+                    ui.add(egui::DragValue::new(&mut p.brim_width).speed(0.5).range(0.0..=50.0)).on_hover_text(hint("brim_width"));
+                    ui.add(egui::DragValue::new(&mut p.raft_layers).range(0..=10)).on_hover_text(hint("raft_layers"));
                 });
                 ui.end_row();
                 ui.label("Supports");
@@ -1076,21 +1116,25 @@ impl App {
                         Support::Everywhere => "Everywhere",
                         Support::FromPlate => "From the plate only",
                     };
-                    egui::ComboBox::from_id_salt("support").selected_text(name(p.support)).show_ui(ui, |ui| {
-                        for s in [Support::Off, Support::Everywhere, Support::FromPlate] {
-                            ui.selectable_value(&mut p.support, s, name(s));
-                        }
-                    });
+                    egui::ComboBox::from_id_salt("support")
+                        .selected_text(name(p.support))
+                        .show_ui(ui, |ui| {
+                            for s in [Support::Off, Support::Everywhere, Support::FromPlate] {
+                                ui.selectable_value(&mut p.support, s, name(s));
+                            }
+                        })
+                        .response
+                        .on_hover_text(hint("support"));
                     if p.support != Support::Off {
                         ui.add(egui::DragValue::new(&mut p.support_angle).range(10.0..=89.0).suffix(" deg"))
-                            .on_hover_text("A surface leaning further than this from vertical is held up");
+                            .on_hover_text(hint("support_angle"));
                     }
                 });
                 ui.end_row();
                 ui.label("Plate, mm");
                 ui.horizontal(|ui| {
-                    ui.add(egui::DragValue::new(&mut p.bed[0]).range(10.0..=2000.0));
-                    ui.add(egui::DragValue::new(&mut p.bed[1]).range(10.0..=2000.0));
+                    ui.add(egui::DragValue::new(&mut p.bed[0]).range(10.0..=2000.0)).on_hover_text(hint("bed"));
+                    ui.add(egui::DragValue::new(&mut p.bed[1]).range(10.0..=2000.0)).on_hover_text(hint("bed"));
                 });
                 ui.end_row();
             });
@@ -1121,9 +1165,9 @@ impl App {
             field(ui, "Not under, mm of travel", "retract_min_travel", &mut p.retract_min_travel, 0.1);
             field(ui, "Z hop, mm", "z_hop", &mut p.z_hop, 0.05);
             field(ui, "Wipe, mm", "wipe_distance", &mut p.wipe_distance, 0.1);
-            ui.checkbox(&mut p.combing, "Travel inside the part without retracting");
+            ui.checkbox(&mut p.combing, "Travel inside the part without retracting").on_hover_text(hint("combing"));
             ui.end_row();
-            ui.checkbox(&mut p.firmware_retraction, "Firmware retraction (G10, G11)");
+            ui.checkbox(&mut p.firmware_retraction, "Firmware retraction (G10, G11)").on_hover_text(hint("firmware_retraction"));
             ui.end_row();
         });
         group(ui, "Skirt", &mut |ui| {
@@ -1166,9 +1210,10 @@ impl App {
             }
             ui.end_row();
             ui.label("Thumbnail, pixels");
-            ui.add(egui::DragValue::new(&mut p.thumbnail).range(0..=512)).on_hover_text("0 for none, or from 16 to 512");
+            ui.add(egui::DragValue::new(&mut p.thumbnail).range(0..=512))
+                .on_hover_text(format!("{} 0, or from 16 to 512.", lamina_slicer::profile::about("thumbnail")));
             ui.end_row();
-            ui.checkbox(&mut p.origin_center, "Zero in the middle (delta)");
+            ui.checkbox(&mut p.origin_center, "Zero in the middle (delta)").on_hover_text(hint("origin_center"));
             ui.end_row();
         });
         egui::CollapsingHeader::new("Start and end G-code").show(ui, |ui| {
@@ -1215,6 +1260,15 @@ impl App {
         }
         if let Some(p) = shown.point {
             self.measure(p);
+        }
+        if let Some(p) = shown.context {
+            self.context_pick(match p {
+                Pick::Object(id) => Some(id),
+                Pick::Nothing => None,
+            });
+        }
+        if let Some(r) = self.view.response.clone() {
+            r.context_menu(|ui| self.object_menu(ui));
         }
         match shown.pick {
             Some(Pick::Object(id)) => self.pick(id, ui),
@@ -1573,6 +1627,90 @@ mod tests {
         h.state_mut().profile.start_gcode = "M104 S[nope]".into();
         h.run();
         h.get_by_label_contains("unknown placeholder");
+    }
+
+    #[test]
+    fn shortcuts_drive_the_tools_and_the_picked_objects() {
+        use crate::view3d::Tool;
+        let mut h = window();
+        press(&mut h, "Add box");
+        press(&mut h, "Add cylinder");
+        for (key, tool) in [(Key::L, Tool::LayFlat), (Key::M, Tool::Measure), (Key::G, Tool::Move)] {
+            h.key_press(key);
+            h.run();
+            assert_eq!(h.state().view.tool, tool);
+        }
+        h.key_press_modifiers(egui::Modifiers::COMMAND, Key::A);
+        h.run();
+        assert_eq!(h.state().selected, vec![1, 2], "Ctrl+A picks everything");
+        h.state_mut().selected = vec![1];
+        h.run();
+        h.key_press(Key::R);
+        h.run();
+        let app = h.state();
+        assert_eq!(app.session.undo_label(), Some("rotate"));
+        h.key_press_modifiers(egui::Modifiers::COMMAND, Key::D);
+        h.run();
+        assert_eq!(h.state().session.scene.objects.len(), 3);
+        assert_eq!(h.state().selected, vec![3], "the copy is picked");
+        let before = h.state().view.camera;
+        h.key_press(Key::F);
+        h.run();
+        assert_ne!(h.state().view.camera, before, "F frames the picked copy");
+        // Typing in a field is not a shortcut.
+        h.state_mut().view.tool = Tool::Move;
+        h.get_all_by_role(egui::accesskit::Role::TextInput).next().unwrap().click();
+        h.run();
+        h.key_press(Key::L);
+        h.run();
+        assert_eq!(h.state().view.tool, Tool::Move);
+    }
+
+    #[test]
+    fn the_history_steps_back_and_forth_and_the_right_click_menu_acts_on_the_object() {
+        let mut h = window();
+        press(&mut h, "Add box");
+        let app = h.state_mut();
+        app.run("move", json!({"id": 1, "by": [5, 0, 0]}));
+        app.run("scale", json!({"id": 1, "factor": 2}));
+        app.step_history(2, false);
+        assert_eq!(app.session.history(), (vec!["add_primitive"], vec!["move", "scale"]));
+        app.step_history(1, true);
+        assert_eq!(app.session.undo_label(), Some("move"));
+        h.run();
+        press(&mut h, "Edit");
+        h.get_by_label_contains("Undo move");
+        h.get_by_label_contains("History").click();
+        h.run();
+        h.get_by_label("\u{21b6} move");
+        press(&mut h, "\u{21b7} scale");
+        assert_eq!(h.state().session.undo_label(), Some("scale"));
+        // A right click on the object in the list picks it and opens what can be done to it.
+        h.state_mut().selected.clear();
+        h.run();
+        h.get_by_label_contains("40.0 x 40.0 x 40.0").click_secondary();
+        h.run();
+        assert_eq!(h.state().selected, vec![1]);
+        press(&mut h, "Duplicate");
+        assert_eq!(h.state().session.scene.objects.len(), 2, "{}", h.state().status);
+    }
+
+    #[test]
+    fn the_light_theme_is_chosen_and_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let app = App::with_settings(session(), Arc::new(lamina_assistant::testing::Fake::default()), path.clone());
+        let mut h = Harness::builder().with_size([1400.0, 860.0]).build_ui_state(|ui, app: &mut App| app.show(ui), app);
+        h.run();
+        assert_eq!(h.ctx.theme(), egui::Theme::Dark);
+        press(&mut h, "View");
+        press(&mut h, "Light");
+        assert_eq!(h.ctx.theme(), egui::Theme::Light);
+        let (s, _) = Settings::read(&path);
+        assert_eq!(s.look, Some(comfort::Look::Light));
+        // Every setting says what it does.
+        assert!(hint("layer_height").contains("thinner is finer") && hint("layer_height").contains("From 0.02"));
+        assert_eq!(hint("seam"), lamina_slicer::profile::about("seam"));
     }
 
     #[test]

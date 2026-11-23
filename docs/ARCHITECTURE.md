@@ -86,6 +86,11 @@ only through `Session::execute`, so the assistant, a button and a script do the 
   comments. In 3D every layer up to the chosen one is drawn by `lamina_core::render::draw_paths`, each line as wide as it prints
   and shaded round, coloured by kind with a legend, lower layers a little darker; the camera steers as the 3D view's does. The
   chosen layer alone from above, with its travels, is the other view.
+- **Comfort (`comfort.rs`).** Single-key shortcuts (G, L and M for the tools, R to turn, F to frame, A to arrange, Ctrl+D, Ctrl+A)
+  that stand down while a text field has the keyboard; a right-click menu on objects in the 3D view and the plate list; an Edit menu
+  whose History lists the undo and redo steps (`Session::history`); a View menu with the theme (dark, light or the system's, kept in
+  the settings file) and the list of shortcuts. Every setting's tooltip is its sentence in `profile::ABOUT` and its range from
+  `profile::LIMITS`, so the window and the checks cannot disagree.
 - **Long work (`work.rs`).** Slicing, the booleans and the cut, writing G-code and sending it run on a thread, as the chat's requests
   do, so the window keeps drawing; the status bar shows a spinner, the time so far and Cancel. A job runs on a sibling session that
   shares the scene, so it still goes through `Session::execute`, and its new scene comes back with `Session::adopt` as one undo

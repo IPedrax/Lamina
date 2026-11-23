@@ -45,6 +45,9 @@ pub struct Settings {
     pub connection: Option<crate::printer::Connection>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub connection_key: Option<String>,
+    /// The theme, when it is not the default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub look: Option<crate::comfort::Look>,
 }
 
 /// Where the settings file is: `LAMINA_SETTINGS` when set, else `settings.json` in the user's settings folder (found as BIMCraft
@@ -127,6 +130,12 @@ impl Settings {
                 None => notes.push("The saved printer key was left out: it is not a sealed key".into()),
             }
         }
+        if let Some(v) = all.get("look") {
+            match serde_json::from_value::<crate::comfort::Look>(v.clone()) {
+                Ok(l) => s.look = Some(l),
+                Err(_) => notes.push("The theme was left out: it is not dark, light or system".into()),
+            }
+        }
         for (provider, sealed) in all.get("keys").and_then(Value::as_object).into_iter().flatten() {
             match sealed.as_str().filter(|t| Provider::from_key(provider).is_some() && seal::well_formed(t)) {
                 Some(t) => {
@@ -172,6 +181,7 @@ mod tests {
             recent: vec!["/home/me/plate.lamina".into()],
             connection: Some(crate::printer::Connection { kind: lamina_printer::Kind::Octoprint, address: "octopi.local".into() }),
             connection_key: Some(seal::seal("ABCDEF0123456789").unwrap()),
+            look: Some(crate::comfort::Look::Light),
             ..Settings::default()
         };
         s.filaments

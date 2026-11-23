@@ -185,6 +185,15 @@ impl Session {
         self.undo.last().map(|(label, _)| label.as_str())
     }
 
+    /// The labels of the steps `undo` would take back, the next first, and those `redo` would bring back, the next first: the
+    /// window's history list.
+    pub fn history(&self) -> (Vec<&str>, Vec<&str>) {
+        fn labels(v: &[(String, Arc<Scene>)]) -> Vec<&str> {
+            v.iter().rev().map(|(l, _)| l.as_str()).collect()
+        }
+        (labels(&self.undo), labels(&self.redo))
+    }
+
     /// Whether there is a step to undo, and one to redo.
     pub fn can_undo(&self) -> bool {
         !self.undo.is_empty()
@@ -284,6 +293,18 @@ mod tests {
         let stale = Arc::new(Scene::default());
         assert!(s.adopt("late", &from, stale).unwrap_err().contains("changed"));
         assert_eq!((s.scene.objects.len(), s.undo_label()), (2, Some("add_primitive")));
+    }
+
+    #[test]
+    fn the_history_lists_undo_and_redo_steps_next_first() {
+        let mut s = Session::new();
+        boxes(&mut s, 1).unwrap();
+        s.execute("move", &json!({"id": 1, "by": [1, 0, 0]})).unwrap();
+        s.execute("scale", &json!({"id": 1, "factor": 2})).unwrap();
+        assert_eq!(s.history(), (vec!["scale", "move", "add_primitive"], vec![]));
+        s.undo().unwrap();
+        s.undo().unwrap();
+        assert_eq!(s.history(), (vec!["add_primitive"], vec!["move", "scale"]));
     }
 
     #[test]

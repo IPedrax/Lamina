@@ -249,6 +249,69 @@ pub fn limits(field: &str) -> Option<(f64, f64)> {
     LIMITS.iter().find(|(name, _, _)| *name == field).map(|&(_, lo, hi)| (lo, hi))
 }
 
+/// What each setting does, in a sentence: the window's tooltips and the user guide read it. Every field of the profile has one (a
+/// test checks).
+pub const ABOUT: &[(&str, &str)] = &[
+    ("bed", "The plate's size, mm, x then y."),
+    ("origin_center", "Whether the printer's zero is the middle of the plate (most delta printers) instead of its front left corner."),
+    ("max_height", "The tallest the printer can print, mm."),
+    ("pressure_advance", "The filament's pressure advance (linear advance on Marlin), sent at the start; 0 leaves the printer's own."),
+    ("max_acceleration", "The printer's acceleration, mm/s2: the print time estimate plans each move with it."),
+    ("junction_deviation", "How fast the printer takes corners (Marlin's junction deviation, mm); used for the time estimate."),
+    ("nozzle", "The nozzle's diameter, mm: lines are this wide, and layers at most 80 % of it."),
+    ("filament_diameter", "The filament's diameter, mm, usually 1.75."),
+    ("start_gcode", "G-code sent before the print; [name] is replaced by that setting."),
+    ("end_gcode", "G-code sent after the print; [name] is replaced by that setting."),
+    ("firmware", "The printer's firmware: Klipper also gets object markers, so one failed object can be cancelled alone."),
+    ("firmware_retraction", "Retract with the firmware's G10 and G11, so the printer's own retraction settings apply."),
+    ("thumbnail", "A picture of the plate this many pixels square, for the printer's screen; 0 for none."),
+    ("layer_height", "The height of each layer, mm: thinner is finer and slower."),
+    ("first_layer_height", "The height of the first layer, mm: a thicker one sticks better to an uneven plate."),
+    ("perimeters", "Walls round each layer: more is stronger and slower."),
+    ("vase", "Vase mode: above the bottom, one wall that climbs without stopping, with no infill and an open top."),
+    ("top_layers", "Solid layers that close the top of the part."),
+    ("bottom_layers", "Solid layers at the bottom of the part."),
+    ("infill_density", "How much of the inside is filled, from 0 to 1 (the window shows it in %)."),
+    ("infill_pattern", "The pattern of the sparse infill: lines, grid, triangles, gyroid or honeycomb."),
+    ("skirt_loops", "Loops round the part on the first layer, not touching it, to start the flow; 0 for none."),
+    ("skirt_distance", "How far the skirt stands from the part, mm."),
+    ("brim_width", "Loops round the first layer, touching it, that hold its edges down, mm wide; 0 for none."),
+    ("raft_layers", "Layers of lines under the part, which is lifted onto them; 0 for none."),
+    ("perimeter_speed", "How fast walls print, mm/s."),
+    ("infill_speed", "How fast infill and support print, mm/s."),
+    ("first_layer_speed", "How fast the first layer prints, mm/s: slower sticks better."),
+    ("travel_speed", "How fast the head moves when it is not printing, mm/s."),
+    ("nozzle_temp", "The nozzle's temperature, C."),
+    ("first_layer_nozzle_temp", "The nozzle's temperature for the first layer, C."),
+    ("bed_temp", "The plate's temperature, C; 0 for an unheated plate."),
+    ("first_layer_bed_temp", "The plate's temperature for the first layer, C."),
+    ("retract_length", "How far the filament is pulled back before a travel, mm, so it does not ooze and string."),
+    ("retract_speed", "How fast the filament is pulled back and pushed again, mm/s."),
+    ("retract_min_travel", "A travel shorter than this is made without retracting, mm."),
+    ("combing", "Travel inside the part without retracting, however far: it crosses no gap, so nothing strings."),
+    ("z_hop", "Lift the nozzle by this much while it travels, mm, so it does not knock the part; 0 for none."),
+    ("wipe_distance", "Retract while moving back along the line just printed, mm, which leaves a smaller blob; 0 for none."),
+    ("fan_speed", "The part-cooling fan, 0 to 255: off for the first layer, then up in steps to this."),
+    ("fan_full_layer", "The layer from which the fan runs at its full setting."),
+    ("min_layer_time", "A layer that would print faster than this, s, is slowed so it cools before the next."),
+    ("min_print_speed", "The slowest a layer is slowed to cool, mm/s."),
+    ("seam", "Where each wall starts and ends, which leaves a small mark."),
+    ("bridge_speed", "How fast a bridge (solid infill over air) prints, mm/s."),
+    ("bridge_flow", "A bridge's flow as a share of the normal flow: under 1 makes thinner strands that sag less."),
+    ("bridge_fan", "The part-cooling fan while a bridge prints, 0 to 255."),
+    ("support", "Supports under overhangs: off, everywhere, or only those that stand on the plate."),
+    ("support_angle", "A surface leaning further than this from vertical, degrees, is held up."),
+    ("support_density", "How much of the support's area its lines fill, from 0 to 1."),
+    ("support_z_gap", "The space between the top of a support and the part, mm, so it comes away."),
+    ("support_xy_gap", "The space between a support and the part's walls, mm."),
+    ("support_interface_layers", "Denser layers at the top of a support, under the part, for a cleaner underside."),
+];
+
+/// What a setting does, from [`ABOUT`]; empty for a name that is not a setting.
+pub fn about(field: &str) -> &'static str {
+    ABOUT.iter().find(|(name, _)| *name == field).map_or("", |&(_, text)| text)
+}
+
 fn within(what: &str, x: f64, lo: f64, hi: f64) -> Result<(), String> {
     if x.is_finite() && x >= lo && x <= hi { Ok(()) } else { Err(format!("`{what}` must be from {lo} to {hi}, not {x}")) }
 }
@@ -384,6 +447,16 @@ mod tests {
             }
         }
         assert!(LIMITS.iter().all(|(k, _, _)| all.get(*k).is_some_and(Value::is_number)), "a limit for a field that is not a number");
+    }
+
+    #[test]
+    fn every_setting_says_what_it_does() {
+        let all = serde_json::to_value(Profile::default()).unwrap();
+        for k in all.as_object().unwrap().keys() {
+            assert!(!about(k).is_empty(), "`{k}` has no description in ABOUT");
+        }
+        assert!(ABOUT.iter().all(|(k, _)| all.get(*k).is_some()), "a description for a field the profile does not have");
+        assert_eq!(about("nonsense"), "");
     }
 
     #[test]
