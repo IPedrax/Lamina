@@ -1,7 +1,7 @@
 //! The boolean commands, which an app adds to a session with `session.register(lamina_csg::COMMANDS)`. Each replaces its operands
 //! with one new object where the result stands, as one undo step.
 
-use lamina_core::{Command, Files, Mesh, Session};
+use lamina_core::{Command, Files, Mesh, Session, Transform};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -80,11 +80,13 @@ fn fold(s: &mut Session, op: Op, ids: &[u32], name: Option<String>) -> Result<Va
     if seen.len() != ids.len() {
         return Err("an object is named twice".into());
     }
-    let worlds: Vec<Mesh> = ids.iter().map(|&id| s.scene.get(id).map(|o| o.world())).collect::<Result<_, _>>()?;
+    // Each object as it is kept: its own mesh and its transform, so its flat faces are found where they are exactly flat.
+    let placed: Vec<(std::sync::Arc<Mesh>, Transform)> =
+        ids.iter().map(|&id| s.scene.get(id).map(|o| (o.mesh.clone(), o.xf))).collect::<Result<_, _>>()?;
     let name = name.unwrap_or_else(|| s.scene.get(ids[0]).map(|o| o.name.clone()).unwrap_or_default());
-    let mut result = worlds[0].clone();
-    for other in &worlds[1..] {
-        result = isolated(op, &result, other)?;
+    let mut result = isolated(op, (&placed[0].0, placed[0].1), (&placed[1].0, placed[1].1))?;
+    for (mesh, xf) in &placed[2..] {
+        result = isolated(op, (&result, Transform::IDENTITY), (mesh, *xf))?;
     }
     if result.triangles.is_empty() {
         return Err(match op {

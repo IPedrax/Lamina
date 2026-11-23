@@ -5,7 +5,8 @@
 //! from BIMCraft's `crates/dwg` (same author, MIT OR Apache-2.0), which reads DWG files the same way.
 //!
 //! What crosses the pipe: `LMB1`, an operation byte, then each mesh as its vertex count and triangle count (little-endian `u32`) and
-//! the arrays (`f32` vertices, `u32` triangles), which is lossless. The answer is `LMB1` and one mesh; an error is the child's
+//! the arrays (`f32` vertices, `u32` triangles), followed by its transform (twelve `f64`, the matrix's rows then the translation),
+//! which is lossless. The answer is `LMB1` and one mesh; an error is the child's
 //! message on its error stream and a failing exit.
 
 use std::io::{Read, Write};
@@ -14,10 +15,10 @@ use std::process::{Command, ExitCode, Stdio};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
-use lamina_core::Mesh;
 use lamina_core::mesh::MAX_TRIANGLES;
+use lamina_core::{Mesh, Transform};
 
-use crate::{MAX_INPUT_TRIANGLES, Op, boolean};
+use crate::{MAX_INPUT_TRIANGLES, Op, Placed, boolean_placed};
 
 /// The argument that starts an app as the child that runs one boolean.
 pub const CHILD_ARG: &str = "--boolean-child";
@@ -38,11 +39,28 @@ pub fn run_in_child(exe: PathBuf) {
 }
 
 /// `a` combined with `b`: in a child when the app has asked for one, else here.
-pub fn isolated(op: Op, a: &Mesh, b: &Mesh) -> Result<Mesh, String> {
+pub fn isolated(op: Op, a: Placed, b: Placed) -> Result<Mesh, String> {
     match CHILD.get() {
         Some(exe) => in_child(exe, op, a, b, CHILD_TIME),
-        None => boolean(op, a, b),
+        None => boolean_placed(op, a, b),
     }
+}
+
+fn put_placed(out: &mut Vec<u8>, (m, xf): Placed) {
+    put(out, m);
+    out.extend(xf.m.iter().flatten().chain(xf.t.iter()).flat_map(|c| c.to_le_bytes()));
+}
+
+fn take_placed(bytes: &[u8], at: &mut usize) -> Result<(Mesh, Transform), String> {
+    let m = take(bytes, at)?;
+    let mut c = [0.0f64; 12];
+    for slot in &mut c {
+        let b = bytes.get(*at..*at + 8).ok_or("the transform is cut short")?;
+        *slot = f64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]);
+        *at += 8;
+    }
+    let xf = Transform { m: [[c[0], c[1], c[2]], [c[3], c[4], c[5]], [c[6], c[7], c[8]]], t: [c[9], c[10], c[11]] };
+    Ok((m, xf))
 }
 
 fn put(out: &mut Vec<u8>, m: &Mesh) {
@@ -93,7 +111,7 @@ pub fn child_main(args: &[String]) -> Option<ExitCode> {
     let mut input = Vec::new();
     let mut err = std::io::stderr();
     // Two meshes of at most the triangles one boolean takes, with room to spare.
-    let cap = (MAX_INPUT_TRIANGLES as u64 + 64) * 80;
+    let cap = (MAX_INPUT_TRIANGLES as u64 + 64) * 80 + 1024;
     if let Err(e) = std::io::stdin().lock().take(cap).read_to_end(&mut input) {
         let _ = writeln!(err, "could not read the meshes: {e}");
         return Some(ExitCode::FAILURE);
@@ -109,8 +127,8 @@ pub fn child_main(args: &[String]) -> Option<ExitCode> {
             _ => return Err("the child was given no operation".to_string()),
         };
         let mut at = 5;
-        let (a, b) = (take(&input, &mut at)?, take(&input, &mut at)?);
-        boolean(op, &a, &b)
+        let (a, b) = (take_placed(&input, &mut at)?, take_placed(&input, &mut at)?);
+        boolean_placed(op, (&a.0, a.1), (&b.0, b.1))
     })();
     match result {
         Ok(m) => {
@@ -134,11 +152,11 @@ pub fn child_main(args: &[String]) -> Option<ExitCode> {
 
 /// `a` combined with `b` by `exe` started as a child ([`child_main`]), within `time`. A child that aborts, runs past `time` or answers
 /// what does not read is stopped, and the reply says so.
-pub fn in_child(exe: &Path, op: Op, a: &Mesh, b: &Mesh, time: Duration) -> Result<Mesh, String> {
+pub fn in_child(exe: &Path, op: Op, a: Placed, b: Placed, time: Duration) -> Result<Mesh, String> {
     let mut input = MAGIC.to_vec();
     input.push(op_byte(op));
-    put(&mut input, a);
-    put(&mut input, b);
+    put_placed(&mut input, a);
+    put_placed(&mut input, b);
     let ran =
         run_child(exe, &[CHILD_ARG.as_ref()], Some(input), MAX_ANSWER, time).map_err(|e| format!("the boolean could not start: {e}"))?;
     let said = String::from_utf8_lossy(&ran.said).trim().to_string();
@@ -220,8 +238,12 @@ mod tests {
         put(&mut bytes, &a);
         put(&mut bytes, &b);
         let mut at = 0;
-        assert_eq!((take(&bytes, &mut at).unwrap(), take(&bytes, &mut at).unwrap()), (a, b));
+        assert_eq!((take(&bytes, &mut at).unwrap(), take(&bytes, &mut at).unwrap()), (a.clone(), b));
         assert_eq!(at, bytes.len());
+        let xf = Transform::rotate(0, 30.0).then(&Transform::translate([1.5, -2.0, 3.25]));
+        let mut placed = Vec::new();
+        put_placed(&mut placed, (&a, xf));
+        assert_eq!(take_placed(&placed, &mut 0).unwrap(), (a, xf));
         for n in [0, 3, 8, 20, bytes.len() / 2] {
             assert!(take(&bytes[..n], &mut 0).is_err() || n >= 8 + 8 * 12 + 12 * 12, "{n}");
         }
@@ -235,11 +257,12 @@ mod tests {
         // The test program itself, given the child's argument, runs no tests and prints nothing that reads as an answer.
         let exe = std::env::current_exe().unwrap();
         let (a, b) = (Mesh::cuboid([10.0, 10.0, 10.0]), Mesh::cuboid([4.0, 4.0, 14.0]));
-        assert!(in_child(&exe, Op::Difference, &a, &b, Duration::from_secs(60)).is_err());
+        let (pa, pb) = ((&a, Transform::IDENTITY), (&b, Transform::IDENTITY));
+        assert!(in_child(&exe, Op::Difference, pa, pb, Duration::from_secs(60)).is_err());
         assert!(
-            in_child(Path::new("/nonexistent/lamina"), Op::Union, &a, &b, Duration::from_secs(5)).unwrap_err().contains("could not start")
+            in_child(Path::new("/nonexistent/lamina"), Op::Union, pa, pb, Duration::from_secs(5)).unwrap_err().contains("could not start")
         );
         // Without a child, the boolean runs here.
-        assert!(isolated(Op::Difference, &a, &b).unwrap().is_watertight());
+        assert!(isolated(Op::Difference, pa, pb).unwrap().is_watertight());
     }
 }

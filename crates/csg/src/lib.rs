@@ -12,8 +12,8 @@ mod commands;
 use std::collections::{HashMap, HashSet};
 
 use csgrs::mesh::{bsp::Node, polygon::Polygon, vertex::Vertex};
-use lamina_core::Mesh;
 use lamina_core::repair::{self, SNAP};
+use lamina_core::{Mesh, Transform};
 use nalgebra::{Point3, Vector3};
 
 pub use child::{CHILD_ARG, CHILD_TIME, child_main, in_child, isolated, run_in_child};
@@ -33,27 +33,41 @@ pub enum Op {
     Intersect,
 }
 
-/// `a` combined with `b`, or an error saying why not. A result is returned only if it is a closed solid with a volume and bounds that
-/// are possible for these shapes ([`sound`]): the BSP can leave cracks or lose faces where curved surfaces cut each other, and a
-/// broken mesh in the scene would slice into a broken print.
+/// A mesh in its own frame and the transform that places it, as an object on the plate holds them.
+pub type Placed<'a> = (&'a Mesh, Transform);
+
+/// `a` combined with `b` (meshes where they stand), or an error saying why not. See [`boolean_placed`].
 pub fn boolean(op: Op, a: &Mesh, b: &Mesh) -> Result<Mesh, String> {
-    for (name, m) in [("first", a), ("second", b)] {
+    boolean_placed(op, (a, Transform::IDENTITY), (b, Transform::IDENTITY))
+}
+
+/// `a` combined with `b`, each a mesh in its own frame and its transform, or an error saying why not. Flat patches are found in each
+/// mesh's own frame, where a cylinder's cap is exactly flat however the object is turned, and only then moved where they stand, in
+/// f64. A result is returned only if it is a closed solid with a volume and bounds that are possible for these shapes ([`sound`]):
+/// the BSP can leave cracks or lose faces where curved surfaces cut each other, and a broken mesh in the scene would slice into a
+/// broken print.
+pub fn boolean_placed(op: Op, a: Placed, b: Placed) -> Result<Mesh, String> {
+    for (name, (m, xf)) in [("first", &a), ("second", &b)] {
         if !m.is_watertight() {
             return Err(format!("the {name} shape is not a closed mesh, so a boolean cannot tell its inside from its outside"));
         }
+        if !xf.is_finite() || xf.det() <= 1e-12 {
+            return Err(format!("the {name} shape's transform flattens or mirrors it"));
+        }
     }
-    let total = a.triangles.len() + b.triangles.len();
+    let total = a.0.triangles.len() + b.0.triangles.len();
     if total > MAX_INPUT_TRIANGLES {
         return Err(format!("{total} triangles is more than the {MAX_INPUT_TRIANGLES} one boolean takes: use fewer segments"));
     }
     let result = engine(op, a, b)?;
-    sound(op, a, b, &result).map_err(|why| format!("the boolean did not give a clean solid ({why}). {HARD}"))?;
+    sound(op, &a.0.transformed(&a.1), &b.0.transformed(&b.1), &result)
+        .map_err(|why| format!("the boolean did not give a clean solid ({why}). {HARD}"))?;
     Ok(result)
 }
 
 /// The BSP and the repair, with no judgement of the result.
-fn engine(op: Op, a: &Mesh, b: &Mesh) -> Result<Mesh, String> {
-    let (pa, pb) = (to_csg(a), to_csg(b));
+fn engine(op: Op, a: Placed, b: Placed) -> Result<Mesh, String> {
+    let (pa, pb) = (to_csg(a.0, &a.1), to_csg(b.0, &b.1));
     let run = move || from_csg(&combine(op, &pa, &pb));
     std::thread::Builder::new()
         .stack_size(STACK)
@@ -64,9 +78,8 @@ fn engine(op: Op, a: &Mesh, b: &Mesh) -> Result<Mesh, String> {
 }
 
 /// What the error says to do, because the model or the user reading it has to act on it.
-const HARD: &str = "Tilted cylinders that cut through each other or through a box are the hardest cases for this engine; upright shapes and \
-                    spheres work well. Change a size or a position by a hundredth of a millimetre, use fewer segments, or use another shape, \
-                    and try again";
+const HARD: &str = "Curved shapes that meet at a glancing angle, and booleans of earlier booleans' results, are the hardest cases for this \
+                    engine. Change a size or a position by a hundredth of a millimetre, use fewer segments, or use another shape, and try again";
 
 /// Whether `r` can be `op` of `a` and `b`: closed, with a volume between what inclusion and exclusion allow, and inside the box the
 /// operation allows. An empty result is the caller's to explain.
@@ -140,7 +153,7 @@ fn combine(op: Op, a: &[Polygon<()>], b: &[Polygon<()>]) -> Vec<Polygon<()>> {
 /// The mesh as BSP polygons. Triangles that share an edge and a plane become one polygon when together they make an exactly flat,
 /// convex outline (a box's face, an upright cylinder's cap), because every extra edge inside a face is one more place for the BSP
 /// to split, and a cap fanned from its centre is a ring of slivers.
-fn to_csg(m: &Mesh) -> Vec<Polygon<()>> {
+fn to_csg(m: &Mesh, xf: &Transform) -> Vec<Polygon<()>> {
     let normals: Vec<Option<Vector3<f64>>> = (0..m.triangles.len())
         .map(|i| {
             let t = m.tri(i)?;
@@ -186,13 +199,29 @@ fn to_csg(m: &Mesh) -> Vec<Polygon<()>> {
         let r = root(&mut parent, i);
         groups.entry(r).or_default().push(i);
     }
+    // Where each corner stands, worked out in f64 from the mesh's own frame: a patch flat there stays flat to f64's rounding.
     let point = |i: u32| {
-        let p = m.vertices[i as usize].map(f64::from);
+        let p = xf.apply(m.vertices[i as usize].map(f64::from));
         Point3::new(p[0], p[1], p[2])
+    };
+    // A normal moves by the matrix's cofactors (its inverse transposed, scaled), which keeps it square to the face under any scale.
+    let c = &xf.m;
+    let cof = [
+        [c[1][1] * c[2][2] - c[1][2] * c[2][1], c[1][2] * c[2][0] - c[1][0] * c[2][2], c[1][0] * c[2][1] - c[1][1] * c[2][0]],
+        [c[0][2] * c[2][1] - c[0][1] * c[2][2], c[0][0] * c[2][2] - c[0][2] * c[2][0], c[0][1] * c[2][0] - c[0][0] * c[2][1]],
+        [c[0][1] * c[1][2] - c[0][2] * c[1][1], c[0][2] * c[1][0] - c[0][0] * c[1][2], c[0][0] * c[1][1] - c[0][1] * c[1][0]],
+    ];
+    let turn = |n: Vector3<f64>| {
+        let w = Vector3::new(
+            cof[0][0] * n.x + cof[0][1] * n.y + cof[0][2] * n.z,
+            cof[1][0] * n.x + cof[1][1] * n.y + cof[1][2] * n.z,
+            cof[2][0] * n.x + cof[2][1] * n.y + cof[2][2] * n.z,
+        );
+        if w.norm() > 1e-12 { w.normalize() } else { n }
     };
     let mut out = Vec::new();
     for tris in groups.values() {
-        let Some(n) = normals[tris[0]] else { continue };
+        let Some(n) = normals[tris[0]].map(turn) else { continue };
         if tris.len() > 1
             && let Some(ring) = outline(m, tris).filter(|r| exactly_flat(m, r) && repair::flat_and_convex(m, r, 5.0 * WELD))
         {
@@ -200,7 +229,7 @@ fn to_csg(m: &Mesh) -> Vec<Polygon<()>> {
             continue;
         }
         for &i in tris {
-            if let Some(n) = normals[i] {
+            if let Some(n) = normals[i].map(turn) {
                 out.push(Polygon::new(m.triangles[i].iter().map(|&v| Vertex::new(point(v), n)).collect(), None));
             }
         }
@@ -211,7 +240,8 @@ fn to_csg(m: &Mesh) -> Vec<Polygon<()>> {
 /// Whether every corner has the very same coordinate on one axis. csgrs takes a polygon off its own plane by more than 1e-8 as
 /// spanning it, and splits it by that plane again and again until the stack overflows, which aborts the process: no error can be
 /// returned. A corner stored as f32 is only within a hundredth of a micron of a tilted plane, so only a patch on a plane square to an
-/// axis (a box's face, an upright cylinder's cap) is merged; triangles, flat by definition, carry everything else. (Moving tilted
+/// axis of the object's own frame (a box's face, a cylinder's cap, however the object is turned: the turn is applied afterwards, in
+/// f64) is merged; triangles, flat by definition, carry everything else. (Moving tilted
 /// corners onto their plane was tried: it leaves them a few nanometres off their neighbours, and measured worse, 131 of 160 against 144.)
 fn exactly_flat(m: &Mesh, ring: &[u32]) -> bool {
     (0..3).any(|k| {
@@ -301,7 +331,6 @@ fn close(m: Mesh) -> Result<Mesh, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lamina_core::Transform;
 
     fn at(m: Mesh, x: f64, y: f64, z: f64) -> Mesh {
         m.transformed(&Transform::translate([x, y, z]))
@@ -488,7 +517,6 @@ mod tests {
 /// `cargo test -p lamina-csg --release -- --ignored success_matrix --nocapture`. About ten minutes in a debug build.
 mod measure {
     use super::*;
-    use lamina_core::Transform;
     use std::collections::BTreeMap;
 
     struct Rng(u64);
@@ -507,16 +535,17 @@ mod measure {
         }
     }
 
-    fn kind_shape(r: &mut Rng, rotate: bool) -> (Mesh, char) {
+    /// A random shape: its mesh in its own frame, the transform that places it (turned when `rotate`), and its kind.
+    fn kind_shape(r: &mut Rng, rotate: bool) -> (Mesh, Transform, char) {
         let (m, k) = match (r.next() * 3.0) as u32 {
             0 => (Mesh::cuboid([r.range(5.0, 25.0), r.range(5.0, 25.0), r.range(5.0, 25.0)]), 'B'),
             1 => (Mesh::cylinder(r.range(2.0, 8.0), r.range(5.0, 25.0), r.pick(&[16, 24, 32, 48])), 'C'),
             _ => (Mesh::sphere(r.range(3.0, 9.0), r.pick(&[16, 24, 32])), 'S'),
         };
-        let m = if rotate { m.transformed(&Transform::rotate(r.pick(&[0, 1, 2]), r.pick(&[30.0, 45.0, 90.0]))) } else { m };
+        let turn = if rotate { Transform::rotate(r.pick(&[0, 1, 2]), r.pick(&[30.0, 45.0, 90.0])) } else { Transform::IDENTITY };
         let (x, y, z) = (r.range(-8.0, 8.0), r.range(-8.0, 8.0), r.range(-4.0, 10.0));
         let t = [r.pick(&[0.0, 2.0, 2.5, 5.0, x]), r.pick(&[0.0, 3.0, y]), r.pick(&[0.0, 4.0, z])];
-        (m.transformed(&Transform::translate(t)), k)
+        (m, turn.then(&Transform::translate(t)), k)
     }
 
     /// Curved pairs only (the weak cases), union and difference, upright and tilted: one number to compare a change by.
@@ -529,7 +558,7 @@ mod measure {
         let mut why: BTreeMap<String, u32> = BTreeMap::new();
         while n < 160 {
             let rotate = n % 2 == 1;
-            let ((a, ka), (b, kb)) = (kind_shape(&mut r, rotate), kind_shape(&mut r, rotate));
+            let ((a, xa, ka), (b, xb, kb)) = (kind_shape(&mut r, rotate), kind_shape(&mut r, rotate));
             if ka == 'B' && kb == 'B' {
                 continue;
             }
@@ -538,10 +567,11 @@ mod measure {
             }
             let op = r.pick(&[Op::Union, Op::Difference]);
             n += 1;
-            match boolean(op, &a, &b) {
+            match boolean_placed(op, (&a, xa), (&b, xb)) {
                 Ok(_) => ok += 1,
                 Err(e) => {
-                    let detail = engine(op, &a, &b).map(|m| shape_of_failure(&m)).unwrap_or_else(|e| e.chars().take(40).collect());
+                    let detail =
+                        engine(op, (&a, xa), (&b, xb)).map(|m| shape_of_failure(&m)).unwrap_or_else(|e| e.chars().take(40).collect());
                     let reason = e.split('(').nth(1).and_then(|x| x.split(')').next()).unwrap_or("other").to_string();
                     *why.entry(format!("{reason}: {detail}")).or_default() += 1;
                 }
@@ -672,14 +702,14 @@ mod measure {
             let mut table: BTreeMap<String, (u32, u32)> = BTreeMap::new();
             let (mut all, mut ok_all) = (0, 0);
             for _ in 0..200 {
-                let ((a, ka), (b, kb)) = (kind_shape(&mut r, rotate), kind_shape(&mut r, rotate));
+                let ((a, xa, ka), (b, xb, kb)) = (kind_shape(&mut r, rotate), kind_shape(&mut r, rotate));
                 let op = r.pick(&[Op::Union, Op::Difference, Op::Intersect]);
                 let mut key = [ka, kb];
                 key.sort_unstable();
                 let e = table.entry(format!("{}{} {:?}", key[0], key[1], op)).or_default();
                 e.0 += 1;
                 all += 1;
-                if boolean(op, &a, &b).is_ok() {
+                if boolean_placed(op, (&a, xa), (&b, xb)).is_ok() {
                     e.1 += 1;
                     ok_all += 1;
                 }

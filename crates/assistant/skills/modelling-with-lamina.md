@@ -27,9 +27,9 @@ the result stands, as one undo step. The result keeps the first object's name un
 - Make a hole or a pocket with `difference`: build the cutting shape (a cylinder or box) and let it stick out past the faces it
   passes through by a millimetre or more, so a through hole's cylinder is taller than the part.
 - Build one part out of several shapes with `union`. Objects that merely overlap are not joined: they print twice where they overlap.
-- Booleans are reliable on upright boxes, cylinders and spheres. Tilted cylinders cutting each other or a box are the weak case: a
-  boolean that cannot give a clean solid says so and changes nothing. Move or resize a shape by a hundredth of a millimetre, or keep the
-  cylinder upright and rotate the result afterwards, and try again.
+- Booleans are reliable on boxes, cylinders and spheres, upright or turned. A boolean that cannot give a clean solid says so and
+  changes nothing: move or resize a shape by a hundredth of a millimetre and try again. Do turns before booleans where you can: the
+  first boolean on an object sees its faces exactly flat, a later one only to the precision stored.
 - Booleans take longer on shapes with many segments. Use 24 to 32 segments for a cutting tool.
 - Still missing: fillets and chamfers, text, threads and sweeps. Say so plainly, and offer the closest thing that works.
 

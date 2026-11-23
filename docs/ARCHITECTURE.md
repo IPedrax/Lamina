@@ -168,15 +168,17 @@ The sphere primitive is geodesic (a subdivided icosahedron, poles on z): a UV sp
 
 Measured on random pairs with round-number offsets (`success_matrix`, 200 cases each way; `curved_score` takes the curved pairs alone):
 
-| | Before the repair work | Now |
-|---|---|---|
-| Upright shapes, all pairs and operations | 307 of 400 (77%) | 199 of 200 |
-| Tilted shapes | 276 of 400 (69%) | 180 of 200 (90%) |
-| Curved pairs only, union and difference | 66 of 160 | 144 of 160 (90%) |
+| | Before the repair work | With the repair | Flat faces found in each object's own frame |
+|---|---|---|---|
+| Upright shapes, all pairs and operations | 307 of 400 (77%) | 199 of 200 | 199 of 200 |
+| Tilted shapes | 276 of 400 (69%) | 180 of 200 (90%) | 198 of 200 (99%) |
+| Curved pairs only, union and difference | 66 of 160 | 144 of 160 (90%) | 159 of 160 |
 
-Upright, every cell is 100% but cylinder with sphere union (95%). The weak spot left is tilted cylinders: crossing each other (50%) or
-joined to a box (71%), because a tilted cap cannot be merged into one flat polygon. Those are refused with advice; nothing broken is
-returned. If csgrs ever recursed without end on some input, the stack overflow would abort the process: so the desktop and the CLI run
+Tilted cylinders were the weak spot (crossing each other 50%, joined to a box 71%): a tilted cap, stored as f32 after the transform, is
+flat only to f32's rounding and could not be merged into one polygon. `boolean_placed` takes each object's own mesh and transform,
+merges flat patches in the object's frame, where the cap is exactly flat, and moves the corners where they stand in f64, flat to
+f64's rounding, far inside csgrs' 1e-8. Upright, every cell is 100% but cylinder with sphere union (95%); tilted, every cell but sphere
+with sphere union (2 of 4). What is refused is refused with advice; nothing broken is returned. If csgrs ever recursed without end on some input, the stack overflow would abort the process: so the desktop and the CLI run
 each boolean in a copy of themselves (`child.rs`, `--boolean-child`, ported from BIMCraft's DWG reader), and a child that aborts or
 runs past two minutes is an error the app carries on from. Tests, and apps that do not ask, run booleans in the process.
 

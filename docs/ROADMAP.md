@@ -31,6 +31,9 @@ Priorities:
   run each boolean in a copy of themselves started with `--boolean-child`, the meshes on its standard input (lossless arrays) and the
   result on its standard output, stopped after two minutes. A child that aborts or hangs is an error and the app carries on.
   Tested with the real `lamina-cli` as the child.
+- **0.5 Tilted cylinders in booleans.** `lamina_csg::boolean_placed` takes each object's local mesh and transform, merges flat
+  patches in the local frame and moves corners to world space in f64; the commands and the child process pass both. Measured with
+  the same random shapes: tilted pairs 180 of 200 before, 198 now; curved pairs 144 of 160 before, 159 now.
 - **1.1 Project files.** `crates/core/src/project.rs`: `.lamina` JSON with `format: 1`, each object's id, name, transform and local
   mesh (base64 little-endian arrays), and the print settings and preset labels (`Session::print`, which the slicer lays under what a
   slice is given). `save`, `open` and `new` commands; `open` and `new` start a new history, are in `bridge::REPLACES` (refused to a
@@ -95,11 +98,6 @@ After those, the P1 items below, roughly top to bottom within each area.
 **0.2 Real test prints (P0).** How: export a 20 mm calibration cube, a 0.4 mm single-wall box and a bridge test with `lamina-cli slice`.
 Print each on one Marlin and one Klipper printer. Measure with calipers. Write the results, with photos, in `docs/PRINT-TESTS.md`. Fix
 what is wrong before adding features.
-
-**0.5 Tilted cylinders in booleans (P1).** These are the last weak case: about 50% of tilted cylinder pairs are refused. How: a tilted
-cap is only flat to f32 rounding, because the world mesh is stored as f32 after the transform. Give `lamina_csg::boolean` each
-object's local mesh and its `Transform`. Merge flat patches in the local frame, where caps are exactly flat, then move the polygon
-corners to world space in f64. Re-measure with `success_matrix` and `curved_score`, which are ignored tests in `crates/csg`.
 
 **0.6 Fuzz the parsers (P1).** How: for each parser (STL, settings file, sealed key, G-code preview, command parameters), add a test
 that feeds a few thousand random and mutated inputs from a seeded generator and asserts it never panics. No new dependency: the csg
@@ -330,5 +328,6 @@ project files and can return after 1.1.
 - Walls are constant width, so thin features vanish instead of getting gap fill. Supports are straight columns, not trees. No bridging.
 - The skirt is an outline of the first layer, not a hull. Time is distance over speed, without acceleration.
 - A mesh whose holes are too big to fill without guessing stays open, and prints with parts missing, with a warning. STL and 3MF only (OBJ and glTF are 1.3).
-- Booleans refuse about half of tilted cylinder pairs.
+- Booleans refuse about 1 in 100 random pairs (the rest of a sphere-with-sphere union mostly), and a boolean of a boolean's result
+  works on its world mesh, so its tilted faces are flat only to f32.
 - Nothing has been printed on real hardware.
