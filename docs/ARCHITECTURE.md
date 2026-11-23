@@ -72,6 +72,11 @@ read up to 1 MB. `send_to_printer` reads a file, so the assistant (which refuses
 the MCP server's session does not register it: starting a print is a physical act only the user takes. Tests run a fake printer on
 this machine (`testing::printer`); nothing contacts a real one.
 
+`status` asks what the printer is doing (Moonraker's printer objects; OctoPrint's job and printer): state, file, progress and
+temperatures, read leniently, five seconds at most. The window asks every five seconds while the user ticks Show what it is doing,
+on a thread. It is deliberately not a command: an agent steered by text on the plate could otherwise use it to probe addresses on
+the user's network.
+
 ## The stack is Rust
 
 The engine, the slicer, the AI chat, the CLI and the planned desktop are Rust. The desktop will be egui with eframe and wgpu, the

@@ -28,7 +28,15 @@ pub struct PrinterPanel {
     pub remember: bool,
     /// The key as the settings file keeps it, when remembered.
     pub sealed: Option<String>,
+    /// Whether the window asks the printer what it is doing, every [`EVERY`]; what it last said; the question on its way.
+    pub watch: bool,
+    pub status: Option<Result<lamina_printer::Status, String>>,
+    asking: Option<std::sync::mpsc::Receiver<Result<lamina_printer::Status, String>>>,
+    asked: Option<std::time::Instant>,
 }
+
+/// How often a watched printer is asked what it is doing.
+pub const EVERY: std::time::Duration = std::time::Duration::from_secs(5);
 
 impl PrinterPanel {
     /// The panel as the settings left it: the connection, and the key opened from its sealed form. A key that does not open is said.
@@ -87,6 +95,36 @@ impl App {
         });
     }
 
+    /// Once a frame: takes the printer's answer when it has come, and asks again every [`EVERY`] while the user watches. The
+    /// question goes on a thread, to the address typed and nowhere else; it is not a command, so no agent can point it elsewhere.
+    pub(crate) fn poll_printer(&mut self, ctx: &egui::Context) {
+        let p = &mut self.link;
+        if let Some(rx) = &p.asking
+            && let Ok(answer) = rx.try_recv()
+        {
+            (p.status, p.asking) = (Some(answer), None);
+        }
+        if !p.watch || p.connection.address.trim().is_empty() {
+            (p.asking, p.asked) = (None, None);
+            return;
+        }
+        if p.asking.is_none() && p.asked.is_none_or(|t| t.elapsed() >= EVERY) {
+            let printer = lamina_printer::Printer {
+                kind: p.connection.kind,
+                address: p.connection.address.clone(),
+                key: Some(p.key.trim().to_string()).filter(|k| !k.is_empty()),
+            };
+            let (tx, rx) = std::sync::mpsc::channel();
+            let wake = ctx.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(lamina_printer::status(&printer));
+                wake.request_repaint();
+            });
+            (p.asking, p.asked) = (Some(rx), Some(std::time::Instant::now()));
+        }
+        ctx.request_repaint_after(EVERY);
+    }
+
     pub(crate) fn printer_ui(&mut self, ui: &mut Ui) {
         egui::CollapsingHeader::new("Printer connection").show(ui, |ui| {
             let p = &mut self.link;
@@ -112,7 +150,15 @@ impl App {
                 "Kept in the settings file, sealed under a secret built into Lamina: scrambled, not protected from anyone who has Lamina.",
             );
             p.keep();
-            ui.label(RichText::new("Lamina sends only to this address, and only when you press Send.").small().weak());
+            ui.checkbox(&mut p.watch, "Show what it is doing").on_hover_text("Asks the printer every 5 seconds while ticked");
+            if p.watch {
+                match &p.status {
+                    Some(Ok(s)) => ui.label(RichText::new(s.line()).small()),
+                    Some(Err(e)) => ui.label(RichText::new(e).small().color(crate::WARNING)),
+                    None => ui.label(RichText::new("Asking...").small().weak()),
+                };
+            }
+            ui.label(RichText::new("Lamina talks only to this address: when you press Send, or watch it.").small().weak());
             ui.horizontal(|ui| {
                 if ui.button("Send to printer").on_hover_text("Slice the plate and upload it").clicked() {
                     self.send_to_printer(false);

@@ -1,6 +1,6 @@
 //! Sending G-code to a printer on the user's own network: Moonraker (Klipper's API server) and OctoPrint, from their public API
-//! documentation. One request each, to the address the user typed and nowhere else: a multipart upload of the file, which may also
-//! start the print. With the assistant, this is the only crate that reaches the network (the `network_boundary` test in
+//! documentation. To the address the user typed and nowhere else: a multipart upload of the file, which may also start the print,
+//! and [`status`], what the printer is doing, which the window asks while the user watches. With the assistant, this is the only crate that reaches the network (the `network_boundary` test in
 //! `lamina-core` lists both).
 //!
 //! What goes out is the user's file and, for OctoPrint (or a Moonraker that asks for one), the user's API key in the `X-Api-Key`
@@ -198,15 +198,116 @@ pub fn send(printer: &Printer, name: &str, gcode: &[u8], print: bool) -> Result<
 
 /// An agent that follows no redirect, gives up on a printer that does not answer, and reads an error status as a reply.
 fn agent() -> Agent {
+    agent_for(Duration::from_secs(15 * 60))
+}
+
+fn agent_for(time: Duration) -> Agent {
     Agent::config_builder()
         .https_only(false)
         .max_redirects(0)
         .http_status_as_error(false)
-        .timeout_connect(Some(Duration::from_secs(10)))
-        .timeout_global(Some(Duration::from_secs(15 * 60)))
+        .timeout_connect(Some(Duration::from_secs(10).min(time)))
+        .timeout_global(Some(time))
         .user_agent(format!("Lamina/{}", env!("CARGO_PKG_VERSION")))
         .build()
         .into()
+}
+
+/// What a printer is doing, as far as it said: its state in its own words, the file, how far along it is (0 to 1), and the nozzle's
+/// and the bed's temperatures (now, and what they are heating to).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Status {
+    pub state: String,
+    pub file: Option<String>,
+    pub progress: Option<f64>,
+    pub nozzle: Option<(f64, f64)>,
+    pub bed: Option<(f64, f64)>,
+}
+
+impl Status {
+    /// One line for the window: "printing part.gcode, 42 %; nozzle 210 / 210 C, bed 60 / 60 C".
+    pub fn line(&self) -> String {
+        let mut out = self.state.clone();
+        if let Some(f) = &self.file {
+            out.push_str(&format!(" {f}"));
+        }
+        if let Some(p) = self.progress {
+            out.push_str(&format!(", {:.0} %", p * 100.0));
+        }
+        let temp = |name: &str, t: Option<(f64, f64)>| t.map(|(now, to)| format!("{name} {now:.0} / {to:.0} C"));
+        let temps: Vec<String> = [temp("nozzle", self.nozzle), temp("bed", self.bed)].into_iter().flatten().collect();
+        if !temps.is_empty() {
+            out.push_str(&format!("; {}", temps.join(", ")));
+        }
+        out
+    }
+}
+
+/// A number a printer sent, when it is one and finite.
+fn finite(v: &serde_json::Value) -> Option<f64> {
+    v.as_f64().filter(|x| x.is_finite())
+}
+
+/// Text a printer sent, cut short.
+fn short(v: &serde_json::Value) -> Option<String> {
+    v.as_str().map(|s| s.chars().filter(|c| !c.is_control()).take(120).collect())
+}
+
+/// One GET to the printer, its reply read up to [`MAX_REPLY`] as JSON.
+fn get(printer: &Printer, path: &str) -> Result<serde_json::Value, String> {
+    let base = base(&printer.address)?;
+    let what = printer.kind.name();
+    let mut call = agent_for(Duration::from_secs(5)).get(&format!("{base}{path}"));
+    if let Some(k) = printer.key.as_deref().map(str::trim).filter(|k| !k.is_empty() && key_ok(k)) {
+        call = call.header("X-Api-Key", k);
+    }
+    let response = call.call().map_err(|e| format!("{what} at {base}: {e}"))?;
+    let status = response.status().as_u16();
+    let mut reply = Vec::new();
+    response
+        .into_body()
+        .into_with_config()
+        .limit(MAX_REPLY + 1)
+        .reader()
+        .read_to_end(&mut reply)
+        .map_err(|e| format!("{what} at {base}: {e}"))?;
+    match status {
+        200..=299 => serde_json::from_slice(&reply).map_err(|_| format!("{what} at {base} sent a status that is not JSON")),
+        401 | 403 => Err(format!("{what} at {base} refused ({status}): check the API key")),
+        _ => Err(format!("{what} at {base} answered {status}")),
+    }
+}
+
+/// Asks `printer` what it is doing (Moonraker's printer objects; OctoPrint's job and printer), by the address the user typed only.
+/// What it says is read leniently: a field it does not send, or sends oddly, is none.
+pub fn status(printer: &Printer) -> Result<Status, String> {
+    match printer.kind {
+        Kind::Moonraker => {
+            let v = get(printer, "/printer/objects/query?print_stats&virtual_sdcard&extruder&heater_bed")?;
+            let s = &v["result"]["status"];
+            let temps = |o: &serde_json::Value| Some((finite(&o["temperature"])?, finite(&o["target"])?));
+            Ok(Status {
+                state: short(&s["print_stats"]["state"]).unwrap_or_else(|| "unknown".into()),
+                file: short(&s["print_stats"]["filename"]).filter(|f| !f.is_empty()),
+                progress: finite(&s["virtual_sdcard"]["progress"]).map(|p| p.clamp(0.0, 1.0)),
+                nozzle: temps(&s["extruder"]),
+                bed: temps(&s["heater_bed"]),
+            })
+        }
+        Kind::Octoprint => {
+            let job = get(printer, "/api/job")?;
+            // The printer's temperatures: OctoPrint answers 409 while no printer is connected, which leaves them out.
+            let state = get(printer, "/api/printer").unwrap_or_default();
+            let temps = |o: &serde_json::Value| Some((finite(&o["actual"])?, finite(&o["target"])?));
+            Ok(Status {
+                state: short(&job["state"]).unwrap_or_else(|| "unknown".into()).to_lowercase(),
+                file: short(&job["job"]["file"]["name"]),
+                progress: finite(&job["progress"]["completion"]).map(|p| (p / 100.0).clamp(0.0, 1.0)),
+                nozzle: temps(&state["temperature"]["tool0"]),
+                bed: temps(&state["temperature"]["bed"]),
+            })
+        }
+    }
 }
 
 /// A fake printer for tests: an HTTP server on this machine that answers each request with the status given and keeps what it got.
@@ -282,6 +383,38 @@ mod tests {
     use super::*;
 
     const GCODE: &[u8] = b"; generated by Lamina\nG28\nG1 X10 Y10 E1\nM84\n";
+
+    #[test]
+    fn a_printer_says_what_it_is_doing() {
+        let moon = r#"{"result": {"status": {"print_stats": {"state": "printing", "filename": "part.gcode"},
+            "virtual_sdcard": {"progress": 0.4217}, "extruder": {"temperature": 209.6, "target": 210.0},
+            "heater_bed": {"temperature": 60.1, "target": 60.0}}}}"#;
+        let (address, got) = testing::printer(200, moon);
+        let s = status(&Printer { kind: Kind::Moonraker, address, key: None }).unwrap();
+        assert_eq!((s.state.as_str(), s.file.as_deref()), ("printing", Some("part.gcode")));
+        assert_eq!(s.line(), "printing part.gcode, 42 %; nozzle 210 / 210 C, bed 60 / 60 C");
+        assert!(got.lock().unwrap()[0].path.starts_with("/printer/objects/query?print_stats"));
+        // OctoPrint: its job and its printer, one reply carrying both shapes here.
+        let octo = r#"{"state": "Printing", "job": {"file": {"name": "a.gcode"}}, "progress": {"completion": 12.5},
+            "temperature": {"tool0": {"actual": 200, "target": 205}, "bed": {"actual": 55, "target": 60}}}"#;
+        let (address, got) = testing::printer(200, octo);
+        let s = status(&Printer { kind: Kind::Octoprint, address, key: Some("ABCDEF0123456789".into()) }).unwrap();
+        assert_eq!(s.line(), "printing a.gcode, 12 %; nozzle 200 / 205 C, bed 55 / 60 C");
+        let got = got.lock().unwrap();
+        assert_eq!((got[0].path.as_str(), got[1].path.as_str()), ("/api/job", "/api/printer"));
+        assert_eq!(got[0].header("X-Api-Key"), Some("ABCDEF0123456789"));
+    }
+
+    #[test]
+    fn an_odd_status_reply_is_read_leniently_or_said() {
+        let (address, _) = testing::printer(200, r#"{"result": {"status": {"virtual_sdcard": {"progress": "lots"}, "extruder": 5}}}"#);
+        let s = status(&Printer { kind: Kind::Moonraker, address, key: None }).unwrap();
+        assert_eq!(s, Status { state: "unknown".into(), ..Status::default() });
+        let (address, _) = testing::printer(401, "{}");
+        assert!(status(&Printer { kind: Kind::Moonraker, address, key: None }).unwrap_err().contains("API key"));
+        let (address, _) = testing::printer(200, "<html>");
+        assert!(status(&Printer { kind: Kind::Moonraker, address, key: None }).unwrap_err().contains("not JSON"));
+    }
 
     #[test]
     fn moonraker_gets_a_multipart_upload_that_starts_the_print() {

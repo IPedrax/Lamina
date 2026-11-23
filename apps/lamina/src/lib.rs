@@ -668,6 +668,7 @@ impl App {
         });
         self.poll_work(&ctx);
         self.answer_agents(&ctx);
+        self.poll_printer(&ctx);
         Panel::bottom("status").show(ui, |ui| {
             ui.horizontal(|ui| {
                 self.work_ui(ui);
@@ -2241,6 +2242,23 @@ fill_angle = 45
         assert!(h.state().status.contains("closed now"), "{}", h.state().status);
         assert!(h.state_mut().problems_of(1).is_none());
         assert!(h.state().session.scene.get(1).unwrap().mesh.is_watertight());
+    }
+
+    #[test]
+    fn a_watched_printer_says_what_it_is_doing() {
+        let moon = r#"{"result": {"status": {"print_stats": {"state": "printing", "filename": "part.gcode"}, "virtual_sdcard": {"progress": 0.5}}}}"#;
+        let (address, _) = lamina_printer::testing::printer(200, moon);
+        let mut h = window();
+        let app = h.state_mut();
+        app.link.connection = printer::Connection { kind: lamina_printer::Kind::Moonraker, address };
+        app.link.watch = true;
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while !matches!(h.state().link.status, Some(Ok(_))) {
+            assert!(std::time::Instant::now() < until, "no answer: {:?}", h.state().link.status);
+            h.step();
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert_eq!(h.state().link.status.as_ref().unwrap().as_ref().unwrap().line(), "printing part.gcode, 50 %");
     }
 
     #[test]
