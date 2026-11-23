@@ -50,13 +50,17 @@ pub fn write(scene: &Scene, print: &Value) -> String {
 fn object_json(o: &Object) -> Value {
     let vertices: Vec<u8> = o.mesh.vertices.iter().flatten().flat_map(|c| c.to_le_bytes()).collect();
     let triangles: Vec<u8> = o.mesh.triangles.iter().flatten().flat_map(|i| i.to_le_bytes()).collect();
-    json!({
+    let mut v = json!({
         "id": o.id,
         "name": o.name,
         "transform": {"m": o.xf.m, "t": o.xf.t},
         "vertices": base64::encode(&vertices),
         "triangles": base64::encode(&triangles),
-    })
+    });
+    if let Some(r) = &o.recipe {
+        v["recipe"] = (**r).clone();
+    }
+    v
 }
 
 /// A project from its text.
@@ -106,7 +110,7 @@ pub fn read(text: &str) -> Result<Loaded, String> {
 
 fn read_object(k: usize, o: &Map<String, Value>, ignored: &mut Vec<String>) -> Result<Object, String> {
     for key in o.keys() {
-        if !matches!(key.as_str(), "id" | "name" | "transform" | "vertices" | "triangles") {
+        if !matches!(key.as_str(), "id" | "name" | "transform" | "vertices" | "triangles" | "recipe") {
             ignored.push(format!("objects[{k}].{key}"));
         }
     }
@@ -130,7 +134,16 @@ fn read_object(k: usize, o: &Map<String, Value>, ignored: &mut Vec<String>) -> R
     if mesh.triangles.is_empty() {
         return Err("its mesh has no triangles".into());
     }
-    Ok(Object { id, name, mesh: Arc::new(mesh), xf })
+    // A recipe is kept as it was written: `edit` checks each step when it runs them again.
+    let recipe = match o.get("recipe") {
+        Some(r @ Value::Array(_)) => Some(Arc::new(r.clone())),
+        None | Some(Value::Null) => None,
+        Some(_) => {
+            ignored.push(format!("objects[{k}].recipe"));
+            None
+        }
+    };
+    Ok(Object { id, name, mesh: Arc::new(mesh), xf, recipe })
 }
 
 fn transform(v: &Value) -> Result<Transform, String> {

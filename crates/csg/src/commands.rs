@@ -180,6 +180,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_recipe_with_a_hole_is_rebuilt_when_the_hole_is_edited() {
+        let mut s = Session::new();
+        s.register(COMMANDS);
+        let recipe = json!([
+            {"command": "add_primitive", "params": {"kind": "box", "size": [20, 20, 10]}},
+            {"command": "add_primitive", "params": {"kind": "cylinder", "radius": 2, "height": 14, "segments": 32}},
+            {"command": "move", "params": {"id": 2, "by": [0, 0, -2]}},
+            {"command": "difference", "params": {"id": 1, "minus": [2]}},
+        ]);
+        s.execute("build", &json!({"recipe": recipe})).unwrap();
+        let small = s.scene.get(1).unwrap().world().volume();
+        // "Make the hole 6 mm": the cylinder's step, radius 3.
+        s.execute("edit", &json!({"id": 1, "step": 1, "params": {"radius": 3}})).unwrap();
+        let big = s.scene.get(1).unwrap().world();
+        assert!(big.is_watertight() && small - big.volume() > 140.0, "{small} {}", big.volume());
+    }
+
+    #[test]
     fn a_cut_makes_two_closed_parts_whose_volumes_add_up_the_upper_one_turned_onto_its_cut() {
         let mut s = Session::new();
         s.register(COMMANDS);

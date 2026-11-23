@@ -85,6 +85,10 @@ Priorities:
   outline cleaned by `i_overlay` (now a core dependency too), each shape's cap triangulated by `i_triangle` (MIT OR Apache-2.0, the
   same author's, on the same `i_overlay`), walls along the caps' boundary edges, each shape welded on its own so touching shapes stay
   manifold. Helpers: `rounded_rect`, `slot`, `circle`, and round holes by diameter. A plate with holes in the window's More shapes.
+- **3.12 Parametric recipes.** An object's optional `recipe` (the commands that made it). `build {recipe}` runs the steps on an
+  empty plate of their own (`Session::sibling`, the same commands; no file, replace, undo or nested build), which must end with one
+  object, and keeps the recipe; `edit {id, step, params}` merges new parameters into one step and rebuilds the part where it
+  stands. Projects keep recipes, `info` shows them, and the modelling skill teaches editing a step rather than redoing work.
 - **4.1 Supports.** `crates/slicer/src/support.rs`: where a layer leans past `support_angle` from vertical, all of it that is over
   air is held up; overhangs are carried down to the model or the plate (`support`: `off`, `everywhere`, `from_plate`), keep
   `support_xy_gap` from the walls and stop `support_z_gap` below the model, with `support_interface_layers` of denser lines on top.
@@ -160,11 +164,6 @@ bundled with its licence). Flatten the curves to polylines and extrude with 3.9.
 **3.11 Fillets and chamfers (P2).** A general mesh fillet is research-level work. How: offer them where they are tractable. Rounded
 and chamfered boxes are built directly (3.8). Chamfer the bottom edge of any object with a boolean against a wedge ring. Say plainly in
 the AI's skills what is not possible.
-
-**3.12 Parametric recipes (P1).** These let the AI change "make the hole 6 mm" instead of rebuilding. How: add an optional `recipe` to
-an object. It is a list of the commands that made it (primitives, transforms, booleans, extrudes) with their parameters. Add
-`build {recipe}`, which runs them and keeps the recipe, and `edit {id, step, params}`, which changes one step and rebuilds. Store the
-recipe in the project file. The modelling skill teaches the AI to edit recipes rather than redo work.
 
 ## 4. Slicer
 

@@ -38,6 +38,20 @@ pub static ALL: &[Command] = &[
         true,
         Files::None,
     ),
+    cmd(
+        "build",
+        "{recipe:[{command, params}, ...], name?, at?:[x,y]} makes one object from a list of commands run on an empty plate of their own (ids count from 1 there: the first shape is 1, the second 2, a boolean's result the next), and keeps the list on the object, so `edit` can change a step later. The steps must end with one object. Returns {id, triangles, watertight, size}",
+        build,
+        true,
+        Files::None,
+    ),
+    cmd(
+        "edit",
+        "{id, step (counting from 0), params} changes the parameters of one step of an object's recipe (the keys given replace the step's own) and builds it again, where it stands. For \"make the hole 6 mm\": edit the step that made the hole's cylinder. `info` shows each object's recipe",
+        edit,
+        true,
+        Files::None,
+    ),
     cmd("move", "{id, by:[x,y,z]} moves an object by mm", move_by, true, Files::None),
     cmd(
         "rotate",
@@ -438,6 +452,89 @@ fn extrude(s: &mut Session, p: &Value) -> Result<Value, String> {
     added(s, a.name.as_deref().unwrap_or("extrusion"), mesh, a.at)
 }
 
+/// The most steps a recipe may have, and the most text its steps may take.
+const MAX_STEPS: usize = 200;
+const MAX_RECIPE: usize = 1 << 20;
+
+/// Runs `recipe` on an empty plate of its own with `s`'s commands, and gives back the one object it ends with: its mesh where it
+/// stands there.
+fn cook(s: &Session, recipe: &Value) -> Result<Mesh, String> {
+    let steps = recipe.as_array().ok_or("`recipe` is a list of steps")?;
+    if steps.is_empty() || steps.len() > MAX_STEPS {
+        return Err(format!("a recipe has from 1 to {MAX_STEPS} steps"));
+    }
+    if recipe.to_string().len() > MAX_RECIPE {
+        return Err("the recipe is too long".into());
+    }
+    let mut kitchen = s.sibling();
+    for (n, step) in steps.iter().enumerate() {
+        let Value::Object(m) = step else { return Err(format!("step {n} is not {{command, params}}")) };
+        if m.keys().any(|k| k != "command" && k != "params") {
+            return Err(format!("step {n} has keys other than `command` and `params`"));
+        }
+        let command = m.get("command").and_then(Value::as_str).ok_or_else(|| format!("step {n} has no `command`"))?;
+        let c = kitchen.find(command).ok_or_else(|| format!("step {n}: unknown command `{command}`"))?;
+        if c.files != Files::None || matches!(c.id, "new" | "open" | "undo" | "redo" | "build" | "edit") {
+            return Err(format!("step {n}: `{}` cannot be a step of a recipe", c.id));
+        }
+        let params = m.get("params").cloned().unwrap_or(json!({}));
+        kitchen.execute(command, &params).map_err(|e| format!("step {n} (`{command}`): {e}"))?;
+    }
+    match kitchen.scene.objects.as_slice() {
+        [one] => Ok(one.world()),
+        [] => Err("the recipe ends with nothing on its plate".into()),
+        many => Err(format!("the recipe ends with {} objects: join them into one with `union`", many.len())),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Build {
+    recipe: Value,
+    name: Option<String>,
+    at: Option<[f64; 2]>,
+}
+
+fn build(s: &mut Session, p: &Value) -> Result<Value, String> {
+    let a: Build = parse(p)?;
+    let mesh = cook(s, &a.recipe)?;
+    let v = added(s, a.name.as_deref().unwrap_or("part"), mesh, a.at)?;
+    let id = v["id"].as_u64().ok_or("internal: no id")? as u32;
+    s.scene_mut().get_mut(id)?.recipe = Some(std::sync::Arc::new(a.recipe));
+    Ok(v)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Edit {
+    id: u32,
+    step: usize,
+    params: serde_json::Map<String, Value>,
+}
+
+fn edit(s: &mut Session, p: &Value) -> Result<Value, String> {
+    let a: Edit = parse(p)?;
+    let o = s.scene.get(a.id)?;
+    let mut recipe = o.recipe.as_deref().cloned().ok_or_else(|| format!("object {} has no recipe: it was not made with `build`", a.id))?;
+    let steps = recipe.as_array_mut().ok_or("the object's recipe is not a list of steps")?;
+    let count = steps.len();
+    let step = steps.get_mut(a.step).ok_or_else(|| format!("the recipe has steps 0 to {}", count.saturating_sub(1)))?;
+    match step.get_mut("params") {
+        Some(Value::Object(params)) => params.extend(a.params),
+        _ => step["params"] = Value::Object(a.params),
+    }
+    let mesh = cook(s, &recipe)?;
+    let o = s.scene_mut().get_mut(a.id)?;
+    (o.mesh, o.recipe) = (std::sync::Arc::new(mesh), Some(std::sync::Arc::new(recipe)));
+    // Where it stands stays; a part that grew or shrank is set back on the plate.
+    settle(o)?;
+    let world = o.world();
+    let (lo, hi) = world.bounds().unwrap_or_default();
+    Ok(
+        json!({"triangles": world.triangles.len(), "watertight": world.is_watertight(), "size": [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]]}),
+    )
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Move {
@@ -704,6 +801,7 @@ fn info(s: &mut Session, p: &Value) -> Result<Value, String> {
                 "size": [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]], "min": lo, "max": hi,
                 "volume_mm3": world.volume(), "watertight": world.is_watertight(),
                 "open_edges": problems.open_edges, "nonmanifold_edges": problems.nonmanifold_edges, "flipped_faces": problems.flipped_faces,
+                "recipe": o.recipe.as_deref().cloned().unwrap_or(Value::Null),
             })
         })
         .collect();
@@ -1207,6 +1305,66 @@ mod tests {
             assert!(run(&mut s, "extrude", bad.clone()).is_err(), "{bad}");
         }
         assert_eq!(s.scene.objects.len(), 4);
+    }
+
+    #[test]
+    fn a_built_part_keeps_its_recipe_and_an_edit_rebuilds_it_in_place() {
+        let mut s = Session::new();
+        // A plate with a hole, then two steps that place it (the core alone has no booleans: lamina-csg's tests cut holes in recipes).
+        let recipe = json!([
+            {"command": "extrude", "params": {"shape": "rounded_rect", "size": [40, 20], "corner": 3, "height": 4, "round_holes": [[-14, 0, 3]]}},
+            {"command": "scale", "params": {"id": 1, "by": [1, 1, 1]}},
+            {"command": "move", "params": {"id": 1, "by": [5, 0, 0]}},
+        ]);
+        let r = run(&mut s, "build", json!({"recipe": recipe, "name": "plate", "at": [30, 30]})).unwrap();
+        assert_eq!((r["id"].as_u64(), r["size"].clone()), (Some(1), json!([40.0, 20.0, 4.0])));
+        let info = run(&mut s, "info", json!({})).unwrap();
+        assert_eq!(info["objects"][0]["recipe"][0]["command"], "extrude");
+        let before = s.scene.get(1).unwrap().bounds().unwrap();
+        // Make the hole bigger and the plate taller: one step changed, the part rebuilt where it stands, still on the plate.
+        let r = run(&mut s, "edit", json!({"id": 1, "step": 0, "params": {"round_holes": [[-14, 0, 6]], "height": 6}})).unwrap();
+        assert_eq!(r["size"], json!([40.0, 20.0, 6.0]));
+        let after = s.scene.get(1).unwrap().bounds().unwrap();
+        assert!((after.0[0] - before.0[0]).abs() < 1e-6 && (after.0[1] - before.0[1]).abs() < 1e-6 && after.0[2].abs() < 1e-9);
+        assert_eq!(s.scene.get(1).unwrap().recipe.as_ref().unwrap()[0]["params"]["height"], 6);
+        // A project keeps the recipe, so the part can still be edited after it is opened again.
+        let back = crate::project::read(&crate::project::write(&s.scene, &Value::Null)).unwrap();
+        assert_eq!(back.scene.get(1).unwrap().recipe, s.scene.get(1).unwrap().recipe);
+        // Undo takes the edit back; a bad edit changes nothing.
+        run(&mut s, "undo", json!({})).unwrap();
+        assert_eq!(s.scene.get(1).unwrap().bounds().unwrap(), before);
+        for bad in [
+            json!({"id": 1, "step": 9, "params": {}}),
+            json!({"id": 1, "step": 0, "params": {"height": -1}}),
+            json!({"id": 7, "step": 0, "params": {}}),
+        ] {
+            assert!(run(&mut s, "edit", bad.clone()).is_err(), "{bad}");
+        }
+        assert_eq!(s.scene.get(1).unwrap().bounds().unwrap(), before);
+    }
+
+    #[test]
+    fn a_recipe_must_be_safe_and_end_with_one_object() {
+        let mut s = Session::new();
+        let shape = json!({"command": "add_primitive", "params": {"kind": "box", "size": [5, 5, 5]}});
+        for bad in [
+            json!([]),
+            json!([shape, shape]),
+            json!([{"command": "export_mesh", "params": {"path": "/tmp/x.stl"}}]),
+            json!([shape, {"command": "build", "params": {"recipe": [shape]}}]),
+            json!([shape, {"command": "new"}]),
+            json!([{"command": "add_primitive", "params": {"kind": "box"}}]),
+            json!([{"command": "nope"}]),
+            json!([{"command": "add_primitive", "params": {}, "extra": 1}]),
+            json!("not a list"),
+        ] {
+            assert!(run(&mut s, "build", json!({"recipe": bad})).is_err(), "{bad}");
+        }
+        assert!(s.scene.objects.is_empty());
+        let mut box_made = Mesh::cuboid([1.0, 1.0, 1.0]);
+        box_made.triangles.truncate(12);
+        s.scene_mut().add("plain", box_made).unwrap();
+        assert!(run(&mut s, "edit", json!({"id": 1, "step": 0, "params": {}})).unwrap_err().contains("no recipe"));
     }
 
     #[test]

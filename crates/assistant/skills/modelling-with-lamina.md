@@ -45,6 +45,15 @@ the result stands, as one undo step. The result keeps the first object's name un
 - Booleans take longer on shapes with many segments. Use 24 to 32 segments for a cutting tool.
 - Still missing: fillets and chamfers (a rounded box and a rounded_rect extrude round their edges), text, threads and sweeps. Say so plainly, and offer the closest thing that works.
 
+## Parts you may change later
+
+Build a part the user may want to adjust as a recipe: `build {recipe: [{command: "add_primitive", params: {kind: "box", size:
+[20, 20, 10]}}, {command: "add_primitive", params: {kind: "cylinder", radius: 3, height: 14}}, {command: "move", params: {id: 2,
+by: [0, 0, -2]}}, {command: "difference", params: {id: 1, minus: [2]}}]}`. The steps run on a plate of their own, where ids count
+from 1 in the order objects are made, and must end with one object. The object keeps its recipe (`inspect_scene` shows it). To
+change it ("make the hole 6 mm"), edit the step instead of building it again: `edit {id, step: 1, params: {radius: 3}}`. The part is
+rebuilt where it stands.
+
 ## Work in this order
 
 1. Look first: `inspect_scene` before you change anything.

@@ -52,6 +52,11 @@ impl Session {
         Session::default()
     }
 
+    /// A new, empty session with the same commands as this one: where a recipe is run.
+    pub fn sibling(&self) -> Session {
+        Session { extra: self.extra.clone(), ..Session::default() }
+    }
+
     /// Adds a crate's commands to this session.
     pub fn register(&mut self, commands: &'static [Command]) {
         self.extra.push(commands);
