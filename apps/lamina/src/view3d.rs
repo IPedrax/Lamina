@@ -250,7 +250,7 @@ struct Drawn {
     selected: Vec<u32>,
     bed: [f64; 2],
     size: [usize; 2],
-    moving: Option<(u32, P3)>,
+    moving: Option<(Vec<u32>, P3)>,
 }
 
 /// What a click in the view landed on.
@@ -384,10 +384,11 @@ fn inside(q: &[Pos2; 4], p: Pos2) -> bool {
     s.iter().all(|&v| v >= 0.0) || s.iter().all(|&v| v <= 0.0)
 }
 
-/// A drag on the gizmo under way: whose, which handle, where it began on screen and in the model, and how far it has gone.
-#[derive(Clone, Copy, Debug)]
+/// A drag on the gizmo under way: whose (every object picked), which handle, where it began on screen and in the model, and how far
+/// it has gone.
+#[derive(Clone, Debug)]
 struct Moving {
-    id: u32,
+    ids: Vec<u32>,
     handle: Handle,
     start: Pos2,
     at: P3,
@@ -396,10 +397,10 @@ struct Moving {
 
 /// What a frame of the view did: a click's pick, a gizmo drag that ended (the object and how far it went), and with the other
 /// tools, the face or the point a click landed on.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Shown {
     pub pick: Option<Pick>,
-    pub moved: Option<(u32, P3)>,
+    pub moved: Option<(Vec<u32>, P3)>,
     pub face: Option<(u32, usize)>,
     pub point: Option<P3>,
 }
@@ -428,21 +429,20 @@ impl View {
         self.rect = Some(rect);
         let response = ui.allocate_rect(rect, Sense::click_and_drag());
         let mut shown = Shown::default();
-        // The gizmo stands at the middle of the one object picked, while the move tool is in hand.
-        let one = match selected {
-            &[id] if self.tool == Tool::Move => scene
-                .get(id)
-                .ok()
-                .and_then(|o| o.bounds())
-                .map(|(lo, hi)| (id, [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, (lo[2] + hi[2]) / 2.0])),
+        // The gizmo stands at the middle of what is picked (one object or several), while the move tool is in hand.
+        let bounds = selected.iter().filter_map(|&id| scene.get(id).ok().and_then(|o| o.bounds())).reduce(|(alo, ahi), (blo, bhi)| {
+            ([alo[0].min(blo[0]), alo[1].min(blo[1]), alo[2].min(blo[2])], [ahi[0].max(bhi[0]), ahi[1].max(bhi[1]), ahi[2].max(bhi[2])])
+        });
+        let one = match bounds {
+            Some((lo, hi)) if self.tool == Tool::Move => Some([(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, (lo[2] + hi[2]) / 2.0]),
             _ => None,
         };
         let press = ui.input(|i| i.pointer.press_origin());
         if response.drag_started_by(PointerButton::Primary)
-            && let (Some((id, at)), Some(start)) = (one, press)
+            && let (Some(at), Some(start)) = (one, press)
             && let Some(handle) = Gizmo::at(&self.camera, rect, at).and_then(|g| g.handle_at(start))
         {
-            self.moving = Some(Moving { id, handle, start, at, by: [0.0; 3] });
+            self.moving = Some(Moving { ids: selected.to_vec(), handle, start, at, by: [0.0; 3] });
         }
         let d = response.drag_delta();
         if let Some(m) = &mut self.moving {
@@ -451,7 +451,7 @@ impl View {
                 m.by = drag_offset(&self.camera, rect, m.at, m.handle, m.start, now, free);
             }
             if response.drag_stopped() || !response.dragged() {
-                shown.moved = Some((m.id, m.by)).filter(|(_, by)| by.iter().any(|c| *c != 0.0));
+                shown.moved = Some((m.ids.clone(), m.by)).filter(|(_, by)| by.iter().any(|c| *c != 0.0));
                 self.moving = None;
             }
         } else if response.dragged_by(PointerButton::Primary) {
@@ -470,16 +470,25 @@ impl View {
             }
         }
         // While a drag is under way the object is drawn where it would go; the scene itself changes only when the window runs the move.
-        let moving = self.moving.map(|m| (m.id, m.by));
+        let moving = self.moving.as_ref().map(|m| (m.ids.clone(), m.by));
         let ppp = ui.ctx().pixels_per_point();
         let size = [(rect.width() * ppp).round().max(1.0) as usize, (rect.height() * ppp).round().max(1.0) as usize];
-        let now = Drawn { scene: Arc::as_ptr(scene) as usize, camera: self.camera, selected: selected.to_vec(), bed, size, moving };
+        let now = Drawn {
+            scene: Arc::as_ptr(scene) as usize,
+            camera: self.camera,
+            selected: selected.to_vec(),
+            bed,
+            size,
+            moving: moving.clone(),
+        };
         if self.drawn.as_ref() != Some(&now) {
-            let picture = match moving {
-                Some((id, by)) => {
+            let picture = match &moving {
+                Some((ids, by)) => {
                     let mut seen = Scene::clone(scene);
-                    if let Ok(o) = seen.get_mut(id) {
-                        o.xf = o.xf.then(&lamina_core::Transform::translate(by));
+                    for &id in ids {
+                        if let Ok(o) = seen.get_mut(id) {
+                            o.xf = o.xf.then(&lamina_core::Transform::translate(*by));
+                        }
                     }
                     draw(&seen, selected, &self.camera, bed, size)
                 }
@@ -495,11 +504,11 @@ impl View {
         if let Some(t) = &self.texture {
             painter.image(t.id(), rect, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
         }
-        self.gizmo = one.and_then(|(_, at)| Gizmo::at(&self.camera, rect, add(at, moving.map_or([0.0; 3], |(_, by)| by))));
+        self.gizmo = one.and_then(|at| Gizmo::at(&self.camera, rect, add(at, moving.as_ref().map_or([0.0; 3], |(_, by)| *by))));
         if let Some(g) = self.gizmo {
-            let active = self.moving.map(|m| m.handle).or_else(|| response.hover_pos().and_then(|p| g.handle_at(p)));
+            let active = self.moving.as_ref().map(|m| m.handle).or_else(|| response.hover_pos().and_then(|p| g.handle_at(p)));
             paint_gizmo(&painter, &g, active);
-            if let (Some(m), Some(p)) = (self.moving, response.interact_pointer_pos()) {
+            if let (Some(m), Some(p)) = (self.moving.as_ref(), response.interact_pointer_pos()) {
                 let text = format!("{:+.1}, {:+.1}, {:+.1} mm", m.by[0], m.by[1], m.by[2]);
                 painter.text(p + vec2(16.0, -16.0), egui::Align2::LEFT_BOTTOM, text, FontId::proportional(13.0), Color32::WHITE);
             }

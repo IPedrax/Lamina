@@ -87,10 +87,12 @@ only through `Session::execute`, so the assistant, a button and a script do the 
   the camera or the size changes. Each pixel keeps the id of the object drawn there, which is the click-to-pick. BIMCraft draws on
   the GPU (`crates/ui-egui/src/gpu.rs`, rendering into a texture egui shows); that is the upgrade for meshes past a few hundred
   thousand triangles, and the CPU path stays as the fallback, as it does there.
-- **Move gizmo.** One picked object carries three axis arrows and a square to slide it on the plate, painted over the picture at a
+- **Move gizmo.** The picked objects (one or several, at the middle of their bounds) carry three axis arrows and a square to slide
+  them on the plate, painted over the picture at a
   constant size on screen. A drag that starts on one moves the object along that line on screen (or across the level plane under the
-  pointer), drawn where it would go and snapped to half a millimetre unless Shift is held; on release the window runs one `move`, so
-  the whole drag is one undo step. A drag that starts anywhere else still orbits.
+  pointer), drawn where it would go and snapped to half a millimetre unless Shift is held; on release the window runs one `move`
+  (several in one transaction), so the whole drag is one undo step. The panel also shows the picked object's position and size as
+  fields to type into. A drag that starts anywhere else still orbits.
 - **Tools.** Move (the gizmo), Lay flat and Measure, chosen in the toolbar. The picture keeps each pixel's object, triangle and
   depth, so a click gives the object, the face (which `lay_flat` turns down) or the point (unprojected from the depth; two measure).
 - **Objects and settings.** Add a box, cylinder or sphere (placed beside what is on the plate, in one undo step, through

@@ -68,6 +68,10 @@ Priorities:
   inside another (a void). `import_mesh` repairs on the way in and says what it did; `repair {id}` mends an object, as one undo step.
 - **2.3 Report problems clearly.** `info` gives `open_edges`, `nonmanifold_edges` and `flipped_faces` for each object; the plate
   panel shows a warning sign with the problems on hover, and a Repair button for the picked object.
+- **3.2 Move several objects.** The gizmo stands at the middle of the picked objects' bounds, draws them all moving, and on
+  release one transaction moves each, so one undo takes the drag back.
+- **3.7 Absolute position and size fields.** The picked object's footprint middle and bottom, and its size, as fields; a value
+  typed (or dragged and let go) runs `move` by the difference or `scale` by the ratio, with Keep proportions.
 - **3.3 Lay flat on a face** and **3.13 Measure.** The 3D view's picture keeps each pixel's triangle and depth beside its object.
   With the Lay flat tool a click gives a face, and `lay_flat {id, face}` turns its normal straight down (`Transform::rotate_axis`,
   Rodrigues' formula) and sets the object on the plate; with the Measure tool two clicks give two points (unprojected from the
@@ -151,12 +155,6 @@ FFI, so this would be our own implementation.
 polyline of points around the object's centre. A drag on a ring turns by the change in angle of the pointer around the projected
 centre, snapped to 5 degrees, and on release runs `rotate`. Add a corner handle for uniform scale: the ratio of the pointer's distances
 from the centre, run as `scale` on release. Test: the same drag-and-assert tests as the move gizmo.
-
-**3.2 Move several objects (P1).** How: the gizmo stands at the middle of the selection's bounds, and on release one
-transaction moves each object.
-
-**3.7 Absolute position and size fields (P1).** How: in the plate panel, show the object's position and size and let them be typed.
-On enter, run `move` by the difference, or `scale` with `by` set to the ratio. Add a lock for keeping proportions.
 
 **3.10 Text (P2).** How: read glyph outlines from a font with `ttf-parser` (BIMCraft uses it, with IBM Plex under the OFL, which may be
 bundled with its licence). Flatten the curves to polylines and extrude with 3.9. Engrave or emboss with a boolean.

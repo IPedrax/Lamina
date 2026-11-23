@@ -72,6 +72,15 @@ impl Kind {
     }
 }
 
+/// The position (the middle of the footprint, and the bottom) and size fields of the picked object.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Fields {
+    id: u32,
+    scene: usize,
+    pub at: [f64; 3],
+    pub size: [f64; 3],
+}
+
 /// A slice of the plate, read back from its G-code, and which scene it was made of (so the preview can say it is out of date).
 pub struct Sliced {
     pub layers: Vec<preview::Layer>,
@@ -94,6 +103,11 @@ pub struct App {
     nudge: [f64; 3],
     /// The height the Cut button cuts the picked object at.
     cut_z: f64,
+    /// The picked object's position and size as the fields show them while they are edited: the object and the scene they were
+    /// read from, so they are read again when either changes.
+    fields: Option<Fields>,
+    /// Whether a size typed keeps the proportions.
+    pub keep_proportions: bool,
     axis: usize,
     degrees: f64,
     factor: f64,
@@ -143,6 +157,8 @@ impl App {
             failed: false,
             nudge: [10.0, 0.0, 0.0],
             cut_z: 10.0,
+            fields: None,
+            keep_proportions: true,
             axis: 2,
             degrees: 90.0,
             factor: 1.5,
@@ -722,6 +738,7 @@ impl App {
                 }
             });
         }
+        self.position_fields(ui, id);
         ui.label("Move by, mm");
         ui.horizontal(|ui| {
             for (k, axis) in ["x", "y", "z"].into_iter().enumerate() {
@@ -778,6 +795,65 @@ impl App {
                 self.run("delete", json!({ "id": id }));
             }
         });
+    }
+
+    /// The picked object's position and size, as fields: a value typed (or dragged and let go) moves or scales it to that.
+    fn position_fields(&mut self, ui: &mut Ui, id: u32) {
+        let scene = Arc::as_ptr(&self.session.scene) as usize;
+        let Some((lo, hi)) = self.session.scene.get(id).ok().and_then(|o| o.bounds()) else { return };
+        if self.fields.as_ref().is_none_or(|f| f.id != id || f.scene != scene) {
+            let at = [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, lo[2]];
+            self.fields = Some(Fields { id, scene, at, size: [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]] });
+        }
+        let Some(mut f) = self.fields.clone() else { return };
+        let (mut moved, mut sized) = (None, None);
+        egui::Grid::new("fields").num_columns(4).show(ui, |ui| {
+            ui.label("Position");
+            for (k, axis) in ["x", "y", "z"].into_iter().enumerate() {
+                let r = ui.add(egui::DragValue::new(&mut f.at[k]).speed(0.5).prefix(format!("{axis} ")).max_decimals(3));
+                if r.drag_stopped() || (r.changed() && !r.dragged()) {
+                    moved = Some(k);
+                }
+            }
+            ui.end_row();
+            ui.label("Size");
+            for (k, axis) in ["x", "y", "z"].into_iter().enumerate() {
+                let r = ui
+                    .add(egui::DragValue::new(&mut f.size[k]).speed(0.5).range(0.01..=10_000.0).prefix(format!("{axis} ")).max_decimals(3));
+                if r.drag_stopped() || (r.changed() && !r.dragged()) {
+                    sized = Some(k);
+                }
+            }
+            ui.end_row();
+        });
+        ui.checkbox(&mut self.keep_proportions, "Keep proportions");
+        self.fields = Some(f.clone());
+        let now = [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, lo[2]];
+        if moved.is_some() {
+            self.set_position(id, f.at, now);
+        }
+        if let Some(k) = sized {
+            self.set_size(id, k, f.size[k], hi[k] - lo[k]);
+        }
+    }
+
+    /// Moves object `id` so its footprint's middle and bottom are `at` (they are `now`).
+    pub fn set_position(&mut self, id: u32, at: [f64; 3], now: [f64; 3]) {
+        let by = [at[0] - now[0], at[1] - now[1], at[2] - now[2]];
+        if by.iter().any(|c| c.abs() > 1e-9) {
+            self.run("move", json!({ "id": id, "by": by }));
+        }
+    }
+
+    /// Scales object `id` so its size on axis `k` is `want` (it is `now`): that axis alone, or all three when keeping proportions.
+    pub fn set_size(&mut self, id: u32, k: usize, want: f64, now: f64) {
+        if now <= 0.0 || (want - now).abs() < 1e-9 {
+            return;
+        }
+        let ratio = want / now;
+        let mut by = if self.keep_proportions { [ratio; 3] } else { [1.0; 3] };
+        by[k] = ratio;
+        self.run("scale", json!({ "id": id, "by": by }));
     }
 
     fn print_settings(&mut self, ui: &mut Ui) {
@@ -881,8 +957,16 @@ impl App {
     fn prepare(&mut self, ui: &mut Ui) {
         let scene = Arc::clone(&self.session.scene);
         let shown = self.view.show(ui, &scene, &self.selected, self.profile.bed);
-        if let Some((id, by)) = shown.moved {
-            self.run("move", json!({ "id": id, "by": by }));
+        match shown.moved.as_ref().map(|(ids, by)| (ids.as_slice(), by)) {
+            Some((&[id], by)) => {
+                self.run("move", json!({ "id": id, "by": by }));
+            }
+            // Several picked: one transaction, so one undo takes the whole drag back.
+            Some((ids, by)) => {
+                let moves = ids.iter().map(|&id| ("move", json!({ "id": id, "by": by }))).collect();
+                self.run_all("move", moves);
+            }
+            None => {}
         }
         if let Some((id, face)) = shown.face
             && self.run("lay_flat", json!({ "id": id, "face": face })).is_some()
@@ -1100,6 +1184,27 @@ mod tests {
     }
 
     #[test]
+    fn dragging_the_gizmo_with_several_objects_picked_moves_them_all_in_one_undo_step() {
+        use crate::view3d::Handle;
+        let mut h = window();
+        press(&mut h, "Add box");
+        press(&mut h, "Add sphere");
+        press(&mut h, "Add cylinder");
+        h.state_mut().selected = vec![1, 3];
+        h.run();
+        let (a, b, c) = (middle(h.state(), 1), middle(h.state(), 2), middle(h.state(), 3));
+        let g = h.state().view.gizmo.expect("several picked objects share a gizmo");
+        let tip = g.grip(Handle::X);
+        drag(&mut h, tip, tip + (g.tips[0] - g.origin));
+        let by = middle(h.state(), 1)[0] - a[0];
+        assert!(by > 5.0, "moved along x: {by}");
+        assert_eq!(middle(h.state(), 3)[0] - c[0], by, "both picked objects moved alike");
+        assert_eq!(middle(h.state(), 2), b, "the one not picked stayed");
+        press(&mut h, "Undo");
+        assert_eq!((middle(h.state(), 1), middle(h.state(), 3)), (a, c), "one undo takes the whole drag back");
+    }
+
+    #[test]
     fn a_printer_and_a_filament_preset_set_their_own_fields() {
         let mut h = window();
         h.get_by_label("Printer");
@@ -1300,6 +1405,23 @@ mod tests {
         h.run();
         assert!(h.state().status.contains("Laid flat"), "{}", h.state().status);
         assert!(h.state().session.can_undo());
+    }
+
+    #[test]
+    fn typing_a_position_or_a_size_moves_or_scales_the_object_to_it() {
+        let mut h = window();
+        press(&mut h, "Add box");
+        h.get_by_label("Keep proportions");
+        let app = h.state_mut();
+        app.set_position(1, [30.0, -12.5, 0.0], [0.0, 0.0, 0.0]);
+        assert_eq!(middle(app, 1), [30.0, -12.5, 0.0]);
+        app.set_size(1, 0, 40.0, 20.0);
+        let (lo, hi) = app.session.scene.get(1).unwrap().bounds().unwrap();
+        assert!((hi[0] - lo[0] - 40.0).abs() < 1e-6 && (hi[2] - lo[2] - 40.0).abs() < 1e-6, "kept its proportions");
+        app.keep_proportions = false;
+        app.set_size(1, 2, 10.0, 40.0);
+        let (lo, hi) = app.session.scene.get(1).unwrap().bounds().unwrap();
+        assert!((hi[0] - lo[0] - 40.0).abs() < 1e-6 && (hi[2] - lo[2] - 10.0).abs() < 1e-6 && lo[2].abs() < 1e-9);
     }
 
     #[test]
