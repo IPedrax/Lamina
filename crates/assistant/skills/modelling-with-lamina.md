@@ -17,6 +17,9 @@ with `move {id, by: [x, y, 0]}`.
   `radius_top` for a frustum), `prism` and `pyramid` (`radius` to a corner, `height`, `sides`), `tube` (`radius`, `inner`,
   `height`: no boolean needed) and `torus` (`radius` to the ring's middle, `tube`). The default 48 segments is fine for most parts;
   raise `segments` (up to 256) when a round part must look round.
+- Flat parts: `extrude {shape: "rounded_rect", size: [60, 40], corner: 5, height: 4, round_holes: [[-22, -12, 4], [22, -12, 4]]}`
+  lifts an outline into a solid (also `shape: "slot"` or `"circle"`, or your own `outline: [[x, y], ...]` with `holes`). Brackets,
+  plates with mounting holes and spacers are one extrude each: prefer it to a box with cylinders subtracted.
 - Place and reshape: `move`, `rotate` (about the object's centre, then it is set back on the plate), `scale` (positive factors,
   one per axis with `by`, so a sphere can become an ellipsoid and a cylinder a disc), `mirror {id, axis}` (a left part from a right
   one), `drop_to_bed`, `delete`, `undo`, `redo`.
@@ -40,7 +43,7 @@ the result stands, as one undo step. The result keeps the first object's name un
 - `cut {id, z}` splits an object at a height into two closed parts, the upper one turned onto its flat cut face beside the lower:
   for a part too tall for the printer, or one that prints better in two halves.
 - Booleans take longer on shapes with many segments. Use 24 to 32 segments for a cutting tool.
-- Still missing: fillets and chamfers (a rounded box is the one rounded shape), text, threads and sweeps. Say so plainly, and offer the closest thing that works.
+- Still missing: fillets and chamfers (a rounded box and a rounded_rect extrude round their edges), text, threads and sweeps. Say so plainly, and offer the closest thing that works.
 
 ## Work in this order
 

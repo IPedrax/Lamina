@@ -81,6 +81,10 @@ Priorities:
 - **3.8 More shapes.** `add_primitive` kinds `cone` (and frustum, with `radius_top`), `prism`, `pyramid`, `tube` (built directly),
   `torus` and `rounded_box` (each face's grid pushed out from the box shrunk by the radius, so edges are quarter cylinders and
   corners eighths of a sphere). Each is tested closed with its volume; the window has a More shapes menu.
+- **3.9 Sketch and extrude.** `crates/core/src/sketch.rs` and `extrude {height, outline | shape, holes?, round_holes?}`: the
+  outline cleaned by `i_overlay` (now a core dependency too), each shape's cap triangulated by `i_triangle` (MIT OR Apache-2.0, the
+  same author's, on the same `i_overlay`), walls along the caps' boundary edges, each shape welded on its own so touching shapes stay
+  manifold. Helpers: `rounded_rect`, `slot`, `circle`, and round holes by diameter. A plate with holes in the window's More shapes.
 - **4.1 Supports.** `crates/slicer/src/support.rs`: where a layer leans past `support_angle` from vertical, all of it that is over
   air is held up; overhangs are carried down to the model or the plate (`support`: `off`, `everywhere`, `from_plate`), keep
   `support_xy_gap` from the walls and stop `support_z_gap` below the model, with `support_interface_layers` of denser lines on top.
@@ -149,11 +153,6 @@ transaction moves each object.
 
 **3.7 Absolute position and size fields (P1).** How: in the plate panel, show the object's position and size and let them be typed.
 On enter, run `move` by the difference, or `scale` with `by` set to the ratio. Add a lock for keeping proportions.
-
-**3.9 Sketch and extrude (P1).** A flat outline lifted into a solid covers most mechanical parts. How: an
-`extrude {outline: [[x,y]...], holes?, height}` command. Clean the outline with `i_overlay` (already a slicer dependency; move the
-shared part to core, or depend on it from core) and triangulate caps with holes using `spade` (MIT or Apache-2.0) or `earcutr`. Then
-join the caps with side walls. Add helpers for common outlines: rounded rectangle, slot, circle with holes.
 
 **3.10 Text (P2).** How: read glyph outlines from a font with `ttf-parser` (BIMCraft uses it, with IBM Plex under the OFL, which may be
 bundled with its licence). Flatten the curves to polylines and extrude with 3.9. Engrave or emboss with a boolean.

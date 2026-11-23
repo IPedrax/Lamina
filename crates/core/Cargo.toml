@@ -13,5 +13,8 @@ workspace = true
 # 3MF packages: deflate for the zip, and an XML reader for the model. Both are already in the desktop's dependency tree.
 miniz_oxide = "0.8"
 quick-xml = "0.41"
+# Sketch and extrude: outlines cleaned by i_overlay (the slicer's polygon library), caps triangulated by i_triangle (its author's).
+i_overlay = "9.2.0"
+i_triangle = "0.51"
 serde = { workspace = true }
 serde_json = { workspace = true, features = ["float_roundtrip"] }

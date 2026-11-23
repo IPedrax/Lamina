@@ -386,7 +386,7 @@ fn the_tools_inspect_the_scene_and_list_commands_by_filter() {
     let all = ids(json!({}));
     assert!(all.len() > 5 && all.contains(&"move".to_string()), "{all:?}");
     assert_eq!(ids(json!({"filter": "ROTATE"})), ["rotate"], "an id, in any case");
-    assert_eq!(ids(json!({"filter": "radius"})), ["add_primitive"], "the text of the parameters");
+    assert_eq!(ids(json!({"filter": "geodesic"})), ["add_primitive"], "the text of the parameters");
     assert!(ids(json!({"filter": "no such command"})).is_empty());
 }
 

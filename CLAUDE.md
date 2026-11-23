@@ -42,7 +42,7 @@ CI (`.github/workflows/ci.yml`) runs the same three on Linux, Windows and macOS 
 - `crates/core`: `mesh.rs` (triangle mesh, primitives, `Transform`), `stl.rs` (read and write), `scene.rs` (objects on the plate),
   `engine.rs` (`Session`: execute, undo, transactions, script, catalog, the project's print settings), `commands.rs` (the built-in commands),
   `project.rs` (`.lamina` files: `save`, `open`, `new`), `repair.rs` (mesh repair shared by import and the booleans, and the
-  problems `info` reports), `threemf.rs` and `zip.rs` (3MF in and out), `mesh_in.rs` (OBJ and glTF in, lifted from BIMCraft), `base64.rs`, `fuzz.rs` (the seeded generator every crate's fuzz tests use).
+  problems `info` reports), `threemf.rs` and `zip.rs` (3MF in and out), `mesh_in.rs` (OBJ and glTF in, lifted from BIMCraft), `sketch.rs` (outlines extruded into solids), `base64.rs`, `fuzz.rs` (the seeded generator every crate's fuzz tests use).
   `bridge.rs` (what an agent may ask: execute, script, catalog; read-only access; `REPLACES`, the commands that replace the plate).
 - `crates/slicer`: `slice.rs` (mesh to closed loops per layer), `geom.rs` (polygon booleans, offsets, line clipping on i_overlay),
   `print.rs` (walls, skins, infill, skirt, the G-code writer), `support.rs` (overhangs, supports and their interface), `profile.rs` (settings, checks, `[name]` placeholders), `presets.rs`

@@ -1726,6 +1726,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "048af31de955890c62a8506fec511335a5089e91e1c516537add16f96c507d84"
 
 [[package]]
+name = "i_triangle"
+version = "0.51.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5810bd8c70d8eeb3b0cdf997d98576a244c3c4353e09aaf90ee1374cfdcff9ba"
+dependencies = [
+ "i_key_sort 0.12.0",
+ "i_overlay 9.2.0",
+ "i_tree 0.20.0",
+]
+
+[[package]]
 name = "icu_collections"
 version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2032,6 +2043,8 @@ dependencies = [
 name = "lamina-core"
 version = "0.1.0"
 dependencies = [
+ "i_overlay 9.2.0",
+ "i_triangle",
  "miniz_oxide 0.8.9",
  "quick-xml",
  "serde",

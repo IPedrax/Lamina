@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use crate::engine::{Command, Files, Session};
 use crate::mesh::{Mesh, P3, Transform};
 use crate::scene::Object;
-use crate::{mesh_in, project, repair, stl, threemf};
+use crate::{mesh_in, project, repair, sketch, stl, threemf};
 
 const fn cmd(id: &'static str, params: &'static str, run: crate::engine::Run, undoable: bool, files: Files) -> Command {
     Command { id, params, run, undoable, files }
@@ -28,6 +28,13 @@ pub static ALL: &[Command] = &[
         "add_primitive",
         "{kind, name?, at?:[x,y] (where its centre stands, default the middle of the plate), segments? (3..256, default 48), and by kind: \"box\" {size:[x,y,z]}; \"rounded_box\" {size, corner (the edges' radius, under half the smallest side)}; \"cylinder\" {radius, height}; \"cone\" {radius, height, radius_top? (default 0, a point; more makes a frustum)}; \"prism\" and \"pyramid\" {radius (to a corner), height, sides (3..64)}; \"tube\" {radius, inner, height}; \"torus\" {radius (to the middle of the ring), tube (the ring's own radius, less than radius)}; \"sphere\" {radius} (geodesic: 320, 1280, 5120 or 20480 triangles from segments)} a shape on the plate, mm. Returns {id}",
         add_primitive,
+        true,
+        Files::None,
+    ),
+    cmd(
+        "extrude",
+        "{height, outline?:[[x,y],...] | shape?:\"rounded_rect\"|\"slot\"|\"circle\", size?:[x,y] (rounded_rect: width and depth; slot: length and width), corner? (rounded_rect's corner radius), radius? (circle), holes?:[[[x,y],...],...], round_holes?:[[x,y,diameter],...], segments? (per quarter turn of a round edge, default 8), name?, at?:[x,y]} a flat outline, minus its holes, lifted `height` mm into a solid: a bracket, a plate with mounting holes, a spacer. Points are mm in the sketch's own frame (a shape is centred on its origin); the solid is put on the plate centred on `at`. Returns {id, triangles, watertight, size}",
+        extrude,
         true,
         Files::None,
     ),
@@ -373,6 +380,62 @@ fn added(s: &mut Session, name: &str, mesh: Mesh, at: Option<[f64; 2]>) -> Resul
     o.xf = o.xf.then(&Transform::translate(at));
     let (lo, hi) = size_of(s.scene.get(id)?)?;
     Ok(json!({"id": id, "triangles": triangles, "watertight": watertight, "size": [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]]}))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Extrude {
+    height: f64,
+    outline: Option<Vec<[f64; 2]>>,
+    shape: Option<String>,
+    size: Option<[f64; 2]>,
+    corner: Option<f64>,
+    radius: Option<f64>,
+    holes: Option<Vec<Vec<[f64; 2]>>>,
+    round_holes: Option<Vec<[f64; 3]>>,
+    segments: Option<u32>,
+    name: Option<String>,
+    at: Option<[f64; 2]>,
+}
+
+fn extrude(s: &mut Session, p: &Value) -> Result<Value, String> {
+    const MAX: f64 = 10_000.0;
+    let a: Extrude = parse(p)?;
+    let segments = a.segments.unwrap_or(8);
+    if !(1..=64).contains(&segments) {
+        return Err("`segments` is from 1 to 64 steps per quarter turn".into());
+    }
+    let size = || -> Result<[f64; 2], String> {
+        let [x, y] = a.size.ok_or("this shape needs `size`: [x, y]")?;
+        Ok([positive("size", x, MAX)?, positive("size", y, MAX)?])
+    };
+    let outline = match (a.outline, a.shape.as_deref()) {
+        (Some(o), None) => o,
+        (None, Some("rounded_rect")) => {
+            let [w, d] = size()?;
+            let corner = match a.corner {
+                None => 0.0,
+                Some(c) if c.is_finite() && c >= 0.0 && c < w.min(d) / 2.0 => c,
+                Some(c) => return Err(format!("`corner` is from 0 to under half the smaller side, not {c}")),
+            };
+            sketch::rounded_rect(w, d, corner, segments)
+        }
+        (None, Some("slot")) => {
+            let [l, w] = size()?;
+            sketch::slot(l, w, segments)
+        }
+        (None, Some("circle")) => {
+            sketch::circle(0.0, 0.0, positive("radius", a.radius.ok_or("a circle needs `radius`")?, MAX)?, segments * 4)
+        }
+        (None, Some(other)) => return Err(format!("unknown shape `{other}`: rounded_rect, slot or circle")),
+        _ => return Err("give `outline` or `shape`, one of them".into()),
+    };
+    let mut holes = a.holes.unwrap_or_default();
+    for [x, y, d] in a.round_holes.unwrap_or_default() {
+        holes.push(sketch::circle(x, y, positive("round_holes diameter", d, MAX)? / 2.0, segments * 4));
+    }
+    let mesh = sketch::extrude(&outline, &holes, positive("height", a.height, MAX)?)?;
+    added(s, a.name.as_deref().unwrap_or("extrusion"), mesh, a.at)
 }
 
 #[derive(Deserialize)]
@@ -1116,6 +1179,34 @@ mod tests {
         assert_eq!((r["distance"].as_f64(), r["dz"].as_f64()), (Some(13.0), Some(12.0)));
         assert!(run(&mut s, "measure", json!({"a": [0, 0, 0], "b": [1, 2]})).is_err());
         assert!(!s.can_undo(), "measuring changes nothing");
+    }
+
+    #[test]
+    fn an_outline_or_a_shape_with_holes_is_extruded_into_a_closed_solid() {
+        let mut s = Session::new();
+        let plate = json!({"shape": "rounded_rect", "size": [60, 40], "corner": 5, "height": 4,
+            "round_holes": [[-22, -12, 4], [22, -12, 4], [22, 12, 4], [-22, 12, 4]], "name": "plate"});
+        let r = run(&mut s, "extrude", plate).unwrap();
+        assert_eq!((r["watertight"].as_bool(), r["size"].clone()), (Some(true), json!([60.0, 40.0, 4.0])));
+        let bracket = json!({"outline": [[0, 0], [30, 0], [30, 5], [5, 5], [5, 25], [0, 25]], "height": 10,
+            "holes": [[[15, 1.5], [20, 1.5], [20, 3.5], [15, 3.5]]], "at": [50, 0]});
+        assert_eq!(run(&mut s, "extrude", bracket).unwrap()["watertight"], true);
+        assert_eq!(run(&mut s, "extrude", json!({"shape": "slot", "size": [20, 6], "height": 2})).unwrap()["watertight"], true);
+        assert_eq!(
+            run(&mut s, "extrude", json!({"shape": "circle", "radius": 8, "height": 3, "round_holes": [[0, 0, 3]]})).unwrap()["watertight"],
+            true
+        );
+        for bad in [
+            json!({"height": 5}),
+            json!({"shape": "star", "height": 5}),
+            json!({"shape": "rounded_rect", "size": [10, 10], "corner": 6, "height": 5}),
+            json!({"outline": [[0, 0], [1, 0]], "height": 5}),
+            json!({"outline": [[0, 0], [1, 0], [0, 1]], "shape": "slot", "height": 5}),
+            json!({"shape": "circle", "radius": 5, "height": -1}),
+        ] {
+            assert!(run(&mut s, "extrude", bad.clone()).is_err(), "{bad}");
+        }
+        assert_eq!(s.scene.objects.len(), 4);
     }
 
     #[test]

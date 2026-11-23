@@ -6,7 +6,10 @@ csgrs (https://github.com/timschmidt/csgrs), MIT
   lamina-csg builds its booleans on csgrs' BSP trees and its triangulation.
 
 i_overlay (https://github.com/iShape-Rust/iOverlay), MIT
-  The slicer's polygon unions, differences, offsets and line clipping.
+  The slicer's polygon unions, differences, offsets and line clipping, and the cleaning of outlines to extrude.
+
+i_triangle (https://github.com/iShape-Rust/iTriangle), MIT OR Apache-2.0
+  The caps of an extruded outline.
 
 quick-xml (https://github.com/tafia/quick-xml), MIT
   Reads the model part of 3MF files.

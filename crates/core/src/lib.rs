@@ -11,6 +11,7 @@ pub mod mesh_in;
 pub mod project;
 pub mod repair;
 pub mod scene;
+pub mod sketch;
 pub mod stl;
 pub mod threemf;
 pub mod zip;

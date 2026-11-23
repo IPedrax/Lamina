@@ -175,6 +175,23 @@ mod tests {
     }
 
     #[test]
+    fn sketches_never_panic() {
+        let mut r = Rng::new(0x5e7c);
+        for _ in 0..ROUNDS {
+            let pick = [0.0, 1.0, -1.0, 10.0, 1e-9, 1e6, 0.5, 3.0];
+            let pt = |r: &mut Rng| [pick[r.below(pick.len())] * if r.below(2) == 1 { -1.0 } else { 1.0 }, pick[r.below(pick.len())]];
+            let n = 3 + r.below(12);
+            let outline: Vec<[f64; 2]> = (0..n).map(|_| pt(&mut r)).collect();
+            let m = 3 + r.below(5);
+            let hole: Vec<[f64; 2]> = (0..m).map(|_| pt(&mut r)).collect();
+            let height = 1.0 + r.below(5) as f64;
+            if let Ok(mesh) = crate::sketch::extrude(&outline, &[hole], height) {
+                assert!(mesh.is_watertight(), "a solid an outline makes is closed: {outline:?}");
+            }
+        }
+    }
+
+    #[test]
     fn base64_never_panics() {
         let good = base64::encode(b"any bytes at all \x00\xff");
         let mut r = Rng::new(0xb64);

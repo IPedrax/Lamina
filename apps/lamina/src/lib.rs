@@ -386,12 +386,17 @@ impl App {
     }
 
     /// Adds a shape `width` mm wide to the right of what is on the plate, so it does not land inside another, and selects it.
-    fn add(&mut self, mut params: Value, width: f64) {
+    fn add(&mut self, params: Value, width: f64) {
+        self.add_with("add_primitive", params, width);
+    }
+
+    /// The same, with any command that makes one object and takes `at`.
+    fn add_with(&mut self, command: &str, mut params: Value, width: f64) {
         let right = self.session.scene.objects.iter().filter_map(|o| o.bounds()).map(|(_, hi)| hi[0]).fold(f64::NEG_INFINITY, f64::max);
         if right.is_finite() {
             params["at"] = json!([right + 5.0 + width / 2.0, 0.0]);
         }
-        if let Some(id) = self.run("add_primitive", params).and_then(|v| v["id"].as_u64()) {
+        if let Some(id) = self.run(command, params).and_then(|v| v["id"].as_u64()) {
             self.selected = vec![id as u32];
         }
     }
@@ -540,6 +545,16 @@ impl App {
                     if ui.button(label).clicked() {
                         self.add(params, width);
                     }
+                }
+                ui.separator();
+                if ui
+                    .button("Plate with four holes")
+                    .on_hover_text("A rounded plate, extruded; the assistant or `extrude` makes any outline")
+                    .clicked()
+                {
+                    let plate = json!({"shape": "rounded_rect", "size": [60, 40], "corner": 5, "height": 4, "name": "plate",
+                        "round_holes": [[-24, -14, 3.4], [24, -14, 3.4], [24, 14, 3.4], [-24, 14, 3.4]]});
+                    self.add_with("extrude", plate, 60.0);
                 }
             });
             if ui.button("Import mesh...").clicked()

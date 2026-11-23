@@ -51,7 +51,7 @@ desktop (lamina) ──────┘
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `lamina-core` | `Mesh`, `Transform`, STL and 3MF read/write, OBJ and glTF read, `.lamina` projects, mesh repair, `Scene`, `Session`, `bridge`, built-in commands | serde, miniz_oxide, quick-xml |
+| `lamina-core` | `Mesh`, `Transform`, STL and 3MF read/write, OBJ and glTF read, `.lamina` projects, mesh repair, sketches, `Scene`, `Session`, `bridge`, built-in commands | serde, miniz_oxide, quick-xml, i_overlay, i_triangle |
 | `lamina-slicer` | `slice` (mesh to loops), `geom` (polygon booleans and offsets on `i_overlay`), `print` (walls, infill, G-code), `profile`, the `slice` and `slicer_profile` commands | core, i_overlay |
 | `lamina-csg` | `boolean` over csgrs' BSP trees, crack repair, the soundness gate, the `union`, `difference` and `intersect` commands | core, csgrs |
 | `lamina-assistant` | provider clients, sealed key storage, tool layer, turn loop | core, ureq, ring |
