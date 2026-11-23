@@ -11,7 +11,7 @@ use lamina_core::Mesh;
 use crate::geom::{self, Region};
 use crate::profile::{Profile, Seam};
 use crate::slice::{self, P2};
-use crate::support;
+use crate::{infill, support};
 
 /// Vertical moves are slow and fixed, mm/s.
 const Z_SPEED: f64 = 20.0;
@@ -282,18 +282,24 @@ fn plan(mesh: &Mesh, p: &Profile, w: f64) -> Result<ObjectPlan, String> {
         let sparse = geom::intersect(&inner[k], &covered);
         // Alternate the direction so each layer bridges the one below.
         let angle = if k % 2 == 0 { 45.0 } else { 135.0 };
-        for (area, spacing, kind) in [
-            (&solid, w, Feature::SolidInfill),
-            (&sparse, if p.infill_density > 0.0 { w / p.infill_density } else { f64::INFINITY }, Feature::SparseInfill),
-        ] {
-            if spacing.is_finite() && !geom::is_empty(area) {
-                strokes.extend(fill_lines(area, spacing, angle).into_iter().map(|pts| Stroke {
-                    pts,
-                    closed: false,
-                    speed: speed(p.infill_speed),
-                    kind,
-                }));
-            }
+        if !geom::is_empty(&solid) {
+            strokes.extend(fill_lines(&solid, w, angle).into_iter().map(|pts| Stroke {
+                pts,
+                closed: false,
+                speed: speed(p.infill_speed),
+                kind: Feature::SolidInfill,
+            }));
+        }
+        if p.infill_density > 0.0 && !geom::is_empty(&sparse) {
+            let spacing = w / p.infill_density;
+            let pattern = infill::sparse(p.infill_pattern, &sparse, layer.z, k, w, p.infill_density, lines);
+            let joined = connect(pattern, &sparse, CONNECT_REACH * spacing, p.infill_pattern != infill::Pattern::Lines);
+            strokes.extend(joined.into_iter().map(|pts| Stroke {
+                pts,
+                closed: false,
+                speed: speed(p.infill_speed),
+                kind: Feature::SparseInfill,
+            }));
         }
         out.push((layer.z, layer.height, strokes));
     }
@@ -313,9 +319,14 @@ fn covered(inner: &[Region], k: usize, up: usize, down: usize) -> Region {
     }
 }
 
-/// Parallel lines `spacing` apart at `angle`, on a grid anchored at the origin so every layer and object lines up, cut to `r` and
-/// ordered back and forth.
+/// Parallel lines `spacing` apart at `angle`, on a grid anchored at the origin so every layer and object lines up, cut to `r`,
+/// ordered back and forth, and joined where they can be.
 fn fill_lines(r: &Region, spacing: f64, angle: f64) -> Vec<Vec<P2>> {
+    connect(lines(r, spacing, angle), r, CONNECT_REACH * spacing, false)
+}
+
+/// The same lines, not joined.
+fn lines(r: &Region, spacing: f64, angle: f64) -> Vec<Vec<P2>> {
     let (s, c) = angle.to_radians().sin_cos();
     let (d, n) = ([c, s], [-s, c]);
     let pts = || r.iter().flatten().flatten();
@@ -349,15 +360,16 @@ fn fill_lines(r: &Region, spacing: f64, angle: f64) -> Vec<Vec<P2>> {
         })
         .collect();
     pieces.sort_by(|a, b| (a.0, a.1).partial_cmp(&(b.0, b.1)).unwrap_or(std::cmp::Ordering::Equal));
-    connect(pieces.into_iter().map(|(_, _, l)| l).collect(), r, CONNECT_REACH * spacing)
+    pieces.into_iter().map(|(_, _, l)| l).collect()
 }
 
 /// How far, in line spacings, one infill line's end may be joined to the next line's start.
 const CONNECT_REACH: f64 = 3.0;
 
 /// Joins each line's end to the next line's start where a short path inside `r` exists: the straight one, or else the way along the
-/// boundary the two ends lie on. Joined lines print as one stroke, so the head neither travels nor retracts between them.
-fn connect(lines: Vec<Vec<P2>>, r: &Region, reach: f64) -> Vec<Vec<P2>> {
+/// boundary the two ends lie on (with `boundary_only`, only that, for patterns whose lines can end inside the region, where a
+/// straight join would cross a cell). Joined lines print as one stroke, so the head neither travels nor retracts between them.
+fn connect(lines: Vec<Vec<P2>>, r: &Region, reach: f64, boundary_only: bool) -> Vec<Vec<P2>> {
     let mut out: Vec<Vec<P2>> = Vec::new();
     for line in lines {
         let (Some(current), Some(&start)) = (out.last_mut(), line.first()) else {
@@ -365,7 +377,7 @@ fn connect(lines: Vec<Vec<P2>>, r: &Region, reach: f64) -> Vec<Vec<P2>> {
             continue;
         };
         let Some(&end) = current.last() else { continue };
-        match joint(end, start, r, reach) {
+        match joint(end, start, r, reach, boundary_only) {
             Some(path) => {
                 current.extend(path.into_iter().skip(1));
                 current.extend(line.into_iter().skip(1));
@@ -377,7 +389,7 @@ fn connect(lines: Vec<Vec<P2>>, r: &Region, reach: f64) -> Vec<Vec<P2>> {
 }
 
 /// A path from `a` to `b` no longer than `reach` that stays inside `r`, both ends included.
-fn joint(a: P2, b: P2, r: &Region, reach: f64) -> Option<Vec<P2>> {
+fn joint(a: P2, b: P2, r: &Region, reach: f64, boundary_only: bool) -> Option<Vec<P2>> {
     if dist(a, b) > reach {
         return None;
     }
@@ -387,7 +399,7 @@ fn joint(a: P2, b: P2, r: &Region, reach: f64) -> Option<Vec<P2>> {
         len <= reach && kept >= len * 0.999 - 1e-6
     };
     let straight = vec![a, b];
-    if inside(&straight) {
+    if !boundary_only && inside(&straight) {
         return Some(straight);
     }
     // Along the boundary: both ends on one contour, walked the shorter way round.
@@ -795,11 +807,12 @@ mod tests {
     fn a_joint_follows_the_boundary_round_a_corner_it_cannot_cut() {
         // An L: the straight way from one arm's end to the other leaves the shape; the way along the edge does not.
         let l = geom::region(&[vec![[0.0, 0.0], [10.0, 0.0], [10.0, 2.0], [2.0, 2.0], [2.0, 10.0], [0.0, 10.0]]]);
-        let path = joint([10.0, 1.0], [1.0, 10.0], &l, 30.0).unwrap();
+        let path = joint([10.0, 1.0], [1.0, 10.0], &l, 30.0, false).unwrap();
         assert!(path.len() > 2 && path.contains(&[2.0, 2.0]), "{path:?}");
-        assert!(joint([10.0, 1.0], [1.0, 10.0], &l, 5.0).is_none(), "too far");
+        assert!(joint([10.0, 1.0], [1.0, 10.0], &l, 5.0, false).is_none(), "too far");
         let square = geom::region(&[vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]]);
-        assert_eq!(joint([10.0, 2.0], [10.0, 3.0], &square, 3.0), Some(vec![[10.0, 2.0], [10.0, 3.0]]));
+        assert_eq!(joint([10.0, 2.0], [10.0, 3.0], &square, 3.0, false), Some(vec![[10.0, 2.0], [10.0, 3.0]]));
+        assert!(joint([5.0, 5.0], [6.0, 5.0], &square, 3.0, true).is_none(), "inside the region, only the boundary joins");
     }
 
     /// Where each wall loop of the G-code starts: the point after the travel that begins it, for every layer.
@@ -879,6 +892,18 @@ mod tests {
         let sum: f64 = raft.features.values().sum();
         assert!((sum - raft.filament_mm).abs() < 1e-6 && raft.features["raft"] > 0.0, "{:?}", raft.features);
         assert_eq!(Feature::from_name("outer-wall"), Some(Feature::OuterWall));
+    }
+
+    #[test]
+    fn every_infill_pattern_slices_a_cube_to_about_the_same_plastic() {
+        let base = volume(&gcode(&cube(20.0), &Profile::default()).unwrap().gcode, &Profile::default());
+        for pattern in [infill::Pattern::Grid, infill::Pattern::Triangles, infill::Pattern::Gyroid, infill::Pattern::Honeycomb] {
+            let p = Profile { infill_pattern: pattern, ..Profile::default() };
+            let out = gcode(&cube(20.0), &p).unwrap();
+            let v = volume(&out.gcode, &p);
+            assert!((v - base).abs() < 0.12 * base, "{pattern:?}: {v} against {base} for lines");
+            assert!(out.features["sparse-infill"] > 0.0);
+        }
     }
 
     #[test]

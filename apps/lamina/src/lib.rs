@@ -882,6 +882,23 @@ impl App {
                     p.infill_density = percent / 100.0;
                 }
                 ui.end_row();
+                ui.label("Infill pattern");
+                {
+                    use lamina_slicer::infill::Pattern;
+                    let name = |x: Pattern| match x {
+                        Pattern::Lines => "Lines",
+                        Pattern::Grid => "Grid",
+                        Pattern::Triangles => "Triangles",
+                        Pattern::Gyroid => "Gyroid",
+                        Pattern::Honeycomb => "Honeycomb",
+                    };
+                    egui::ComboBox::from_id_salt("infill pattern").selected_text(name(p.infill_pattern)).show_ui(ui, |ui| {
+                        for x in [Pattern::Lines, Pattern::Grid, Pattern::Triangles, Pattern::Gyroid, Pattern::Honeycomb] {
+                            ui.selectable_value(&mut p.infill_pattern, x, name(x));
+                        }
+                    });
+                }
+                ui.end_row();
                 ui.label("Nozzle / bed, C");
                 ui.horizontal(|ui| {
                     ui.add(egui::DragValue::new(&mut p.nozzle_temp).range(0.0..=400.0));

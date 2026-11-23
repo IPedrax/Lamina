@@ -43,6 +43,8 @@ pub struct Profile {
     pub bottom_layers: u32,
     /// 0 to 1: the share of the inside that is filled.
     pub infill_density: f64,
+    /// The pattern of the sparse infill: lines, grid, triangles, gyroid or honeycomb.
+    pub infill_pattern: crate::infill::Pattern,
     pub skirt_loops: u32,
     pub skirt_distance: f64,
     /// How far a brim reaches out from the first layer's outer walls, mm; 0 for none. A raft takes its place.
@@ -111,6 +113,7 @@ impl Default for Profile {
             top_layers: 4,
             bottom_layers: 4,
             infill_density: 0.15,
+            infill_pattern: crate::infill::Pattern::Lines,
             skirt_loops: 1,
             skirt_distance: 3.0,
             brim_width: 0.0,
@@ -257,6 +260,7 @@ mod tests {
             json!({"bed": [0, 0]}),
             json!({"support": "sometimes"}),
             json!({"seam": "random"}),
+            json!({"infill_pattern": "cubic"}),
             json!({"support": "everywhere", "support_angle": 0}),
         ] {
             assert!(Profile::from_json(&bad).is_err(), "{bad}");

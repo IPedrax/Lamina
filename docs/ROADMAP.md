@@ -110,6 +110,10 @@ Priorities:
 - **4.4 Seam placement.** `seam`: `aligned` (the default: each loop starts nearest the seam below that is nearest it, the first
   layer at the rear), `rear` (greatest y, the leftmost of ties), `sharpest` (the sharpest inside corner, else the sharpest corner,
   rearmost of near ties) or `nearest` (where the head is, as before). Skirt and brim loops follow the same rule.
+- **4.5 More infill patterns.** `infill_pattern` (`crates/slicer/src/infill.rs`): lines, grid (two directions each layer), triangles
+  (three at 60 degrees, a triangular lattice), gyroid (marching squares on Schoen's surface at the layer's height, its period set so
+  the share filled matches the density) and honeycomb (a hexagon tiling, each edge once). Each is tested to fill within 15 % of the
+  density asked for; the new patterns are joined only along the boundary. A golden gyroid cube.
 - **4.13 Feature types in the G-code.** Every stroke has a kind, written as `;TYPE:outer-wall` (inner-wall, solid-infill,
   sparse-infill, skirt, brim, support, support-interface, raft) before it, again after each layer change. `slice_check` returns
   the filament of each kind (`features`), so the assistant can count them.
@@ -168,15 +172,6 @@ the AI's skills what is not possible.
 ## 4. Slicer
 
 **4.1b Tree supports (P2).** Branches that grow from the plate toward each overhang, using less plastic than the straight columns of 4.1.
-
-**4.5 More infill patterns (P1).** How: an `infill_pattern` field.
-- Grid: both directions on every layer.
-- Triangles: three directions.
-- Gyroid: run marching squares on `sin x cos y + sin y cos z + sin z cos x = 0` at the layer's z, scaled to the density, and clip the
-  contours to the region.
-- Honeycomb: offset hexagon polylines.
-
-The gyroid is strong in every direction and the most asked for.
 
 **4.6 Bridging (P1).** How: find solid infill that lies over air (the solid region not covered by the layer below). Print it with
 `bridge_speed`, `bridge_flow` and the fan on. Choose the direction by trying angles and keeping the one with the shortest lines across
