@@ -80,7 +80,10 @@ to `main` as they were. Nothing is left to do here.
   Prusa printer. Each request costs one more: an unsigned status request first, for the printer's challenge, so a large file is
   never sent only to be refused. The nonce is used once and not kept; a printer that marks a nonce stale mid-upload would refuse
   the upload, and Lamina says so rather than sending the file again.
-- Not covered yet: a Duet run by a single-board computer (DSF), whose API differs.
+- A Duet run by a single-board computer (6.4b) is found by asking DSF's `/machine/connect` first: a board on its own answers that
+  with RepRapFirmware's `err`, a page or 404, and then gets its `rr_` requests. Taken rather than a choice in the window, since the
+  user may not know which their printer runs; it costs a standalone board one more request. Both pass the password in the query,
+  as their APIs ask, to the address typed only.
 
 ## P2 items not started, and why
 

@@ -114,7 +114,7 @@ sends only to that address, and only when you press Send.
 | Moonraker | `192.168.1.20` or `http://printer.local:7125` | only if Moonraker asks for one | Klipper, with Mainsail or Fluidd |
 | OctoPrint | `http://octopi.local` | its API key (OctoPrint's settings, Application Keys) | |
 | PrusaLink | `192.168.1.30` | its API key; or, with User filled in (usually `maker`), its password | the printer's Settings, Network, PrusaLink shows both; the password itself never leaves the computer (HTTP digest) |
-| Duet | `192.168.1.40` | the board's password, if it has one | a board running RepRapFirmware on its own |
+| Duet | `192.168.1.40` | the board's password, if it has one | a board running RepRapFirmware on its own, or one run by a single-board computer (DuetSoftwareFramework): Lamina asks which answers |
 
 Tick Show what it is doing to see the printer's state, file, progress and temperatures, asked every five seconds. The key or
 password is kept like the assistant's key: in memory, or sealed in the settings file when Remember is ticked.

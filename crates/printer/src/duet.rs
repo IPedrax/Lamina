@@ -1,16 +1,16 @@
 //! Duet boards (RepRapFirmware) on their own, from Duet3D's documented HTTP requests: `rr_connect` with the board's password (the key
 //! field; RepRapFirmware's default is none) gives a session key for the requests after it, `rr_upload` takes the file into
 //! `0:/gcodes/`, `rr_gcode` with `M32` starts it, and `rr_status` says what the board is doing. A Duet run by a single-board computer
-//! (DSF) answers a different API, which is not reached yet.
+//! answers DSF's own API instead (`dsf.rs`), which is asked first: whichever answers is the one used.
 
 use std::io::Read;
 
 use serde_json::Value;
 
-use crate::{MAX_REPLY, Sent, Status, agent, agent_for, finite, short};
+use crate::{MAX_REPLY, Sent, Status, agent, agent_for, dsf, finite, short};
 
 /// `text` for a URL's query: what is not a letter, a digit or `-_.~` as `%XX`.
-fn encoded(text: &str) -> String {
+pub(crate) fn encoded(text: &str) -> String {
     text.bytes()
         .map(|b| {
             if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~') { (b as char).to_string() } else { format!("%{b:02X}") }
@@ -19,7 +19,7 @@ fn encoded(text: &str) -> String {
 }
 
 /// One request's JSON reply, or what went wrong.
-fn json(call: Result<ureq::http::Response<ureq::Body>, ureq::Error>, base: &str) -> Result<Value, String> {
+pub(crate) fn json(call: Result<ureq::http::Response<ureq::Body>, ureq::Error>, base: &str) -> Result<Value, String> {
     let response = call.map_err(|e| format!("Duet at {base}: {e}"))?;
     let status = response.status().as_u16();
     let mut body = Vec::new();
@@ -49,6 +49,9 @@ fn connect(base: &str, password: Option<&str>, agent: &ureq::Agent) -> Result<Op
 
 pub fn send(base: &str, password: Option<&str>, name: &str, gcode: &[u8], print: bool) -> Result<Sent, String> {
     let agent = agent();
+    if let Some(s) = dsf::connect(base, password, &agent)? {
+        return dsf::send(base, &s, &agent, name, gcode, print);
+    }
     let session = connect(base, password, &agent)?;
     let path = format!("0:/gcodes/{name}");
     let mut up = agent.post(&format!("{base}/rr_upload?name={}", encoded(&path))).header("Content-Type", "application/octet-stream");
@@ -71,6 +74,9 @@ pub fn send(base: &str, password: Option<&str>, name: &str, gcode: &[u8], print:
 
 pub fn status(base: &str, password: Option<&str>) -> Result<Status, String> {
     let agent = agent_for(std::time::Duration::from_secs(5));
+    if let Some(s) = dsf::connect(base, password, &agent)? {
+        return dsf::status(base, &s, &agent);
+    }
     let session = connect(base, password, &agent)?;
     let mut call = agent.get(&format!("{base}/rr_status?type=3"));
     if let Some(k) = &session {

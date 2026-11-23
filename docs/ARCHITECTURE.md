@@ -110,6 +110,10 @@ with MD5 and SHA-256 written from their standards so the crate needs no hashing 
 printer's challenge, then the upload carries the answer. The password is only ever hashed, and the challenge is read as hostile
 (a control character or a value over 1 KB refuses it; what goes back is quoted and escaped).
 
+A Duet (`duet.rs`) is asked DuetSoftwareFramework's `/machine/connect` first (`dsf.rs`): a board run by a single-board computer
+answers with a session key and is reached through DSF's own API (`PUT /machine/file`, `POST /machine/code`, `GET /machine/model`);
+a board on its own answers otherwise and gets RepRapFirmware's `rr_` requests.
+
 `status` asks what the printer is doing (Moonraker's printer objects; OctoPrint's job and printer): state, file, progress and
 temperatures, read leniently, five seconds at most. The window asks every five seconds while the user ticks Show what it is doing,
 on a thread. It is deliberately not a command: an agent steered by text on the plate could otherwise use it to probe addresses on

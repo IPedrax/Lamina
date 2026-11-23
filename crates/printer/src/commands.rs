@@ -12,8 +12,9 @@ pub static COMMANDS: &[Command] = &[Command {
     params: "{path, printer:\"moonraker\"|\"octoprint\"|\"prusalink\"|\"duet\", address, key?, user?, name?, print?} sends the \
              G-code file at `path` to a printer on the user's network: Moonraker (Klipper), OctoPrint, PrusaLink or a Duet at `address` \
              (such as 192.168.1.20 or http://printer.local:7125). OctoPrint needs its API `key`. PrusaLink takes its API `key`, or a \
-             `user` (usually maker) with the password in `key`. A Duet's `key` is its password. `name` is the file's name on the \
-             printer (default the file's own); `print: true` starts printing it (default false: upload only). Returns {name, printing}",
+             `user` (usually maker) with the password in `key`. A Duet's `key` is its password, alone or run by a single-board \
+             computer. `name` is the file's name on the printer (default the file's own); `print: true` starts printing it (default \
+             false: upload only). Returns {name, printing}",
     run: send_to_printer,
     undoable: false,
     files: Files::Read,

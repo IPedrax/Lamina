@@ -10,6 +10,7 @@
 
 mod commands;
 pub mod digest;
+mod dsf;
 mod duet;
 mod prusalink;
 
@@ -39,7 +40,8 @@ pub enum Kind {
     /// PrusaLink (Prusa's printers): `PUT /api/v1/files/usb/NAME`, with the key in `X-Api-Key`.
     #[serde(rename = "prusalink")]
     PrusaLink,
-    /// A Duet board running RepRapFirmware on its own: `rr_upload`, with the board's password in the key field.
+    /// A Duet board, on its own (`rr_upload`) or run by a single-board computer (DSF's `PUT /machine/file`), whichever answers; the
+    /// board's password in the key field.
     Duet,
 }
 
@@ -468,13 +470,14 @@ mod tests {
         assert_eq!(
             paths,
             [
+                "/machine/connect?password=secret",
                 "/rr_connect?password=secret",
                 "/rr_upload?name=0%3A%2Fgcodes%2Fpart.gcode",
                 "/rr_gcode?gcode=M32%20%220%3A%2Fgcodes%2Fpart.gcode%22"
             ]
         );
-        assert_eq!((got[1].method.as_str(), got[1].header("X-Session-Key")), ("POST", Some("77")));
-        assert_eq!(got[1].body, GCODE);
+        assert_eq!((got[2].method.as_str(), got[2].header("X-Session-Key")), ("POST", Some("77")));
+        assert_eq!(got[2].body, GCODE);
         drop(got);
         let (address, _) = testing::printer(
             200,
