@@ -602,7 +602,11 @@ impl App {
 
     fn prepare(&mut self, ui: &mut Ui) {
         let scene = Arc::clone(&self.session.scene);
-        match self.view.show(ui, &scene, &self.selected, self.profile.bed) {
+        let shown = self.view.show(ui, &scene, &self.selected, self.profile.bed);
+        if let Some((id, by)) = shown.moved {
+            self.run("move", json!({ "id": id, "by": by }));
+        }
+        match shown.pick {
             Some(Pick::Object(id)) => self.pick(id, ui),
             Some(Pick::Nothing) if !ui.input(|i| i.modifiers.command || i.modifiers.shift) => self.selected.clear(),
             _ => {}
@@ -737,6 +741,52 @@ mod tests {
         press(&mut h, "Send");
         let log = &h.state().chat.chat.log;
         assert!(matches!(log.last(), Some(lamina_assistant::Line::Note(n)) if n.contains("key")), "{log:?}");
+    }
+
+    /// A primary drag from `a` to `b` in steps, as a hand makes it.
+    fn drag(h: &mut Harness<App>, a: egui::Pos2, b: egui::Pos2) {
+        use egui::{Event, Modifiers, PointerButton};
+        h.hover_at(a);
+        h.run();
+        h.event(Event::PointerButton { pos: a, button: PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE });
+        h.run();
+        for t in [0.25, 0.5, 0.75, 1.0] {
+            h.hover_at(a + (b - a) * t);
+            h.run();
+        }
+        h.event(Event::PointerButton { pos: b, button: PointerButton::Primary, pressed: false, modifiers: Modifiers::NONE });
+        h.run();
+    }
+
+    fn middle(app: &App, id: u32) -> [f64; 3] {
+        let (lo, hi) = app.session.scene.get(id).unwrap().bounds().unwrap();
+        [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, lo[2]]
+    }
+
+    #[test]
+    fn dragging_the_gizmo_moves_the_object_in_one_undo_step() {
+        use crate::view3d::Handle;
+        let mut h = window();
+        press(&mut h, "Add box");
+        let g = h.state().view.gizmo.expect("a picked object has a gizmo");
+        let tip = g.grip(Handle::X);
+        drag(&mut h, tip, tip + (g.tips[0] - g.origin));
+        let after = middle(h.state(), 1);
+        assert!(after[0] > 5.0 && after[1].abs() < 1e-9 && after[2].abs() < 1e-9, "moved along x only: {after:?}");
+        assert_eq!(after[0], (after[0] / 0.5).round() * 0.5, "snapped to half a millimetre");
+        press(&mut h, "Undo");
+        assert_eq!(middle(h.state(), 1), [0.0, 0.0, 0.0], "one undo takes the whole drag back");
+        // The plate square slides it on the plate, never up or down.
+        let g = h.state().view.gizmo.unwrap();
+        let grip = g.grip(Handle::Plate);
+        drag(&mut h, grip, grip + egui::vec2(-40.0, 30.0));
+        let slid = middle(h.state(), 1);
+        assert!(slid[0].abs() + slid[1].abs() > 2.0 && slid[2].abs() < 1e-9, "{slid:?}");
+        // A drag that starts away from the gizmo still turns the camera and moves nothing.
+        let before = h.state().view.camera.azimuth;
+        drag(&mut h, egui::pos2(700.0, 750.0), egui::pos2(780.0, 750.0));
+        assert_ne!(h.state().view.camera.azimuth, before);
+        assert_eq!(middle(h.state(), 1), slid);
     }
 
     #[test]

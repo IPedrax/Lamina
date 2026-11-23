@@ -50,8 +50,8 @@ cargo test --workspace
   (modelling, designing for FDM, slicer settings, working from a picture), written for Lamina's own commands: a test checks that every
   command they name exists. A command a skill promises must exist, and a new command the model needs gets a line in the skill. Notes: [crates/assistant/CLAUDE.md](crates/assistant/CLAUDE.md). The only
   crate that may use `ureq` or `ring` (a test in `lamina-core` checks every manifest).
-- `apps/lamina`: the desktop app (`lamina`): `lib.rs` (the window: toolbar, plate panel, settings, tabs), `view3d.rs` (orbit camera
-  and a CPU rasterizer that keeps an object id per pixel for picking), `preview.rs` (layers read back from the G-code, one drawn at a
+- `apps/lamina`: the desktop app (`lamina`): `lib.rs` (the window: toolbar, plate panel, settings, tabs), `view3d.rs` (orbit camera,
+  a CPU rasterizer that keeps an object id per pixel for picking, and the move gizmo), `preview.rs` (layers read back from the G-code, one drawn at a
   time), `chat.rs` (the assistant panel, with Remember and a passphrase for the key), `settings.rs` (the settings file: print settings,
   presets, sealed keys; read hostilely, written whole and owner-only). Thin: it changes the scene only through `Session::execute`. UI behaviour is tested with
   egui_kittest; `picture_of_the_window` (ignored, needs a GPU) renders it to a PNG to look at.

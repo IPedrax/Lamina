@@ -8,7 +8,7 @@ Ordered by what unblocks the next thing. Each step ends with a test that looks a
 - Meshes, primitives (box, cylinder, sphere), transforms, STL in and out.
 - Slicer: layers, walls, solid and sparse infill, skirt, retraction, flow, time and filament estimates, Marlin-style G-code.
 - CLI and MCP server. AI chat engine ported from BIMCraft (providers, sealed key, attachments, tool layer).
-- The desktop app: a 3D view with orbit and picking, the objects' tools, print settings, slicing with a layer preview, G-code
+- The desktop app: a 3D view with orbit, picking and a move gizmo, the objects' tools, print settings, slicing with a layer preview, G-code
   export, and the assistant panel.
 - Printer and filament presets (built in, by name from any front end, and the user's own in the app), and a settings file that
   keeps the print settings, the presets and, when asked, the assistant's key, sealed.
@@ -28,7 +28,7 @@ Ordered by what unblocks the next thing. Each step ends with a test that looks a
 3. **Slicer quality.** Connect infill lines instead of retracting per line, seam placement, gyroid and grid infill, brim, cooling per layer time.
 4. **Profiles.** Printer, filament and process presets with inheritance; Prusa-style `{expr}` placeholders; import Orca and Prusa profiles.
 5. **Send to printer.** Moonraker, then OctoPrint (one multipart POST each), as a separate crate that only the desktop and CLI use.
-6. **Desktop, next round.** A move/rotate/scale gizmo in the 3D view; the GPU viewport for big meshes; a 3D G-code preview with
+6. **Desktop, next round.** Rotate and scale handles beside the move gizmo, and moving several picked objects at once; the GPU viewport for big meshes; a 3D G-code preview with
    colours by feature; saving and opening a project file; process presets (fine, standard, draft) and importing Orca or Prusa profiles.
 7. **A render the model can see.** A `preview` command that draws the scene to a PNG and returns it to the model, so it can compare
    with a picture the way the OpenSCAD and CadQuery skills do. Anthropic takes images in tool results; the other providers need a

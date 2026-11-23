@@ -3,8 +3,8 @@
 A 3D slicer and modelling tool for 3D printing, in pure Rust, with an AI assistant built in. You describe a part, the assistant
 models it, and Lamina slices it to G-code for a real printer.
 
-**Status: early.** The desktop app, a CLI and an MCP server work today: build a plate from primitives or an STL, move, rotate
-and scale objects, join and cut them (`union`, `difference`, `intersect`), slice them to Marlin-style G-code (walls, solid and
+**Status: early.** The desktop app, a CLI and an MCP server work today: build a plate from primitives or an STL, move objects by dragging them in 3D, rotate
+and scale them, join and cut them (`union`, `difference`, `intersect`), slice them to Marlin-style G-code (walls, solid and
 sparse infill, skirt, retraction, time and filament estimates), look through the layers, and ask the built-in assistant to do any
 of it. Nothing has been printed on real hardware yet. The plan is in [docs/ROADMAP.md](docs/ROADMAP.md).
 
