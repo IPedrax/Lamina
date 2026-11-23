@@ -20,6 +20,14 @@ pub const PLATE: Rgba = [62, 66, 72, 255];
 pub const GRID: Rgba = [86, 91, 98, 255];
 pub const MODEL: Rgba = [110, 165, 225, 255];
 pub const SELECTED: Rgba = [245, 165, 60, 255];
+/// The plane given to what is not a part's face (the plate): level, through the origin.
+const FLAT: [f32; 4] = [0.0, 0.0, 1.0, 0.0];
+/// How much an edge darkens the pixel it is drawn on: where a part's faces meet at a crease or a step, and round each part.
+const EDGE_SHADE: f64 = 0.42;
+/// Faces whose normals differ by more than this, degrees, meet at a crease; a curved surface's facets turn by less, and stay smooth.
+const CREASE: f64 = 35.0;
+/// Parallel faces further apart than this, mm, are a step (a pocket's floor beside the top it is cut into, raised lettering).
+const STEP: f32 = 0.05;
 
 /// An orbit camera round `target`: `azimuth` degrees counter-clockwise from east, `elevation` degrees up, `distance` mm away.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -131,6 +139,10 @@ struct Raster {
     tris: Vec<u32>,
     /// The triangle being filled, for `tris`.
     tri: u32,
+    /// At each pixel the plane drawn there: its unit normal, turned to the eye, and its distance from the origin. And the plane of the
+    /// triangle being filled.
+    planes: Vec<[f32; 4]>,
+    plane: [f32; 4],
     light: P3,
 }
 
@@ -148,6 +160,7 @@ pub fn draw(scene: &Scene, selected: &[u32], camera: &Camera, bed: [f64; 2], siz
             }
         }
     }
+    r.outline();
     r.picture()
 }
 
@@ -180,7 +193,55 @@ impl Raster {
         let (_, _, _, forward) = camera.frame();
         // A light from over the viewer's shoulder, so faces turned to the eye are bright and the top reads from the sides.
         let light = normalize(add(scale(forward, -1.0), [0.25, 0.15, 0.7]));
-        Raster { w, h, pix: vec![BACKGROUND; w * h], depth: vec![0.0; w * h], ids: vec![0; w * h], tris: vec![0; w * h], tri: 0, light }
+        let n = w * h;
+        Raster {
+            w,
+            h,
+            pix: vec![BACKGROUND; n],
+            depth: vec![0.0; n],
+            ids: vec![0; n],
+            tris: vec![0; n],
+            tri: 0,
+            planes: vec![[0.0; 4]; n],
+            plane: FLAT,
+            light,
+        }
+    }
+
+    /// Darkens the pixels where two visible surfaces meet: the edge of a part against the plate or another part, a crease between faces,
+    /// and a step between parallel faces. Without them a pocket's floor and the top it is cut into, both facing up, are one flat colour.
+    /// Of two pixels either side of an edge, the nearer is darkened, so an outline belongs to what is in front.
+    fn outline(&mut self) {
+        let crease = CREASE.to_radians().cos() as f32;
+        let differs = |a: usize, b: usize| {
+            if self.ids[a] != self.ids[b] {
+                return true;
+            }
+            if self.ids[a] == 0 {
+                return false; // the plate and the background
+            }
+            let (p, q) = (self.planes[a], self.planes[b]);
+            let along = p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
+            along < crease || (along > 0.999 && (p[3] - q[3]).abs() > STEP)
+        };
+        let mut edge = vec![false; self.pix.len()];
+        for y in 0..self.h {
+            for x in 0..self.w {
+                let a = y * self.w + x;
+                for b in [(x + 1 < self.w).then_some(a + 1), (y + 1 < self.h).then_some(a + self.w)].into_iter().flatten() {
+                    if differs(a, b) {
+                        edge[if self.depth[a] >= self.depth[b] { a } else { b }] = true;
+                    }
+                }
+            }
+        }
+        for (px, on) in self.pix.iter_mut().zip(edge) {
+            if on {
+                for c in &mut px[..3] {
+                    *c = (f64::from(*c) * EDGE_SHADE).round() as u8;
+                }
+            }
+        }
     }
 
     fn picture(self) -> Picture {
@@ -253,7 +314,12 @@ impl Raster {
         // Both sides lit alike: an open mesh still reads.
         let k = 0.35 + 0.65 * (dot(n, self.light) / len).abs();
         let tint = |c: u8| (f64::from(c) * k).round().clamp(0.0, 255.0) as u8;
+        // The plane, its normal turned to the eye, for `outline`.
+        let toward = if dot(n, camera.frame().3) > 0.0 { -1.0 / len } else { 1.0 / len };
+        let u = scale(n, toward);
+        self.plane = [u[0] as f32, u[1] as f32, u[2] as f32, dot(u, t[0]) as f32];
         self.fill(camera, t, [tint(base[0]), tint(base[1]), tint(base[2]), base[3]], id);
+        self.plane = FLAT;
     }
 
     /// A triangle, cut at the near plane first: a plate seen from close by has corners behind the eye, and the part in front must
@@ -305,7 +371,7 @@ impl Raster {
                 let inv = (l0 * a[2] + l1 * b[2] + l2 * c[2]) as f32;
                 let k = y * self.w + x;
                 if inv > self.depth[k] {
-                    (self.depth[k], self.pix[k], self.ids[k], self.tris[k]) = (inv, color, id, self.tri);
+                    (self.depth[k], self.pix[k], self.ids[k], self.tris[k], self.planes[k]) = (inv, color, id, self.tri, self.plane);
                 }
             }
         }
@@ -370,8 +436,18 @@ pub fn thumbnail_of(meshes: &[crate::Mesh], size: usize) -> Picture {
     let (_, _, _, forward) = camera.frame();
     let light = normalize(add(scale(forward, -1.0), [0.25, 0.15, 0.7]));
     let n = size * size;
-    let mut r =
-        Raster { w: size, h: size, pix: vec![[0, 0, 0, 0]; n], depth: vec![0.0; n], ids: vec![0; n], tris: vec![0; n], tri: 0, light };
+    let mut r = Raster {
+        w: size,
+        h: size,
+        pix: vec![[0, 0, 0, 0]; n],
+        depth: vec![0.0; n],
+        ids: vec![0; n],
+        tris: vec![0; n],
+        tri: 0,
+        planes: vec![[0.0; 4]; n],
+        plane: FLAT,
+        light,
+    };
     for (k, world) in meshes.iter().enumerate() {
         for i in 0..world.triangles.len() {
             if let Some(t) = world.tri(i) {
@@ -380,6 +456,7 @@ pub fn thumbnail_of(meshes: &[crate::Mesh], size: usize) -> Picture {
             }
         }
     }
+    r.outline();
     Picture { size: [size, size], pixels: r.pix, ids: r.ids, tris: r.tris, depth: r.depth }
 }
 
@@ -443,6 +520,50 @@ pub fn normalize(a: P3) -> P3 {
 mod tests {
     use super::*;
     use crate::Mesh;
+
+    /// A part whose faces all face up (a plinth with a block standing on it, as one object) shows its step as an edge: the detail of a
+    /// pocket or of raised lettering. The diagonal splitting a flat face into triangles, and a curved surface's facets, show none.
+    #[test]
+    fn edges_show_steps_and_creases_but_not_a_face_s_own_triangles() {
+        let plinth = Mesh::cuboid([60.0, 60.0, 10.0]);
+        let block = Mesh::cuboid([20.0, 20.0, 4.0]).transformed(&crate::Transform::translate([0.0, 0.0, 10.0]));
+        let mut scene = Scene::default();
+        let id = scene.add("stepped", Mesh::merged([&plinth, &block])).unwrap();
+        scene.get_mut(id).unwrap().xf = crate::Transform::IDENTITY;
+        let camera = Camera { target: [0.0, 0.0, 10.0], azimuth: -90.0, elevation: 89.0, distance: 200.0 };
+        let p = draw(&scene, &[], &camera, [220.0, 220.0], [300, 300]);
+        let at = |x: f64, y: f64, z: f64| {
+            let q = camera.project([x, y, z], 300.0, 300.0).unwrap();
+            p.pixels[q[1] as usize * 300 + q[0] as usize]
+        };
+        let dark = |c: Rgba| u32::from(c[2]) < u32::from(MODEL[2]) * 6 / 10;
+        // Straight down, the plinth's top and the block's top are the same colour: only the edge between them tells them apart.
+        assert!(!dark(at(-20.0, -20.0, 10.0)) && !dark(at(0.0, 0.0, 14.0)), "faces stay light");
+        // An edge is a pixel wide and falls on one side of the exact line or the other: look within a pixel of it.
+        let near_edge = |x: f64, y: f64, z: f64| {
+            let q = camera.project([x, y, z], 300.0, 300.0).unwrap();
+            let (cx, cy) = (q[0] as i64, q[1] as i64);
+            (-1..=1).flat_map(|dy| (-1..=1).map(move |dx| (cx + dx, cy + dy))).any(|(x, y)| dark(p.pixels[y as usize * 300 + x as usize]))
+        };
+        let ring = (0..60).filter(|&k| near_edge(-10.0 + 20.0 * f64::from(k) / 60.0, -10.0, 14.0)).count();
+        assert!(ring > 40, "the block's outline is drawn along its edge: {ring} of 60");
+        let diagonal = (5..55).filter(|&k| dark(at(-10.0 + 20.0 * f64::from(k) / 60.0, -10.0 + 20.0 * f64::from(k) / 60.0, 14.0))).count();
+        assert!(diagonal <= 2, "no line where the block's top is split into triangles: {diagonal}");
+        // A sphere's facets meet at a few degrees: it stays smooth, with an outline round it.
+        let mut ball = Scene::default();
+        ball.add("ball", Mesh::sphere(20.0, 48)).unwrap();
+        let q = draw(&ball, &[], &Camera { target: [0.0, 0.0, 20.0], ..camera }, [220.0, 220.0], [300, 300]);
+        // An edge is a line a pixel wide, darker than the pixels either side of it; shading only changes slowly across the ball.
+        let blue = |x: usize, y: usize| i32::from(q.pixels[y * 300 + x][2]);
+        let lines = (130..170)
+            .flat_map(|y| (130..170).map(move |x| (x, y)))
+            .filter(|&(x, y)| {
+                let c = blue(x, y);
+                (blue(x - 1, y) - c > 25 && blue(x + 1, y) - c > 25) || (blue(x, y - 1) - c > 25 && blue(x, y + 1) - c > 25)
+            })
+            .count();
+        assert!(lines < 20, "a sphere is not drawn as a wireframe: {lines} line pixels in its middle");
+    }
 
     #[test]
     fn printed_lines_are_drawn_as_wide_as_they_print_and_the_nearer_one_in_front() {
