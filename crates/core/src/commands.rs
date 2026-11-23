@@ -113,7 +113,7 @@ pub static ALL: &[Command] = &[
     ),
     cmd(
         "export_mesh",
-        "{path, id?} writes one object, or the whole plate, where it stands: a binary STL (one mesh), or a 3MF (`.3mf`, each object its own, with positions for a printer whose zero is the plate's front left corner)",
+        "{path, id?, up?} writes one object, or the whole plate, where it stands: a binary STL (one mesh), a 3MF (`.3mf`, each object its own, with positions for a printer whose zero is the plate's front left corner), or an OBJ (`.obj`, each object its own group, in mm, `up` \"z\" (default) or \"y\" for programs that take y as up)",
         export_mesh,
         false,
         Files::Write,
@@ -814,11 +814,31 @@ fn info(s: &mut Session, p: &Value) -> Result<Value, String> {
 struct Export {
     path: String,
     id: Option<u32>,
+    up: Option<String>,
 }
 
 fn export_mesh(s: &mut Session, p: &Value) -> Result<Value, String> {
     let a: Export = parse(p)?;
-    if extension(Path::new(&a.path)) == "3mf" {
+    let kind = extension(Path::new(&a.path));
+    let up_is_y = match a.up.as_deref() {
+        None | Some("z") => false,
+        Some("y") if kind == "obj" => true,
+        Some("y") => return Err("`up` is for an OBJ: STL and 3MF are always z up".into()),
+        Some(other) => return Err(format!("`up` is \"z\" or \"y\", not {other:?}")),
+    };
+    if kind == "obj" {
+        let objects: Vec<(String, Mesh)> = match a.id {
+            Some(id) => vec![s.scene.get(id).map(|o| (o.name.clone(), o.world()))?],
+            None => s.scene.objects.iter().map(|o| (o.name.clone(), o.world())).collect(),
+        };
+        let triangles: usize = objects.iter().map(|(_, m)| m.triangles.len()).sum();
+        if triangles == 0 {
+            return Err("nothing to export: the plate is empty".into());
+        }
+        std::fs::write(&a.path, mesh_in::obj_text(&objects, up_is_y)).map_err(|e| format!("{}: {e}", a.path))?;
+        return Ok(json!({"path": a.path, "objects": objects.len(), "triangles": triangles}));
+    }
+    if kind == "3mf" {
         let objects: Vec<&Object> = match a.id {
             Some(id) => vec![s.scene.get(id)?],
             None => s.scene.objects.iter().collect(),
@@ -1084,6 +1104,35 @@ mod tests {
         run(&mut s, "undo", json!({})).unwrap();
         assert!(!s.scene.get(1).unwrap().mesh.is_watertight());
         assert!(run(&mut s, "repair", json!({"id": 7})).is_err());
+    }
+
+    #[test]
+    fn a_plate_goes_out_as_obj_with_each_object_its_own_and_comes_back() {
+        let mut s = Session::new();
+        run(&mut s, "add_primitive", json!({"kind": "box", "size": [10, 10, 10], "name": "cube"})).unwrap();
+        run(&mut s, "add_primitive", json!({"kind": "cylinder", "radius": 4, "height": 6, "at": [30, 5]})).unwrap();
+        let volumes: Vec<f64> = s.scene.objects.iter().map(|o| o.world().volume()).collect();
+        for up in ["z", "y"] {
+            let path = std::env::temp_dir().join(format!("lamina-plate-{}-{up}.obj", std::process::id()));
+            let r = run(&mut s, "export_mesh", json!({"path": path, "up": up})).unwrap();
+            assert_eq!(r["objects"], 2);
+            let text = std::fs::read_to_string(&path).unwrap();
+            assert!(text.contains("o cube\n") && text.contains(&format!("{up} up")), "{}", &text[..80]);
+            let mut t = Session::new();
+            let back = run(&mut t, "import_mesh", json!({"path": path, "up": up})).unwrap();
+            std::fs::remove_file(&path).unwrap();
+            assert_eq!(back["ids"], json!([1, 2]));
+            assert_eq!(t.scene.get(1).unwrap().name, "cube");
+            for (o, v) in t.scene.objects.iter().zip(&volumes) {
+                assert!((o.world().volume() - v).abs() < 1e-3 * v, "{up}: {} vs {v}", o.world().volume());
+                assert!(o.world().is_watertight());
+            }
+            // The cube is 10 mm tall whichever way up the file says.
+            let (lo, hi) = t.scene.get(1).unwrap().bounds().unwrap();
+            assert!((hi[2] - lo[2] - 10.0).abs() < 1e-4, "{up}");
+        }
+        assert!(run(&mut s, "export_mesh", json!({"path": "/tmp/x.stl", "up": "y"})).unwrap_err().contains("OBJ"));
+        assert!(run(&mut s, "export_mesh", json!({"path": "/tmp/x.obj", "up": "x"})).is_err());
     }
 
     #[test]

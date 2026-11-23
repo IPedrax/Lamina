@@ -221,7 +221,11 @@ impl App {
     }
 
     fn export_mesh(&mut self) {
-        let dialog = rfd::FileDialog::new().add_filter("3MF", &["3mf"]).add_filter("STL", &["stl"]).set_file_name("plate.3mf");
+        let dialog = rfd::FileDialog::new()
+            .add_filter("3MF", &["3mf"])
+            .add_filter("STL", &["stl"])
+            .add_filter("OBJ", &["obj"])
+            .set_file_name("plate.3mf");
         let Some(path) = dialog.save_file() else { return };
         let path = if path.extension().is_none() { path.with_extension("3mf") } else { path };
         if let Some(v) = self.run("export_mesh", json!({ "path": path })) {
@@ -288,7 +292,7 @@ impl App {
             {
                 self.import(&p);
             }
-            if ui.button("Export mesh...").on_hover_text("The plate as a 3MF, each object its own, or as one STL").clicked() {
+            if ui.button("Export mesh...").on_hover_text("The plate as a 3MF or an OBJ, each object its own, or as one STL").clicked() {
                 self.export_mesh();
             }
             if ui.button("Export G-code...").clicked() {

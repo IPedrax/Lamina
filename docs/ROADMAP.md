@@ -60,6 +60,9 @@ Priorities:
   Production Extension's `path` for objects in other parts, build items with their transforms). `import_mesh` reads a `.3mf` with
   each build item as its own object, laid out as in the file and centred on the plate; `export_mesh` writes one, positions for a
   printer whose zero is the plate's corner. Other slicers' settings in a package are left alone.
+- **1.5 OBJ export.** `export_mesh` to a `.obj` path writes each object's world mesh as its own `o` group, in millimetres, z up,
+  or y up with `up: "y"` for programs that take y as up; it reads back through `import_mesh` with the same `up`. The window's
+  Export mesh offers it.
 - **2.1 Mirror.** `Transform::det`, `Mesh::transformed` turns the winding when a transform mirrors, and `mirror {id, axis}`
   mirrors an object about its centre (a Mirror button in the window). Projects keep mirrored transforms; booleans take mirrored
   objects the right way out (corners reversed, normals turned).
@@ -245,8 +248,6 @@ Print each on one Marlin and one Klipper printer. Measure with calipers. Write t
 what is wrong before adding features.
 
 ## 1. Files and projects
-
-**1.5 OBJ export (P2).** How: write each object's world mesh as plain text. (3MF export came with 1.4.)
 
 ## 2. Meshes
 

@@ -131,6 +131,29 @@ fn y_up(p: P3, mm: f64) -> P3 {
     [p[0] * mm, -p[2] * mm, p[1] * mm]
 }
 
+/// `objects` as an OBJ's text, each its own `o` group in millimetres, z up (or y up with `up_is_y`, as [`obj`] reads it back):
+/// what `export_mesh` writes for a `.obj` path.
+pub fn obj_text(objects: &[(String, crate::Mesh)], up_is_y: bool) -> String {
+    use std::fmt::Write;
+    let mut out = format!("# Lamina {}\n# millimetres, {} up\n", env!("CARGO_PKG_VERSION"), if up_is_y { "y" } else { "z" });
+    let mut base = 1usize;
+    for (name, mesh) in objects {
+        let name: String = name.chars().map(|c| if c.is_control() || c == '#' { '_' } else { c }).collect();
+        let _ = writeln!(out, "o {}", if name.trim().is_empty() { "Object" } else { name.trim() });
+        for v in &mesh.vertices {
+            let [x, y, z] = v.map(f64::from);
+            // The inverse of `y_up`: the file's y is our z, its z our -y.
+            let (a, b, c) = if up_is_y { (x, z, -y) } else { (x, y, z) };
+            let _ = writeln!(out, "v {} {} {}", a as f32, b as f32, c as f32);
+        }
+        for t in &mesh.triangles {
+            let _ = writeln!(out, "f {} {} {}", t[0] as usize + base, t[1] as usize + base, t[2] as usize + base);
+        }
+        base += mesh.vertices.len();
+    }
+    out
+}
+
 /// An OBJ's text, in a unit `mm` millimetres long, its up `y` or `z`; `mtl` gives the text of a material library it names.
 pub fn obj(text: &str, mm: f64, up_is_y: bool, mtl: impl Fn(&str) -> Option<String>) -> Result<Read, String> {
     if text.len() > MAX_BYTES {
