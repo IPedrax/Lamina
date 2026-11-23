@@ -67,6 +67,13 @@ impl Scene {
         Ok(self.next_id)
     }
 
+    /// Adds a mesh with the transform that places it, and returns its id.
+    pub fn add_transformed(&mut self, name: &str, mesh: Mesh, xf: Transform) -> Result<u32, String> {
+        let id = self.add_placed(name, mesh)?;
+        self.get_mut(id)?.xf = xf;
+        Ok(id)
+    }
+
     /// A scene of objects read from a project, keeping their ids: each must be unique, and the next new object gets one above them all.
     pub fn restore(objects: Vec<Object>) -> Result<Scene, String> {
         if objects.len() > MAX_OBJECTS {

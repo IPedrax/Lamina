@@ -29,6 +29,11 @@ Priorities:
   each sliced and compared line by line (numbers to just under their written precision, so CI on three systems agrees);
   `LAMINA_BLESS=1` writes the new output to be read in the diff. The first run found spikes and doubled points in walls on round
   shapes (offsetting points in a straight line), fixed by simplifying loops before they are offset.
+- **1.4 3MF import and export.** `crates/core/src/zip.rs` (stored and deflated entries over `miniz_oxide`, every offset checked,
+  inflated up to a limit, CRC checked) and `threemf.rs` (the model part read with `quick-xml`: meshes, components, units, the
+  Production Extension's `path` for objects in other parts, build items with their transforms). `import_mesh` reads a `.3mf` with
+  each build item as its own object, laid out as in the file and centred on the plate; `export_mesh` writes one, positions for a
+  printer whose zero is the plate's corner. Other slicers' settings in a package are left alone.
 - **2.2 Mesh repair.** `crates/core/src/repair.rs` holds the passes the booleans used (T-junctions, skins, fins, snapping, hole
   filling), now shared, and a new one that makes winding consistent across shared edges and turns each shell outward unless it lies
   inside another (a void). `import_mesh` repairs on the way in and says what it did; `repair {id}` mends an object, as one undo step.
@@ -44,7 +49,7 @@ The P0 items, in the order that unblocks the most:
 
 1. Project files (1.1). Done.
 2. Golden G-code tests and real test prints (0.1, 0.2). The golden tests are done; the test prints need hardware.
-3. Mesh repair on import, and 3MF import (2.2, 2.3). Repair is done.
+3. Mesh repair on import, and 3MF import (2.2, 2.3, 1.4). Done.
 4. Supports and brim (4.1, 4.2). Without them, most real parts fail on the plate.
 5. Connected infill and seam placement (4.3, 4.4), so prints are clean and do not string.
 6. One undo step per chat turn (0.3), and continuous integration (8.1).
@@ -89,12 +94,7 @@ start if the app did not close cleanly. BIMCraft's `autosave.rs` has the pattern
 reads OBJ and glTF from their public specifications, in millimetres with z up, with caps, and "knows no element". Dispatch on the file
 extension in `import_mesh`. Test with small files written in the test, as BIMCraft's tests do.
 
-**1.4 3MF import and export (P0 for import).** 3MF is the format other slicers and model sites use, and its specification is public.
-How: a 3MF file is a zip holding `3D/3dmodel.model`, an XML file of meshes and build items with transforms. Evaluate the `threemf`
-crate (0BSD) first; otherwise use `zip` (MIT) and `quick-xml` (MIT). Read every object as its own Lamina object with its transform.
-Ignore other slicers' embedded settings, or read only obvious fields. Export the plate the same way.
-
-**1.5 OBJ and 3MF export (P2).** How: write each object's world mesh. OBJ is plain text, and 3MF reuses 1.4.
+**1.5 OBJ export (P2).** How: write each object's world mesh as plain text. (3MF export came with 1.4.)
 
 ## 2. Meshes
 
@@ -341,6 +341,6 @@ project files and can return after 1.1.
 
 - Walls are constant width, so thin features vanish instead of getting gap fill. No supports, so overhangs print in the air. No bridging.
 - Infill lines are separate strokes. The skirt is an outline of the first layer, not a hull. Time is distance over speed, without acceleration.
-- A mesh whose holes are too big to fill without guessing stays open, and prints with parts missing, with a warning. STL only.
+- A mesh whose holes are too big to fill without guessing stays open, and prints with parts missing, with a warning. STL and 3MF only (OBJ and glTF are 1.3).
 - Booleans refuse about half of tilted cylinder pairs.
 - Nothing has been printed on real hardware.

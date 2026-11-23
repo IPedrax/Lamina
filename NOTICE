@@ -8,6 +8,12 @@ csgrs (https://github.com/timschmidt/csgrs), MIT
 i_overlay (https://github.com/iShape-Rust/iOverlay), MIT
   The slicer's polygon unions, differences, offsets and line clipping.
 
+quick-xml (https://github.com/tafia/quick-xml), MIT
+  Reads the model part of 3MF files.
+
+miniz_oxide (https://github.com/Frommi/miniz_oxide), MIT OR Zlib OR Apache-2.0
+  Deflate for the ZIP packages 3MF files are.
+
 BIMCraft (https://github.com/IPedrax/BIMCraft), MIT OR Apache-2.0, by the same author
   The assistant crate (provider clients, sealed key storage, attachments, turn loop) and the design of the command engine and the MCP
   server are ported from it.

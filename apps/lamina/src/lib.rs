@@ -1028,6 +1028,12 @@ mod tests {
         press(&mut h, "Don't save");
         assert_eq!(h.state().session.scene.objects.len(), 2, "{}", h.state().status);
         assert_eq!(h.state().project.as_deref(), Some(project.as_path()));
+        // A 3MF of two objects comes in as two objects, both picked.
+        let three = dir.path().join("pair.3mf");
+        h.state_mut().run("export_mesh", json!({"path": three}));
+        drop_file(&mut h, three);
+        assert_eq!(h.state().session.scene.objects.len(), 4, "{}", h.state().status);
+        assert_eq!(h.state().selected.len(), 2);
         drop_file(&mut h, dir.path().join("notes.txt"));
         assert!(h.state().failed && h.state().status.contains(".lamina"), "{}", h.state().status);
     }

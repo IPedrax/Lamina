@@ -20,6 +20,15 @@ T-junctions split, fins dropped, open vertices snapped within 50 microns, holes 
 are flat and convex. A sound mesh comes back untouched. `problems` counts open edges, edges of three or more faces and flipped faces
 without changing anything; `info` reports them and the window shows a warning on the object.
 
+## 3MF
+
+`zip.rs` reads and writes just enough ZIP for 3MF packages (stored and deflated entries, no ZIP64 or encryption), checking every
+offset and size against the bytes there are and each entry's CRC, and inflating only up to a limit. `threemf.rs` follows the 3MF Core
+Specification: `_rels/.rels` names the model part; objects are meshes or components placing other objects (in other parts too, with
+the Production Extension's `path`, as slicers write them); each build item becomes a Lamina object, its components gathered into one
+mesh and its transform kept (3MF's row-vector matrix is the transpose of `Transform`'s). Units are read; a mirroring transform is
+baked into the mesh with its faces turned. On import the group keeps its layout and is centred on the plate.
+
 ## Projects
 
 `project.rs` writes and reads `.lamina` files: JSON with `format: 1`, each object's id, name, transform and local mesh (base64 of
@@ -38,7 +47,7 @@ desktop (lamina) ──────┘
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `lamina-core` | `Mesh`, `Transform`, STL read/write, `.lamina` projects, mesh repair, `Scene`, `Session`, `bridge`, built-in commands | serde |
+| `lamina-core` | `Mesh`, `Transform`, STL and 3MF read/write, `.lamina` projects, mesh repair, `Scene`, `Session`, `bridge`, built-in commands | serde, miniz_oxide, quick-xml |
 | `lamina-slicer` | `slice` (mesh to loops), `geom` (polygon booleans and offsets on `i_overlay`), `print` (walls, infill, G-code), `profile`, the `slice` and `slicer_profile` commands | core, i_overlay |
 | `lamina-csg` | `boolean` over csgrs' BSP trees, crack repair, the soundness gate, the `union`, `difference` and `intersect` commands | core, csgrs |
 | `lamina-assistant` | provider clients, sealed key storage, tool layer, turn loop | core, ureq, ring |

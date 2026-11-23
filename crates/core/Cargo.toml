@@ -10,5 +10,8 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
+# 3MF packages: deflate for the zip, and an XML reader for the model. Both are already in the desktop's dependency tree.
+miniz_oxide = "0.8"
+quick-xml = "0.41"
 serde = { workspace = true }
 serde_json = { workspace = true, features = ["float_roundtrip"] }

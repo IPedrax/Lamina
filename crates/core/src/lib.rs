@@ -10,6 +10,8 @@ pub mod project;
 pub mod repair;
 pub mod scene;
 pub mod stl;
+pub mod threemf;
+pub mod zip;
 
 pub use engine::{Command, Files, Session};
 pub use mesh::{Mesh, P3, Transform};

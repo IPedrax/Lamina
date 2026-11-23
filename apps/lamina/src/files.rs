@@ -16,7 +16,7 @@ use crate::App;
 pub const MAX_RECENT: usize = 8;
 
 /// The meshes the window imports (the extension, lower case).
-pub const MESHES: &[&str] = &["stl"];
+pub const MESHES: &[&str] = &["stl", "3mf"];
 
 const NEW: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::N);
 const OPEN: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::O);
@@ -178,15 +178,31 @@ impl App {
         } else if is_mesh(path) {
             self.import(path);
         } else {
-            (self.failed, self.status) = (true, format!("{}: Lamina opens .lamina projects and imports .stl meshes", path.display()));
+            (self.failed, self.status) =
+                (true, format!("{}: Lamina opens .lamina projects and imports .stl and .3mf meshes", path.display()));
         }
     }
 
-    /// Puts a mesh on the plate and selects it.
+    /// Puts a mesh file on the plate (a 3MF may hold several objects) and selects what came in.
     pub fn import(&mut self, path: &Path) {
-        if let Some(id) = self.run("import_mesh", json!({ "path": path })).and_then(|v| v["id"].as_u64()) {
-            self.selected = vec![id as u32];
+        if let Some(v) = self.run("import_mesh", json!({ "path": path })) {
+            self.selected = v["ids"].as_array().into_iter().flatten().filter_map(Value::as_u64).map(|id| id as u32).collect();
             self.frame_all();
+            if let Some(r) = v.get("repaired") {
+                self.status = format!(
+                    "Imported and repaired: {} faces dropped, {} turned, {} holes filled.",
+                    r["dropped"], r["flipped"], r["holes_filled"]
+                );
+            }
+        }
+    }
+
+    fn export_mesh(&mut self) {
+        let dialog = rfd::FileDialog::new().add_filter("3MF", &["3mf"]).add_filter("STL", &["stl"]).set_file_name("plate.3mf");
+        let Some(path) = dialog.save_file() else { return };
+        let path = if path.extension().is_none() { path.with_extension("3mf") } else { path };
+        if let Some(v) = self.run("export_mesh", json!({ "path": path })) {
+            self.status = format!("Wrote {} ({} triangles).", path.display(), v["triangles"]);
         }
     }
 
@@ -248,6 +264,9 @@ impl App {
                 && let Some(p) = rfd::FileDialog::new().add_filter("Mesh", MESHES).pick_file()
             {
                 self.import(&p);
+            }
+            if ui.button("Export mesh...").on_hover_text("The plate as a 3MF, each object its own, or as one STL").clicked() {
+                self.export_mesh();
             }
             if ui.button("Export G-code...").clicked() {
                 self.export();

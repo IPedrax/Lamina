@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use crate::engine::{Command, Files, Session};
 use crate::mesh::{Mesh, P3, Transform};
 use crate::scene::Object;
-use crate::{project, repair, stl};
+use crate::{project, repair, stl, threemf};
 
 const fn cmd(id: &'static str, params: &'static str, run: crate::engine::Run, undoable: bool, files: Files) -> Command {
     Command { id, params, run, undoable, files }
@@ -19,7 +19,7 @@ const fn cmd(id: &'static str, params: &'static str, run: crate::engine::Run, un
 pub static ALL: &[Command] = &[
     cmd(
         "import_mesh",
-        "{path, name?, at?:[x,y]} an STL file (binary or ASCII) put on the plate, centred on `at` (default the middle of the plate), its lowest point on the plate. The mesh is repaired on the way in (doubled faces dropped, flipped faces turned, small holes filled). Returns {id, triangles, watertight, size, repaired?: {dropped, flipped, holes_filled}}",
+        "{path, name?, at?:[x,y]} a mesh file put on the plate, centred on `at` (default the middle of the plate), its lowest point on the plate: an STL (binary or ASCII) as one object, or a 3MF with each of its build items as an object, kept where they stand to each other. Meshes are repaired on the way in (doubled faces dropped, flipped faces turned, small holes filled). Returns {id (the first), ids, triangles, watertight, size, repaired?: {dropped, flipped, holes_filled}}",
         import_mesh,
         true,
         Files::Read,
@@ -64,7 +64,7 @@ pub static ALL: &[Command] = &[
     ),
     cmd(
         "export_mesh",
-        "{path, id?} writes a binary STL of one object, or of the whole plate, where it stands",
+        "{path, id?} writes one object, or the whole plate, where it stands: a binary STL (one mesh), or a 3MF (`.3mf`, each object its own, with positions for a printer whose zero is the plate's front left corner)",
         export_mesh,
         false,
         Files::Write,
@@ -128,22 +128,83 @@ struct Import {
     at: Option<[f64; 2]>,
 }
 
+fn extension(path: &Path) -> String {
+    path.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase).unwrap_or_default()
+}
+
 fn import_mesh(s: &mut Session, p: &Value) -> Result<Value, String> {
     let a: Import = parse(p)?;
     let path = Path::new(&a.path);
-    if !path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("stl")) {
-        return Err("only .stl files are read so far".into());
+    let kind = extension(path);
+    if !matches!(kind.as_str(), "stl" | "3mf") {
+        return Err("a mesh is read from an .stl or a .3mf file".into());
     }
     let len = std::fs::metadata(path).map_err(|e| format!("{}: {e}", a.path))?.len();
     if len > stl::MAX_FILE {
         return Err(format!("{} is {len} bytes, more than the {} a file may hold", a.path, stl::MAX_FILE));
     }
-    let mesh = stl::read(&std::fs::read(path).map_err(|e| format!("{}: {e}", a.path))?)?;
-    let name = a.name.unwrap_or_else(|| path.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "mesh".into()));
+    let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", a.path))?;
+    let stem = path.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "mesh".into());
+    if kind == "3mf" {
+        return import_parts(s, threemf::read(&bytes).map_err(|e| format!("{}: {e}", a.path))?, a.name.as_deref(), a.at);
+    }
+    let mesh = stl::read(&bytes)?;
+    let name = a.name.unwrap_or(stem);
     let (mesh, report) = repair::repair(&mesh)?;
     let mut v = added(s, &name, mesh, a.at)?;
+    v["ids"] = json!([v["id"]]);
     if report.changed() {
         v["repaired"] = json!({"dropped": report.dropped, "flipped": report.flipped, "holes_filled": report.holes_filled});
+    }
+    Ok(v)
+}
+
+/// The parts of a 3MF file on the plate: each repaired and placed with its transform, the group kept as it was laid out, centred on
+/// `at` and resting on the plate.
+fn import_parts(s: &mut Session, parts: Vec<threemf::Part>, name: Option<&str>, at: Option<[f64; 2]>) -> Result<Value, String> {
+    let at = finite3("at", at.map_or([0.0; 3], |[x, y]| [x, y, 0.0]))?;
+    let mut placed = Vec::with_capacity(parts.len());
+    let mut total = repair::Report::default();
+    for (k, part) in parts.into_iter().enumerate() {
+        let (mesh, r) = repair::repair(&part.mesh)?;
+        (total.dropped, total.flipped, total.holes_filled) =
+            (total.dropped + r.dropped, total.flipped + r.flipped, total.holes_filled + r.holes_filled);
+        let det = part.xf.det();
+        if det.is_nan() || det.abs() <= 1e-12 {
+            return Err(format!("build item {} flattens its object to nothing", k + 1));
+        }
+        // A mirroring transform is baked into the mesh, faces turned to face out, so the object's own transform never mirrors.
+        let (mesh, xf) = if det < 0.0 {
+            let mut m = mesh.transformed(&part.xf);
+            m.triangles.iter_mut().for_each(|t| t.swap(1, 2));
+            (m, Transform::IDENTITY)
+        } else {
+            (mesh, part.xf)
+        };
+        let label = match name {
+            Some(n) if k == 0 => n.to_string(),
+            Some(n) => format!("{n} {}", k + 1),
+            None => part.name,
+        };
+        placed.push((label, mesh, xf));
+    }
+    let bounds = placed.iter().filter_map(|(_, m, xf)| m.transformed(xf).bounds()).reduce(|(alo, ahi), (blo, bhi)| {
+        ([alo[0].min(blo[0]), alo[1].min(blo[1]), alo[2].min(blo[2])], [ahi[0].max(bhi[0]), ahi[1].max(bhi[1]), ahi[2].max(bhi[2])])
+    });
+    let (lo, hi) = bounds.ok_or("the 3MF file holds no solid to print")?;
+    let shift = Transform::translate([at[0] - (lo[0] + hi[0]) / 2.0, at[1] - (lo[1] + hi[1]) / 2.0, -lo[2]]);
+    let (mut ids, mut triangles, mut watertight) = (Vec::new(), 0, true);
+    for (label, mesh, xf) in placed {
+        triangles += mesh.triangles.len();
+        watertight &= mesh.is_watertight();
+        ids.push(s.scene_mut().add_transformed(&label, mesh, xf.then(&shift))?);
+    }
+    let mut v = json!({
+        "id": ids[0], "ids": ids, "triangles": triangles, "watertight": watertight,
+        "size": [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]],
+    });
+    if total.changed() {
+        v["repaired"] = json!({"dropped": total.dropped, "flipped": total.flipped, "holes_filled": total.holes_filled});
     }
     Ok(v)
 }
@@ -314,6 +375,24 @@ struct Export {
 
 fn export_mesh(s: &mut Session, p: &Value) -> Result<Value, String> {
     let a: Export = parse(p)?;
+    if extension(Path::new(&a.path)) == "3mf" {
+        let objects: Vec<&Object> = match a.id {
+            Some(id) => vec![s.scene.get(id)?],
+            None => s.scene.objects.iter().collect(),
+        };
+        if objects.is_empty() {
+            return Err("nothing to export: the plate is empty".into());
+        }
+        // The plate from the project's print settings, else the default 220 mm one: the scene's origin is its middle.
+        let bed =
+            s.print["profile"]["bed"].as_array().and_then(|b| Some([b.first()?.as_f64()?, b.get(1)?.as_f64()?])).unwrap_or([220.0, 220.0]);
+        let corner = Transform::translate([bed[0] / 2.0, bed[1] / 2.0, 0.0]);
+        let parts: Vec<threemf::Part> =
+            objects.iter().map(|o| threemf::Part { name: o.name.clone(), mesh: (*o.mesh).clone(), xf: o.xf.then(&corner) }).collect();
+        let triangles: usize = parts.iter().map(|p| p.mesh.triangles.len()).sum();
+        std::fs::write(&a.path, threemf::write(&parts)).map_err(|e| format!("{}: {e}", a.path))?;
+        return Ok(json!({"path": a.path, "objects": parts.len(), "triangles": triangles}));
+    }
     let worlds: Vec<Mesh> = match a.id {
         Some(id) => vec![s.scene.get(id)?.world()],
         None => s.scene.objects.iter().map(Object::world).collect(),
@@ -533,6 +612,39 @@ mod tests {
         run(&mut s, "undo", json!({})).unwrap();
         assert!(!s.scene.get(1).unwrap().mesh.is_watertight());
         assert!(run(&mut s, "repair", json!({"id": 7})).is_err());
+    }
+
+    #[test]
+    fn a_plate_goes_out_as_3mf_and_comes_back_as_it_was_laid_out() {
+        let path = std::env::temp_dir().join(format!("lamina-plate-{}.3mf", std::process::id()));
+        let mut s = Session::new();
+        run(&mut s, "add_primitive", json!({"kind": "box", "size": [10, 10, 10], "name": "cube"})).unwrap();
+        run(&mut s, "add_primitive", json!({"kind": "cylinder", "radius": 4, "height": 6, "at": [30, 5]})).unwrap();
+        run(&mut s, "rotate", json!({"id": 2, "axis": "z", "degrees": 30})).unwrap();
+        let r = run(&mut s, "export_mesh", json!({"path": path})).unwrap();
+        assert_eq!(r["objects"], 2);
+        let before: Vec<(P3, P3)> = s.scene.objects.iter().map(|o| o.bounds().unwrap()).collect();
+        let (lo, hi) = before.iter().fold(([f64::MAX; 3], [f64::MIN; 3]), |(lo, hi), (a, b)| {
+            ([lo[0].min(a[0]), lo[1].min(a[1]), lo[2].min(a[2])], [hi[0].max(b[0]), hi[1].max(b[1]), hi[2].max(b[2])])
+        });
+        let mut t = Session::new();
+        let r = run(&mut t, "import_mesh", json!({"path": path, "at": [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0]})).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(r["ids"], json!([1, 2]));
+        assert_eq!(t.scene.get(1).unwrap().name, "cube");
+        // Centred where the group was centred, so every object lands where it stood.
+        for (o, (lo, hi)) in t.scene.objects.iter().zip(before) {
+            let (a, b) = o.bounds().unwrap();
+            for k in 0..3 {
+                assert!((a[k] - lo[k]).abs() < 1e-3 && (b[k] - hi[k]).abs() < 1e-3, "{:?} {:?} {lo:?} {hi:?}", a, b);
+            }
+        }
+        assert!(t.scene.objects.iter().all(|o| o.world().is_watertight()));
+        let bad = std::env::temp_dir().join(format!("lamina-bad-{}.3mf", std::process::id()));
+        std::fs::write(&bad, "not a zip").unwrap();
+        assert!(run(&mut t, "import_mesh", json!({"path": bad})).unwrap_err().contains("not a 3MF"));
+        std::fs::remove_file(&bad).unwrap();
+        assert_eq!(t.scene.objects.len(), 2);
     }
 
     #[test]

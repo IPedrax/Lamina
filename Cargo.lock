@@ -2030,6 +2030,8 @@ dependencies = [
 name = "lamina-core"
 version = "0.1.0"
 dependencies = [
+ "miniz_oxide 0.8.9",
+ "quick-xml",
  "serde",
  "serde_json",
 ]
