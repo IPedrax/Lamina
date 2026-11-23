@@ -20,7 +20,8 @@ presets live in the app's settings panel, not in these commands.
 `slice_check {profile: {layer_height: 0.16, infill_density: 0.3}}`. A misspelled field is an error, and so is a value out of range.
 
 - Printer: `bed` (x and y, mm), `max_height`, `nozzle`, `filament_diameter`, `origin_center` (true for delta printers),
-  `start_gcode` and `end_gcode` (placeholders like `[bed_temp]`; unknown ones are refused), `firmware` (`"marlin"`, `"klipper"`:
+  `start_gcode` and `end_gcode` (placeholders like `[bed_temp]`, unknown ones refused, and expressions in braces such as
+  `{first_layer_bed_temp - 5}` or `{if(bed_temp > 90, 1, 0)}`), `firmware` (`"marlin"`, `"klipper"`:
   objects marked so one can be cancelled, or `"reprap"`), `firmware_retraction` (G10 and G11), `thumbnail` (pixels; a picture for
   the printer's screen), `max_acceleration` and `junction_deviation` (for the time estimate). A filament may set
   `pressure_advance`.

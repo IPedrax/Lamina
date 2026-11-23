@@ -1336,6 +1336,10 @@ impl App {
                 ))
                 .small(),
             );
+            ui.label(
+                RichText::new("In braces, an expression of them: {first_layer_bed_temp - 5}, {if(bed_temp > 90, 1, 0)}, with min, max and round; {{ for a brace.")
+                    .small(),
+            );
             ui.label("Start");
             ui.add(egui::TextEdit::multiline(&mut p.start_gcode).code_editor().desired_rows(4));
             ui.label("End");

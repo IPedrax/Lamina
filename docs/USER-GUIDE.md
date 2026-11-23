@@ -126,8 +126,8 @@ The same text is the tooltip in the window. The names are the ones a profile fil
 | `junction_deviation` | How fast the printer takes corners (Marlin's junction deviation, mm); used for the time estimate. | 0 to 1 | 0.013 |
 | `nozzle` | The nozzle's diameter, mm: lines are this wide, and layers at most 80 % of it. | 0.1 to 2 | 0.4 |
 | `filament_diameter` | The filament's diameter, mm, usually 1.75. | 1 to 3.5 | 1.75 |
-| `start_gcode` | G-code sent before the print; [name] is replaced by that setting. |  | see the window |
-| `end_gcode` | G-code sent after the print; [name] is replaced by that setting. |  | see the window |
+| `start_gcode` | G-code sent before the print; [name] is replaced by that setting, and {expression} by its value. |  | see the window |
+| `end_gcode` | G-code sent after the print; [name] is replaced by that setting, and {expression} by its value. |  | see the window |
 | `firmware` | The printer's firmware: Klipper also gets object markers, so one failed object can be cancelled alone. |  | `marlin` |
 | `firmware_retraction` | Retract with the firmware's G10 and G11, so the printer's own retraction settings apply. |  | false |
 | `thumbnail` | A picture of the plate this many pixels square, for the printer's screen; 0 for none. |  | 0 |

@@ -289,8 +289,8 @@ pub const ABOUT: &[(&str, &str)] = &[
     ("junction_deviation", "How fast the printer takes corners (Marlin's junction deviation, mm); used for the time estimate."),
     ("nozzle", "The nozzle's diameter, mm: lines are this wide, and layers at most 80 % of it."),
     ("filament_diameter", "The filament's diameter, mm, usually 1.75."),
-    ("start_gcode", "G-code sent before the print; [name] is replaced by that setting."),
-    ("end_gcode", "G-code sent after the print; [name] is replaced by that setting."),
+    ("start_gcode", "G-code sent before the print; [name] is replaced by that setting, and {expression} by its value."),
+    ("end_gcode", "G-code sent after the print; [name] is replaced by that setting, and {expression} by its value."),
     ("firmware", "The printer's firmware: Klipper also gets object markers, so one failed object can be cancelled alone."),
     ("firmware_retraction", "Retract with the firmware's G10 and G11, so the printer's own retraction settings apply."),
     ("thumbnail", "A picture of the plate this many pixels square, for the printer's screen; 0 for none."),
@@ -391,30 +391,49 @@ impl Profile {
         Ok(())
     }
 
-    /// `text` with each `[name]` replaced by that setting.
+    /// A setting by the name `[name]` and `{expr}` know it.
+    fn placeholder(&self, name: &str) -> Option<f64> {
+        Some(match name {
+            "nozzle_temp" => self.nozzle_temp,
+            "first_layer_nozzle_temp" => self.first_layer_nozzle_temp,
+            "bed_temp" => self.bed_temp,
+            "first_layer_bed_temp" => self.first_layer_bed_temp,
+            "layer_height" => self.layer_height,
+            "first_layer_height" => self.first_layer_height,
+            "nozzle" => self.nozzle,
+            "filament_diameter" => self.filament_diameter,
+            "bed_x" => self.bed[0],
+            "bed_y" => self.bed[1],
+            "max_height" => self.max_height,
+            _ => return None,
+        })
+    }
+
+    /// `text` with each `[name]` replaced by that setting and each `{expr}` by its value (`crate::expr`); `{{` is a `{`.
     pub fn expand(&self, text: &str) -> Result<String, String> {
         let mut out = String::new();
         let mut rest = text;
-        while let Some(open) = rest.find('[') {
+        while let Some(open) = rest.find(['[', '{']) {
             out.push_str(&rest[..open]);
-            let close = rest[open..].find(']').ok_or("a `[` in the G-code is never closed")? + open;
-            let name = &rest[open + 1..close];
-            let v = match name {
-                "nozzle_temp" => self.nozzle_temp,
-                "first_layer_nozzle_temp" => self.first_layer_nozzle_temp,
-                "bed_temp" => self.bed_temp,
-                "first_layer_bed_temp" => self.first_layer_bed_temp,
-                "layer_height" => self.layer_height,
-                "first_layer_height" => self.first_layer_height,
-                "nozzle" => self.nozzle,
-                "filament_diameter" => self.filament_diameter,
-                "bed_x" => self.bed[0],
-                "bed_y" => self.bed[1],
-                "max_height" => self.max_height,
-                other => return Err(format!("unknown placeholder `[{other}]` in the G-code; known: {}", PLACEHOLDERS.join(", "))),
-            };
-            out.push_str(&format!("{v}"));
-            rest = &rest[close + 1..];
+            let after = &rest[open + 1..];
+            if rest[open..].starts_with("{{") {
+                out.push('{');
+                rest = &rest[open + 2..];
+                continue;
+            }
+            let (closer, what) = if rest[open..].starts_with('[') { (']', "[") } else { ('}', "{") };
+            let close = after.find(closer).ok_or_else(|| format!("a `{what}` in the G-code is never closed"))?;
+            let inside = &after[..close];
+            if what == "[" {
+                let v = self
+                    .placeholder(inside)
+                    .ok_or_else(|| format!("unknown placeholder `[{inside}]` in the G-code; known: {}", PLACEHOLDERS.join(", ")))?;
+                out.push_str(&format!("{v}"));
+            } else {
+                let v = crate::expr::eval(inside, &|n| self.placeholder(n)).map_err(|e| format!("in `{{{inside}}}`: {e}"))?;
+                out.push_str(&crate::expr::show(v));
+            }
+            rest = &after[close + 1..];
         }
         out.push_str(rest);
         Ok(out)
@@ -501,6 +520,18 @@ mod tests {
         }
         assert!(ABOUT.iter().all(|(k, _)| all.get(*k).is_some()), "a description for a field the profile does not have");
         assert_eq!(about("nonsense"), "");
+    }
+
+    #[test]
+    fn expressions_in_braces_are_worked_out_beside_the_placeholders() {
+        let p = Profile { bed_temp: 100.0, first_layer_bed_temp: 105.0, ..Profile::default() };
+        assert_eq!(p.expand("M190 S{first_layer_bed_temp - 5}").unwrap(), "M190 S100");
+        assert_eq!(p.expand("{if(bed_temp > 90, 1, 0)} [bed_temp]").unwrap(), "1 100");
+        assert_eq!(p.expand("SET {{x}} {round(nozzle * 100)}").unwrap(), "SET {x}} 40");
+        for bad in ["{nope}", "{1 +", "{1/0}", "[nope]", "{if(1,2)}"] {
+            assert!(p.expand(bad).is_err(), "{bad}");
+        }
+        assert!(Profile { start_gcode: "M104 S{nozzle_temp + }".into(), ..Profile::default() }.check().is_err());
     }
 
     #[test]

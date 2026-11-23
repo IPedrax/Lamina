@@ -72,6 +72,12 @@ Reads work.
   the code is the owner's and what is lifted from BIMCraft is MIT OR Apache-2.0 already. The rest of 8.4 is done: every release
   now carries THIRD-PARTY-NOTICES.txt, and a test fails if any dependency's licence offers no permissive choice.
 
+## Braces in start G-code are expressions now (roadmap 5.5)
+
+- Since 5.5, `{...}` in a start or end G-code is worked out as an expression, and `{{` writes a brace. A G-code that had a literal
+  brace (a Klipper macro pasted in, say) now fails its check with a message saying where, rather than going out changed. Taken
+  because PrusaSlicer's start G-code uses braces the same way, so users expect it. Say if a different escape is wanted.
+
 ## Blocked: real test prints (roadmap 0.2)
 
 - Printing the calibration cube, the single-wall box and the bridge test on a Marlin and a Klipper printer needs the printers, and

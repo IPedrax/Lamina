@@ -181,6 +181,9 @@ Priorities:
 - **5.3 Preset inheritance.** A user's preset may name another, the user's or a built-in, in `inherits`; `presets::resolve` lays
   each over the one it inherits, at most eight deep, and says when a chain comes back to itself or names a preset nobody has.
   Saved over the preset chosen, a new one keeps only what differs from it, so a change to the base carries over.
+- **5.5 Expressions in start G-code.** `{expr}` beside `[name]` (`crates/slicer/src/expr.rs`): numbers, the placeholders, `+ - * / %`,
+  comparisons, `and`, `or`, `not`, parentheses, and `if`, `min`, `max`, `round`, `floor`, `ceil`, `abs`; `{{` writes a brace. A
+  recursive-descent evaluator of our own, 500 characters and 32 levels at most, fuzzed. A whole number is written without a point.
 - **6.1 Send to Moonraker** and **6.2 Send to OctoPrint.** `crates/printer`: one multipart upload to the address the user typed
   (`/server/files/upload` with `root` and `print`, or `/api/files/local` with `select` and `print` and the key in `X-Api-Key`),
   no redirects, the reply read up to 1 MB, the address checked (http or https, no credentials, query or fragment). The
@@ -290,9 +293,6 @@ sequential printing a check of the print head's clearance.
 **5.4 Import other slicers' profiles (P2).** How: read an OrcaSlicer JSON preset or a PrusaSlicer `.ini` the user chooses, and map the
 keys we understand to our fields through a table we write. Report the keys left out. Never bundle their profile files, whose licence
 is unclear.
-
-**5.5 Expressions in start G-code (P2).** How: `{expr}` with arithmetic, comparisons and `if`, beside today's `[name]`. Use a small
-recursive-descent evaluator in `profile.rs`, with a length limit.
 
 ## 6. Printers
 

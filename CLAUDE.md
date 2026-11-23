@@ -51,7 +51,7 @@ CI (`.github/workflows/ci.yml`) runs the same three on Linux, Windows and macOS 
   the control port's protocol, token and bridge file, and `settings_file`, the settings folder the desktop and the CLI share).
 - `crates/slicer`: `slice.rs` (mesh to closed loops per layer), `geom.rs` (polygon booleans, offsets, line clipping on i_overlay),
   `print.rs` (walls, skins, infill, skirt, the G-code writer), `infill.rs` (sparse infill patterns), `gap.rs` (gap fill and thin walls), `time.rs` (the print time planner), `support.rs` (overhangs,
-  supports and their interface), `profile.rs` (settings, `LIMITS` and `ABOUT`, checks, `[name]` placeholders), `presets.rs`
+  supports and their interface), `profile.rs` (settings, `LIMITS` and `ABOUT`, checks, `[name]` placeholders), `expr.rs` (`{expr}` in the start and end G-code), `presets.rs`
   (built-in printers and filaments, each setting only its own fields; `apply` and `capture`), `commands.rs`
   (`slice`, `slice_check`, `slicer_presets`, `slicer_profile`; an app adds them with `session.register(lamina_slicer::COMMANDS)`).
   `tests/golden/`: models whose G-code is compared line by line; a slicer change re-blesses them with `LAMINA_BLESS=1` and the diff
