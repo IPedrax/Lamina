@@ -175,7 +175,8 @@ by float equality, so adjacent triangles agree exactly. Loops wind counter-clock
 `geom::region` simplifies each loop (Douglas and Peucker, 5 microns) before anything is offset: a mesh's faces leave points in a
 straight line, and i_overlay's offset turns a corner of no turn into doubled points and spikes.
 `print::plan` then insets the region for each wall, finds top and bottom skins by intersecting the infill areas of the layers above
-and below, and fills with lines anchored to a global grid so layers and objects align. `Writer` turns strokes into moves, with
+and below, and fills with lines anchored to a global grid so layers and objects align. `connect` joins each line's end to the next
+line's start, straight or along the boundary both lie on, when that path is short and clipping shows it stays inside the region. `Writer` turns strokes into moves, with
 retraction on long travels and a flow model from line width, layer height and filament diameter.
 
 `support::plan` works on the layer regions of one object. A layer whose part beyond the layer below grown by `height x

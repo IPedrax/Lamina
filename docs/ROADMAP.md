@@ -46,6 +46,9 @@ Priorities:
 - **4.2 Brim and raft.** `brim_width`: loops outward from the outer walls of everything on the first layer, touching it, merged
   where objects are close; the skirt moves out past it. `raft_layers`: a coarse base, crossing middle layers and a solid top, 2 mm
   beyond the footprint, with the objects lifted 0.15 mm above it. Golden cases for both.
+- **4.3 Connected infill.** After clipping, each infill, support and raft line's end is joined to the next line's start by the
+  straight path, or else the way along the boundary both ends lie on, when it is within three line spacings and clipping shows it
+  stays inside the region. Retractions in the golden files fell by about 40 %; a 20 mm cube retracts about twice a layer.
 - **7.1 File menu and drag and drop.** New, Open, Open recent, Save, Save as (with Ctrl shortcuts), Import mesh, Export G-code and
   Quit; the title shows the project and a star for unsaved changes; New, Open and closing ask first when something would be lost;
   files dropped on the window are opened (`.lamina`) or imported (meshes). `apps/lamina/src/files.rs`.
@@ -166,11 +169,6 @@ between two clicked points in the window, and add a core `measure {a, b}` for ag
 ## 4. Slicer
 
 **4.1b Tree supports (P2).** Branches that grow from the plate toward each overhang, using less plastic than the straight columns of 4.1.
-
-**4.3 Connected infill (P0).** Today every infill line is its own stroke, with a retraction between long travels. How: after clipping,
-join each line's end to the next line's start with a short path along the region's boundary. Use it only when it stays inside the
-region, checked by clipping it with `geom::clip_lines`. Travel and retract only when no such path exists. Test: retractions on a
-filled square drop from one per line to a handful.
 
 **4.4 Seam placement (P0).** How: in `print.rs`, choose where each wall loop starts with a `seam` field. `aligned` starts nearest the
 previous layer's seam. `rear` uses the point with the greatest y. `sharpest` uses the most concave corner. Today the loop starts
@@ -336,7 +334,7 @@ project files and can return after 1.1.
 ## Known limits today
 
 - Walls are constant width, so thin features vanish instead of getting gap fill. Supports are straight columns, not trees. No bridging.
-- Infill lines are separate strokes. The skirt is an outline of the first layer, not a hull. Time is distance over speed, without acceleration.
+- The skirt is an outline of the first layer, not a hull. Time is distance over speed, without acceleration.
 - A mesh whose holes are too big to fill without guessing stays open, and prints with parts missing, with a warning. STL and 3MF only (OBJ and glTF are 1.3).
 - Booleans refuse about half of tilted cylinder pairs.
 - Nothing has been printed on real hardware.

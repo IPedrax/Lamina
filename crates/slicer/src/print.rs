@@ -1,8 +1,8 @@
 //! From meshes to G-code: layers, walls, solid and sparse infill, a skirt, and the moves between them. Absolute coordinates with
 //! relative extrusion (`G90`, `M83`), which Marlin, Klipper and RepRap all take.
 //!
-//! shortcut: every infill line is its own stroke with a retraction before it when the travel is long, and walls are not tied to a seam
-//! rule; connecting infill lines, seams and bridging are the next steps (docs/ROADMAP.md).
+//! Infill lines are joined end to start where a short path inside the region exists (`connect`), so a layer of infill is a few long
+//! strokes. shortcut: walls are not tied to a seam rule, and there is no bridging yet (docs/ROADMAP.md).
 
 use std::f64::consts::PI;
 
@@ -275,7 +275,104 @@ fn fill_lines(r: &Region, spacing: f64, angle: f64) -> Vec<Vec<P2>> {
         })
         .collect();
     pieces.sort_by(|a, b| (a.0, a.1).partial_cmp(&(b.0, b.1)).unwrap_or(std::cmp::Ordering::Equal));
-    pieces.into_iter().map(|(_, _, l)| l).collect()
+    connect(pieces.into_iter().map(|(_, _, l)| l).collect(), r, CONNECT_REACH * spacing)
+}
+
+/// How far, in line spacings, one infill line's end may be joined to the next line's start.
+const CONNECT_REACH: f64 = 3.0;
+
+/// Joins each line's end to the next line's start where a short path inside `r` exists: the straight one, or else the way along the
+/// boundary the two ends lie on. Joined lines print as one stroke, so the head neither travels nor retracts between them.
+fn connect(lines: Vec<Vec<P2>>, r: &Region, reach: f64) -> Vec<Vec<P2>> {
+    let mut out: Vec<Vec<P2>> = Vec::new();
+    for line in lines {
+        let (Some(current), Some(&start)) = (out.last_mut(), line.first()) else {
+            out.push(line);
+            continue;
+        };
+        let Some(&end) = current.last() else { continue };
+        match joint(end, start, r, reach) {
+            Some(path) => {
+                current.extend(path.into_iter().skip(1));
+                current.extend(line.into_iter().skip(1));
+            }
+            None => out.push(line),
+        }
+    }
+    out
+}
+
+/// A path from `a` to `b` no longer than `reach` that stays inside `r`, both ends included.
+fn joint(a: P2, b: P2, r: &Region, reach: f64) -> Option<Vec<P2>> {
+    if dist(a, b) > reach {
+        return None;
+    }
+    let inside = |path: &Vec<P2>| {
+        let len: f64 = path.windows(2).map(|w| dist(w[0], w[1])).sum();
+        let kept: f64 = geom::clip_lines(std::slice::from_ref(path), r).iter().flat_map(|p| p.windows(2).map(|w| dist(w[0], w[1]))).sum();
+        len <= reach && kept >= len * 0.999 - 1e-6
+    };
+    let straight = vec![a, b];
+    if inside(&straight) {
+        return Some(straight);
+    }
+    // Along the boundary: both ends on one contour, walked the shorter way round.
+    for contour in r.iter().flatten() {
+        let (Some((ia, ta)), Some((ib, tb))) = (on_contour(contour, a), on_contour(contour, b)) else { continue };
+        let n = contour.len();
+        let walk = |forward: bool| -> Vec<P2> {
+            let mut path = vec![a];
+            let (mut i, stop) = (ia, ib);
+            if forward {
+                if !(i == stop && tb >= ta) {
+                    loop {
+                        i = (i + 1) % n;
+                        path.push(contour[i]);
+                        if i == stop || path.len() > n + 1 {
+                            break;
+                        }
+                    }
+                }
+            } else if !(i == stop && tb <= ta) {
+                loop {
+                    path.push(contour[i]);
+                    if i == (stop + 1) % n || path.len() > n + 1 {
+                        break;
+                    }
+                    i = (i + n - 1) % n;
+                }
+            }
+            path.push(b);
+            path
+        };
+        let best = [walk(true), walk(false)]
+            .into_iter()
+            .filter(|p| inside(p))
+            .min_by(|x, y| x.windows(2).map(|w| dist(w[0], w[1])).sum::<f64>().total_cmp(&y.windows(2).map(|w| dist(w[0], w[1])).sum()));
+        if best.is_some() {
+            return best;
+        }
+    }
+    None
+}
+
+/// The segment of `contour` that `p` lies on (from point `i` to `i + 1`), and how far along it, if within a micron or so.
+fn on_contour(contour: &[P2], p: P2) -> Option<(usize, f64)> {
+    let n = contour.len();
+    (0..n)
+        .filter_map(|i| {
+            let (a, b) = (contour[i], contour[(i + 1) % n]);
+            let d = [b[0] - a[0], b[1] - a[1]];
+            let len2 = d[0] * d[0] + d[1] * d[1];
+            if len2 < 1e-18 {
+                return None;
+            }
+            let t = (((p[0] - a[0]) * d[0] + (p[1] - a[1]) * d[1]) / len2).clamp(0.0, 1.0);
+            let off = dist(p, [a[0] + t * d[0], a[1] + t * d[1]]);
+            (off < 2e-3).then_some((i, t, off))
+        })
+        .min_by(|x, y| x.2.total_cmp(&y.2))
+        .map(|(i, t, _)| (i, t))
 }
 
 struct Writer<'a> {
@@ -533,6 +630,48 @@ mod tests {
         assert_eq!(z_of(2), Some(0.6));
         assert!((z_of(3).unwrap() - (0.6 + RAFT_GAP + 0.2)).abs() < 1e-6, "{:?}", z_of(3));
         assert!(gcode(&[(1, Mesh::cuboid([10.0, 10.0, 249.5]))], &p).unwrap_err().contains("tall"), "the raft counts toward the height");
+    }
+
+    /// Retractions on one layer of the G-code.
+    fn retractions(g: &str, layer: usize) -> usize {
+        g.split(&format!(";LAYER:{layer}\n"))
+            .nth(1)
+            .unwrap_or("")
+            .split(";LAYER:")
+            .next()
+            .unwrap_or("")
+            .lines()
+            .filter(|l| l.starts_with("G1 E-"))
+            .count()
+    }
+
+    #[test]
+    fn infill_lines_are_joined_so_the_head_does_not_retract_between_them() {
+        let p = Profile::default();
+        let out = gcode(&cube(20.0), &p).unwrap().gcode;
+        // A sparse layer: once onto the layer, once from the walls to the infill, and no more.
+        assert!(retractions(&out, 50) <= 3, "{}", retractions(&out, 50));
+        // A solid layer too.
+        assert!(retractions(&out, 1) <= 3, "{}", retractions(&out, 1));
+        // The joints stay inside: every extrusion of the layer is within the cube.
+        let layer = out.split(";LAYER:50\n").nth(1).unwrap().split(";LAYER:").next().unwrap();
+        for l in layer.lines().filter(|l| l.starts_with("G1 X")) {
+            let mut w = l.split(' ');
+            let x: f64 = w.nth(1).unwrap()[1..].parse().unwrap();
+            let y: f64 = w.next().unwrap()[1..].parse().unwrap();
+            assert!((x - 110.0).abs() <= 10.0 && (y - 110.0).abs() <= 10.0, "{l}");
+        }
+    }
+
+    #[test]
+    fn a_joint_follows_the_boundary_round_a_corner_it_cannot_cut() {
+        // An L: the straight way from one arm's end to the other leaves the shape; the way along the edge does not.
+        let l = geom::region(&[vec![[0.0, 0.0], [10.0, 0.0], [10.0, 2.0], [2.0, 2.0], [2.0, 10.0], [0.0, 10.0]]]);
+        let path = joint([10.0, 1.0], [1.0, 10.0], &l, 30.0).unwrap();
+        assert!(path.len() > 2 && path.contains(&[2.0, 2.0]), "{path:?}");
+        assert!(joint([10.0, 1.0], [1.0, 10.0], &l, 5.0).is_none(), "too far");
+        let square = geom::region(&[vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]]);
+        assert_eq!(joint([10.0, 2.0], [10.0, 3.0], &square, 3.0), Some(vec![[10.0, 2.0], [10.0, 3.0]]));
     }
 
     #[test]
