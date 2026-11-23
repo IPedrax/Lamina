@@ -118,7 +118,7 @@ only through `Session::execute`, so the assistant, a button and a script do the 
   chosen, the user's own presets, the recent projects and the sealed keys. Read hostilely, a part that does not read is left out and said; written whole,
   to a file only its owner can read, then moved over the old one, and only when something changed and nothing is being dragged.
 - **Presets.** Built in, in `lamina-slicer` (`presets.rs`), so the CLI, the MCP server and the assistant name them too (`slice
-  {printer, filament}`, `slicer_presets`): printers by plate and firmware (Marlin, Klipper with `PRINT_START`, a centred delta) and
+  {printer, filament, process}`, `slicer_presets`). Processes set only the layers and the strength: printers by plate and firmware (Marlin, Klipper with `PRINT_START`, a centred delta) and
   filaments (PLA, PETG, ABS, ASA, TPU). A printer sets only the machine's fields, a filament only temperatures and fan, so they combine
   and leave the print settings alone. The values are typical figures of our own, not any maker's profile. The window adds presets of
   the user's own, saved from the settings shown.

@@ -148,6 +148,10 @@ Priorities:
   `set_object_settings {id, profile}` with the fields an object may change (walls, skins, infill and its pattern, seam, speeds,
   supports); `print::gcode_each` slices each object with its settings over the plate's. Layer heights stay plate-wide, as objects
   share layers. A small "This object's settings" panel in the window. Modifier meshes are P2.
+- **5.1 Process presets.** A third kind in `presets.rs`, setting only the layers and the strength (`PROCESS_FIELDS`): 0.12 mm Fine,
+  0.20 mm Standard, 0.28 mm Draft and Strong. `slice` and `slice_check` take `process` (after the printer and the filament, before
+  `profile`); `slicer_presets` lists them; the window has a Process picker and Save process, kept in the settings file and the
+  project.
 - **6.1 Send to Moonraker** and **6.2 Send to OctoPrint.** `crates/printer`: one multipart upload to the address the user typed
   (`/server/files/upload` with `root` and `print`, or `/api/files/local` with `select` and `print` and the key in `X-Api-Key`),
   no redirects, the reply read up to 1 MB, the address checked (http or https, no credentials, query or fragment). The
@@ -216,9 +220,6 @@ flat. `slice::layers` takes a function from z to height instead of one number.
 sequential printing a check of the print head's clearance.
 
 ## 5. Profiles and settings
-
-**5.1 Process presets (P1).** How: a third kind in `crates/slicer/src/presets.rs`: "0.12 mm Fine", "0.20 mm Standard", "0.28 mm
-Draft", "Strong" (more walls and infill). Each sets only layer and strength fields, so the three kinds combine.
 
 **5.2 All settings in the window (P1).** How: the print settings panel shows only some fields. Add collapsible groups for speeds,
 retraction, skirt and brim, cooling, and a start and end G-code editor that lists the placeholders. Each field shows its limits from

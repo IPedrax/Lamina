@@ -17,7 +17,7 @@ use std::sync::Arc;
 use egui::{Color32, Key, Panel, RichText, ScrollArea, Ui};
 use lamina_assistant::net::Net;
 use lamina_core::{Mesh, Scene, Session};
-use lamina_slicer::presets::{self, FILAMENT_FIELDS, FILAMENTS, PRINTER_FIELDS, PRINTERS};
+use lamina_slicer::presets::{self, FILAMENT_FIELDS, FILAMENTS, PRINTER_FIELDS, PRINTERS, PROCESS_FIELDS, PROCESSES};
 use lamina_slicer::profile::Profile;
 use serde_json::{Value, json};
 
@@ -42,11 +42,12 @@ pub enum Tab {
     Preview,
 }
 
-/// The two kinds of preset: a printer sets the machine's fields, a filament its temperatures and fan.
+/// The kinds of preset: a printer sets the machine's fields, a filament its temperatures and fan, a process the layers and strength.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     Printer,
     Filament,
+    Process,
 }
 
 impl Kind {
@@ -54,6 +55,7 @@ impl Kind {
         match self {
             Kind::Printer => "printer",
             Kind::Filament => "filament",
+            Kind::Process => "process",
         }
     }
 
@@ -61,6 +63,7 @@ impl Kind {
         match self {
             Kind::Printer => PRINTER_FIELDS,
             Kind::Filament => FILAMENT_FIELDS,
+            Kind::Process => PROCESS_FIELDS,
         }
     }
 
@@ -68,6 +71,7 @@ impl Kind {
         match self {
             Kind::Printer => PRINTERS,
             Kind::Filament => FILAMENTS,
+            Kind::Process => PROCESSES,
         }
     }
 }
@@ -115,8 +119,10 @@ pub struct App {
     /// The presets last applied, as labels, and the ones the user saved.
     pub printer: Option<String>,
     pub filament: Option<String>,
+    pub process: Option<String>,
     pub my_printers: Presets,
     pub my_filaments: Presets,
+    pub my_processes: Presets,
     preset_name: String,
     /// Where the settings are kept between runs, and what was last written there; none in a test that does not ask for it.
     pub settings_path: Option<PathBuf>,
@@ -165,8 +171,10 @@ impl App {
             chat: chat::ChatPanel::new(net),
             printer: None,
             filament: None,
+            process: None,
             my_printers: Presets::new(),
             my_filaments: Presets::new(),
+            my_processes: Presets::new(),
             preset_name: String::new(),
             settings_path: None,
             saved: None,
@@ -203,6 +211,7 @@ impl App {
         (app.printer, app.filament, app.my_printers, app.my_filaments) =
             (s.printer.clone(), s.filament.clone(), s.printers.clone(), s.filaments.clone());
         app.recent = s.recent.clone();
+        (app.process, app.my_processes) = (s.process.clone(), s.processes.clone());
         let (panel, note) = printer::PrinterPanel::restore(s.connection.clone(), s.connection_key.clone());
         app.link = panel;
         notes.extend(note);
@@ -227,6 +236,8 @@ impl App {
             filament: self.filament.clone(),
             printers: self.my_printers.clone(),
             filaments: self.my_filaments.clone(),
+            process: self.process.clone(),
+            processes: self.my_processes.clone(),
             keys: self.chat.saved.clone(),
             recent: self.recent.clone(),
             connection: Some(self.link.connection.clone()).filter(|c| !c.address.trim().is_empty()),
@@ -254,6 +265,7 @@ impl App {
         match kind {
             Kind::Printer => &mut self.my_printers,
             Kind::Filament => &mut self.my_filaments,
+            Kind::Process => &mut self.my_processes,
         }
     }
 
@@ -270,6 +282,7 @@ impl App {
                 match kind {
                     Kind::Printer => self.printer = label,
                     Kind::Filament => self.filament = label,
+                    Kind::Process => self.process = label,
                 }
                 (self.failed, self.status) = (false, String::new());
             }
@@ -298,11 +311,13 @@ impl App {
         let chosen = match kind {
             Kind::Printer => self.printer.clone(),
             Kind::Filament => self.filament.clone(),
+            Kind::Process => self.process.clone(),
         };
         let mut pick = None;
         let mine: Vec<String> = match kind {
             Kind::Printer => self.my_printers.keys().cloned().collect(),
             Kind::Filament => self.my_filaments.keys().cloned().collect(),
+            Kind::Process => self.my_processes.keys().cloned().collect(),
         };
         egui::ComboBox::from_id_salt(kind.word()).selected_text(chosen.clone().unwrap_or_else(|| "Choose...".into())).width(170.0).show_ui(
             ui,
@@ -340,6 +355,9 @@ impl App {
             ui.label("Filament");
             ui.horizontal(|ui| self.preset_picker(ui, Kind::Filament));
             ui.end_row();
+            ui.label("Process");
+            ui.horizontal(|ui| self.preset_picker(ui, Kind::Process));
+            ui.end_row();
         });
         ui.horizontal(|ui| {
             ui.add(egui::TextEdit::singleline(&mut self.preset_name).hint_text("Preset name").desired_width(110.0));
@@ -349,6 +367,9 @@ impl App {
             }
             if ui.button("Save filament").on_hover_text("Save the temperatures and fan shown").clicked() {
                 self.save_preset(Kind::Filament, &name);
+            }
+            if ui.button("Save process").on_hover_text("Save the layers, walls, skins and infill shown").clicked() {
+                self.save_preset(Kind::Process, &name);
             }
         });
     }
@@ -1306,6 +1327,22 @@ mod tests {
         assert_eq!((app.printer.as_deref(), app.filament.as_deref()), (Some("Generic 350 mm, Klipper"), Some("ABS")));
         app.apply_preset(Kind::Filament, "wood");
         assert!(app.failed && app.status.contains("there are"));
+    }
+
+    #[test]
+    fn a_process_preset_sets_the_layers_and_keeps_the_rest() {
+        let mut h = window();
+        h.get_by_label("Process");
+        let app = h.state_mut();
+        app.apply_preset(Kind::Filament, "PETG");
+        app.apply_preset(Kind::Process, "0.12 mm Fine");
+        assert_eq!((app.profile.layer_height, app.profile.nozzle_temp), (0.12, 240.0));
+        assert_eq!(app.print_json()["process"], "0.12 mm Fine", "the project keeps the label");
+        app.profile.perimeters = 5;
+        app.save_preset(Kind::Process, "Five walls");
+        app.apply_preset(Kind::Process, "Strong");
+        app.apply_preset(Kind::Process, "Five walls");
+        assert_eq!(app.profile.perimeters, 5);
     }
 
     #[test]

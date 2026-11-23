@@ -4,7 +4,7 @@ use lamina_core::{Command, Files, Mesh, Session};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::presets::{self, FILAMENTS, PRINTERS};
+use crate::presets::{self, FILAMENTS, PRINTERS, PROCESSES};
 use crate::print;
 use crate::profile::Profile;
 
@@ -14,9 +14,9 @@ const MAX_PROFILE_FILE: u64 = 1 << 20;
 pub static COMMANDS: &[Command] = &[
     Command {
         id: "slice",
-        params: "{path, ids?, printer?, filament?, profile?, profile_path?} slices the objects on the plate (all, or `ids`) to G-code at `path`. \
-                 Settings are laid over the defaults in this order: the project's print settings (from `open`, or the window's), `profile_path`'s JSON file, the `printer` and `filament` presets by name (see \
-                 `slicer_presets`), then `profile`, an object of the fields that differ (see `slicer_profile`). \
+        params: "{path, ids?, printer?, filament?, process?, profile?, profile_path?} slices the objects on the plate (all, or `ids`) to G-code at `path`. \
+                 Settings are laid over the defaults in this order: the project's print settings (from `open`, or the window's), `profile_path`'s JSON file, the `printer`, `filament` and `process` presets by name \
+                 (see `slicer_presets`), then `profile`, an object of the fields that differ (see `slicer_profile`). \
                  Returns {path, layers, filament_mm, print_seconds, warnings}. It refuses an object that is off the plate, below it or too tall, and says which",
         run: slice,
         undoable: false,
@@ -24,7 +24,7 @@ pub static COMMANDS: &[Command] = &[
     },
     Command {
         id: "slice_check",
-        params: "{ids?, printer?, filament?, profile?} the same slice as `slice`, with no file written: what would print and whether it can. Returns {layers, filament_mm, print_seconds, print_time, warnings, features (filament mm by kind: outer-wall, inner-wall, solid-infill, sparse-infill, skirt, brim, support, support-interface, raft)}, or an error saying what does not fit the plate (off it, below it, too tall) or what a setting must be. Use it to check a model before the user exports it",
+        params: "{ids?, printer?, filament?, process?, profile?} the same slice as `slice`, with no file written: what would print and whether it can. Returns {layers, filament_mm, print_seconds, print_time, warnings, features (filament mm by kind: outer-wall, inner-wall, solid-infill, sparse-infill, skirt, brim, support, support-interface, raft)}, or an error saying what does not fit the plate (off it, below it, too tall) or what a setting must be. Use it to check a model before the user exports it",
         run: slice_check,
         undoable: false,
         files: Files::None,
@@ -40,8 +40,9 @@ pub static COMMANDS: &[Command] = &[
     },
     Command {
         id: "slicer_presets",
-        params: "{} the built-in printer and filament presets: {printers:[{name, about, fields}], filaments:[...]}. Pass a name as `printer` or \
-                 `filament` to `slice` or `slice_check`; a printer sets the machine's fields, a filament its temperatures and fan",
+        params: "{} the built-in presets: {printers:[{name, about, fields}], filaments:[...], processes:[...]}. Pass a name as `printer`, \
+                 `filament` or `process` to `slice` or `slice_check`; a printer sets the machine's fields, a filament its temperatures and fan, \
+                 a process the layers and the strength (\"0.12 mm Fine\", \"0.20 mm Standard\", \"0.28 mm Draft\", \"Strong\")",
         run: list_presets,
         undoable: false,
         files: Files::None,
@@ -62,6 +63,7 @@ struct Args {
     ids: Option<Vec<u32>>,
     printer: Option<String>,
     filament: Option<String>,
+    process: Option<String>,
     profile: Option<Value>,
     profile_path: Option<String>,
 }
@@ -72,6 +74,7 @@ struct Check {
     ids: Option<Vec<u32>>,
     printer: Option<String>,
     filament: Option<String>,
+    process: Option<String>,
     profile: Option<Value>,
 }
 
@@ -80,6 +83,7 @@ struct Settings<'a> {
     file: Option<&'a str>,
     printer: Option<&'a str>,
     filament: Option<&'a str>,
+    process: Option<&'a str>,
     over: Option<Value>,
 }
 
@@ -103,7 +107,7 @@ fn run(s: &Session, ids: Option<&[u32]>, settings: Settings) -> Result<print::Ou
     };
     let Value::Object(base) = &mut merged else { return Err("internal: the base profile is an object".into()) };
     base.extend(file);
-    for (name, list) in [(settings.printer, PRINTERS), (settings.filament, FILAMENTS)] {
+    for (name, list) in [(settings.printer, PRINTERS), (settings.filament, FILAMENTS), (settings.process, PROCESSES)] {
         if let Some(name) = name {
             base.extend(presets::find(list, name)?.fields());
         }
@@ -190,8 +194,13 @@ fn summary(out: &print::Output) -> Value {
 
 fn slice(s: &mut Session, p: &Value) -> Result<Value, String> {
     let a = Args::deserialize(p).map_err(|e| format!("bad parameters: {e}"))?;
-    let settings =
-        Settings { file: a.profile_path.as_deref(), printer: a.printer.as_deref(), filament: a.filament.as_deref(), over: a.profile };
+    let settings = Settings {
+        file: a.profile_path.as_deref(),
+        printer: a.printer.as_deref(),
+        filament: a.filament.as_deref(),
+        process: a.process.as_deref(),
+        over: a.profile,
+    };
     let out = run(s, a.ids.as_deref(), settings)?;
     std::fs::write(&a.path, &out.gcode).map_err(|e| format!("{}: {e}", a.path))?;
     let mut v = summary(&out);
@@ -201,7 +210,13 @@ fn slice(s: &mut Session, p: &Value) -> Result<Value, String> {
 
 fn slice_check(s: &mut Session, p: &Value) -> Result<Value, String> {
     let a = Check::deserialize(p).map_err(|e| format!("bad parameters: {e}"))?;
-    let settings = Settings { file: None, printer: a.printer.as_deref(), filament: a.filament.as_deref(), over: a.profile };
+    let settings = Settings {
+        file: None,
+        printer: a.printer.as_deref(),
+        filament: a.filament.as_deref(),
+        process: a.process.as_deref(),
+        over: a.profile,
+    };
     run(s, a.ids.as_deref(), settings).map(|out| summary(&out))
 }
 
@@ -209,7 +224,7 @@ fn list_presets(_: &mut Session, _: &Value) -> Result<Value, String> {
     let list = |l: &[presets::Preset]| -> Vec<Value> {
         l.iter().map(|p| json!({"name": p.name, "about": p.about, "fields": p.fields()})).collect()
     };
-    Ok(json!({"printers": list(PRINTERS), "filaments": list(FILAMENTS)}))
+    Ok(json!({"printers": list(PRINTERS), "filaments": list(FILAMENTS), "processes": list(PROCESSES)}))
 }
 
 fn profile(_: &mut Session, _: &Value) -> Result<Value, String> {
@@ -314,6 +329,22 @@ mod tests {
         }
         s.execute("set_object_settings", &json!({"id": 2, "profile": null})).unwrap();
         assert!((s.execute("slice_check", &json!({})).unwrap()["filament_mm"].as_f64().unwrap() - plain).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_process_preset_sets_the_layers_and_the_strength() {
+        let mut s = session();
+        s.execute("add_primitive", &json!({"kind": "box", "size": [20, 20, 6]})).unwrap();
+        let standard = s.execute("slice_check", &json!({"process": "0.20 mm standard"})).unwrap();
+        let fine = s.execute("slice_check", &json!({"process": "0.12 mm Fine"})).unwrap();
+        let draft = s.execute("slice_check", &json!({"process": "0.28 mm Draft"})).unwrap();
+        let layers = |v: &Value| v["layers"].as_u64().unwrap();
+        assert!(layers(&fine) > layers(&standard) && layers(&standard) > layers(&draft));
+        let strong = s.execute("slice_check", &json!({"process": "Strong"})).unwrap();
+        assert!(strong["filament_mm"].as_f64().unwrap() > standard["filament_mm"].as_f64().unwrap() * 1.3);
+        assert_eq!(layers(&strong), layers(&standard), "Strong keeps the layer height");
+        assert!(s.execute("slice_check", &json!({"process": "ludicrous"})).unwrap_err().contains("0.12 mm Fine"));
+        assert_eq!(s.execute("slicer_presets", &json!({})).unwrap()["processes"].as_array().unwrap().len(), 4);
     }
 
     #[test]

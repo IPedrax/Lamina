@@ -30,6 +30,10 @@ pub struct Settings {
     pub printers: Presets,
     #[serde(default)]
     pub filaments: Presets,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub process: Option<String>,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub processes: Presets,
     /// Sealed keys by provider (`Provider::key`).
     #[serde(default)]
     pub keys: BTreeMap<String, String>,
@@ -89,8 +93,8 @@ impl Settings {
             }
         }
         let text = |k: &str| all.get(k).and_then(Value::as_str).filter(|t| t.len() <= 200).map(str::to_string);
-        (s.printer, s.filament) = (text("printer"), text("filament"));
-        for (key, into) in [("printers", &mut s.printers), ("filaments", &mut s.filaments)] {
+        (s.printer, s.filament, s.process) = (text("printer"), text("filament"), text("process"));
+        for (key, into) in [("printers", &mut s.printers), ("filaments", &mut s.filaments), ("processes", &mut s.processes)] {
             for (name, fields) in all.get(key).and_then(Value::as_object).into_iter().flatten() {
                 let ok = fields.as_object().filter(|f| presets::apply(&Profile::default(), f).is_ok() && name.len() <= 200);
                 match ok {

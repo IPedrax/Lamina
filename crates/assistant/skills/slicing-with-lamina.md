@@ -10,9 +10,10 @@ says what is wrong.
 
 ## Settings
 
-`slicer_presets` lists the built-in printers and filaments. Name them instead of setting temperatures by hand:
-`slice_check {printer: "Generic 300 mm, Klipper", filament: "PETG"}`. A printer preset sets the plate, nozzle, start and end G-code
-and retraction; a filament preset sets the temperatures and the fan; `profile` fields given as well win over both. The user's own
+`slicer_presets` lists the built-in printers, filaments and processes. Name them instead of setting fields by hand:
+`slice_check {printer: "Generic 300 mm, Klipper", filament: "PETG", process: "Strong"}`. A printer preset sets the plate, nozzle,
+start and end G-code and retraction; a filament preset sets the temperatures and the fan; a process sets the layers and the strength
+("0.12 mm Fine", "0.20 mm Standard", "0.28 mm Draft", "Strong"); `profile` fields given as well win over all three. The user's own
 presets live in the app's settings panel, not in these commands.
 
 `slicer_profile` prints every setting with its default. Pass only the fields that differ, for example

@@ -35,6 +35,9 @@ pub const PRINTER_FIELDS: &[&str] = &[
     "retract_speed",
     "travel_speed",
 ];
+/// The fields a process preset may set: the layers and the strength, never the machine or the filament.
+pub const PROCESS_FIELDS: &[&str] =
+    &["layer_height", "first_layer_height", "perimeters", "top_layers", "bottom_layers", "infill_density", "infill_pattern"];
 pub const FILAMENT_FIELDS: &[&str] =
     &["nozzle_temp", "first_layer_nozzle_temp", "bed_temp", "first_layer_bed_temp", "fan_speed", "pressure_advance"];
 
@@ -105,6 +108,29 @@ pub static FILAMENTS: &[Preset] = &[
     },
 ];
 
+pub static PROCESSES: &[Preset] = &[
+    Preset {
+        name: "0.12 mm Fine",
+        about: "thin layers for detail and smooth curves; about half again as long to print",
+        fields: r#"{"layer_height": 0.12, "first_layer_height": 0.2, "top_layers": 7, "bottom_layers": 5}"#,
+    },
+    Preset {
+        name: "0.20 mm Standard",
+        about: "the everyday balance of look and time: two walls, 15 % infill",
+        fields: r#"{"layer_height": 0.2, "first_layer_height": 0.2, "perimeters": 2, "top_layers": 4, "bottom_layers": 4, "infill_density": 0.15}"#,
+    },
+    Preset {
+        name: "0.28 mm Draft",
+        about: "thick layers for a quick test fit; visible lines",
+        fields: r#"{"layer_height": 0.28, "first_layer_height": 0.28, "top_layers": 3, "bottom_layers": 3, "infill_density": 0.1}"#,
+    },
+    Preset {
+        name: "Strong",
+        about: "four walls, thick skins and 40 % gyroid infill for parts that bear load; keeps the layer height",
+        fields: r#"{"perimeters": 4, "top_layers": 6, "bottom_layers": 6, "infill_density": 0.4, "infill_pattern": "gyroid"}"#,
+    },
+];
+
 impl Preset {
     /// The fields it sets.
     pub fn fields(&self) -> Map<String, Value> {
@@ -144,7 +170,7 @@ mod tests {
 
     #[test]
     fn every_built_in_sets_only_its_own_fields_and_gives_a_valid_profile() {
-        for (list, keys) in [(PRINTERS, PRINTER_FIELDS), (FILAMENTS, FILAMENT_FIELDS)] {
+        for (list, keys) in [(PRINTERS, PRINTER_FIELDS), (FILAMENTS, FILAMENT_FIELDS), (PROCESSES, PROCESS_FIELDS)] {
             for p in list {
                 let f = p.fields();
                 assert!(!f.is_empty(), "{} does not parse", p.name);

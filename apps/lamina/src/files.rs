@@ -57,6 +57,9 @@ impl App {
         if let Some(f) = &self.filament {
             v["filament"] = json!(f);
         }
+        if let Some(p) = &self.process {
+            v["process"] = json!(p);
+        }
         v
     }
 
@@ -129,7 +132,7 @@ impl App {
             None => {}
         }
         let label = |k: &str| print.get(k).and_then(Value::as_str).filter(|t| t.len() <= 200).map(str::to_string);
-        (self.printer, self.filament) = (label("printer"), label("filament"));
+        (self.printer, self.filament, self.process) = (label("printer"), label("filament"), label("process"));
         let ignored: Vec<&str> = r["ignored"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
         if !ignored.is_empty() {
             notes.push(format!("this version left out {}", ignored.join(", ")));
