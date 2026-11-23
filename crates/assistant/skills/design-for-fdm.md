@@ -43,5 +43,8 @@ a fit matters, say that the clearances are defaults and that the first print is 
 ## Size limits
 
 - The part must fit the plate (220 x 220 mm and 250 mm tall by default). `slicer_profile` shows the printer's size and `slice_check`
-  refuses what does not fit, and says by how much.
+  refuses what does not fit, and says by how much. A part too big is printed in pieces: `split_to_fit {id}` cuts it with connectors.
+- Connectors need room: a hole wants 2 mm of wall round it and behind its bottom, so a cut face under about 8 mm across gets none.
+  A printed dowel standing up is weakest across its layers, right at the joint: for a joint that takes load, glue it as well, or
+  use a steel or wooden dowel of the hole's size.
 - Layer height is at most 80 percent of the nozzle. Thinner is slower and smoother.

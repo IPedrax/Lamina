@@ -27,10 +27,29 @@ pub static COMMANDS: &[Command] = &[
     },
     Command {
         id: "cut",
-        params: "{id, z, keep?:\"both\"|\"lower\"|\"upper\" (default both), name?} cuts an object with the level plane at height `z` (mm, between \
-                 its bottom and top). The lower part stays where it is; the upper part is turned over onto its flat cut face and set beside it, \
-                 ready to print. Returns {ids}: the lower part's id first",
-        run: cut,
+        params: "{id, axis?:\"x\"|\"y\"|\"z\" (default z), at (mm along `axis`, between the object's least and greatest), keep?:\"both\"|\
+                 \"lower\"|\"upper\" (default both; lower is the side toward minus the axis), connectors?:{kind?:\"dowel\"|\"pin\"|\"none\", \
+                 count? (1..8, default 2), diameter? (mm, default from the face, 3 to 8), depth? (mm into each piece, default 1.5 x the \
+                 diameter, at most 15), clearance? (mm a side, default 0.2)}, lay_out? (default false), name?} cuts an object in two with the \
+                 plane square to `axis` at `at` (`{id, z}` still cuts level at height z). Each piece is closed and named with \" 1\" or \" 2\". \
+                 Without `kind`, dowels are made where the cut face has room (else none, said in `note`): holes in both pieces at the same \
+                 places and a loose dowel pin for each pair, added as objects. \"pin\" joins pegs to piece 1 and cuts sockets in piece 2. \
+                 Two or more are spread over the face so the pieces cannot turn; where only one fits it is a square key. Without \
+                 `lay_out` everything stays where it stood, put together, the dowels in their holes; with it each piece is turned to print \
+                 (onto its cut face, pegs up) and the plate is arranged. Returns {ids (piece 1 first), dowels, connectors (sizes and the \
+                 centres `at`, as cut), note?, fits? (laid out)}",
+        run: crate::split::cut,
+        undoable: true,
+        files: Files::None,
+    },
+    Command {
+        id: "split_to_fit",
+        params: "{id, bed?:[x, y] (default the project's plate), height? (default the printer's), connectors? (as `cut` takes them), \
+                 gap? (mm between pieces, default 5)} cuts an object too big for the printer into pieces that each fit: across its longest \
+                 side that does not fit first, each such side in as few equal pieces as fit, with connectors at every cut. Each piece is \
+                 turned to print where that helps (onto a cut face, pegs up), the dowels stand beside them, and the whole plate is arranged. \
+                 Returns {ids (the pieces), dowels, cuts:[{axis, at, connectors}], fits (all on the plate at once), each_fits, note?}",
+        run: crate::split::split_to_fit,
         undoable: true,
         files: Files::None,
     },
@@ -76,63 +95,6 @@ fn difference(s: &mut Session, p: &Value) -> Result<Value, String> {
     let mut all = vec![a.id];
     all.extend(&a.minus);
     fold(s, Op::Difference, &all, a.name)
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Plane {
-    id: u32,
-    z: f64,
-    keep: Option<String>,
-    name: Option<String>,
-}
-
-fn cut(s: &mut Session, p: &Value) -> Result<Value, String> {
-    let a = Plane::deserialize(p).map_err(|e| format!("bad parameters: {e}"))?;
-    let (lower, upper) = match a.keep.as_deref().unwrap_or("both") {
-        "both" => (true, true),
-        "lower" => (true, false),
-        "upper" => (false, true),
-        other => return Err(format!("`keep` is both, lower or upper, not {other}")),
-    };
-    let o = s.scene.get(a.id)?.clone();
-    let (lo, hi) = o.bounds().ok_or("the object is empty")?;
-    if !a.z.is_finite() || a.z <= lo[2] + 1e-3 || a.z >= hi[2] - 1e-3 {
-        return Err(format!("`z` must be between the object's bottom ({:.3}) and top ({:.3}) mm", lo[2], hi[2]));
-    }
-    // A box larger than the object above the plane: what it shares with the object is the upper part, what it cuts away the lower.
-    let margin = 10.0;
-    let size = [hi[0] - lo[0] + 2.0 * margin, hi[1] - lo[1] + 2.0 * margin, hi[2] - a.z + margin];
-    let above = Mesh::cuboid(size).transformed(&Transform::translate([(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, a.z]));
-    let placed = (&*o.mesh, o.xf);
-    let name = a.name.unwrap_or_else(|| o.name.clone());
-    let mut parts: Vec<(String, Mesh)> = Vec::new();
-    if lower {
-        parts.push((format!("{name} lower"), isolated(Op::Difference, placed, (&above, Transform::IDENTITY))?));
-    }
-    if upper {
-        let top = isolated(Op::Intersect, placed, (&above, Transform::IDENTITY))?;
-        // Turned over about x so the cut face, which was its bottom, is on the plate, and set beside the object.
-        let (tlo, thi) = top.bounds().ok_or("the upper part is empty")?;
-        let c = [(tlo[0] + thi[0]) / 2.0, (tlo[1] + thi[1]) / 2.0, (tlo[2] + thi[2]) / 2.0];
-        let side = if lower { hi[0] - lo[0] + 5.0 } else { 0.0 };
-        let over = Transform::translate(c.map(|v| -v)).then(&Transform::rotate(0, 180.0)).then(&Transform::translate([
-            c[0] + side,
-            c[1],
-            (thi[2] - tlo[2]) / 2.0,
-        ]));
-        parts.push((format!("{name} upper"), top.transformed(&over)));
-    }
-    if parts.iter().any(|(_, m)| m.triangles.is_empty()) {
-        return Err("the cut left a part with nothing in it".into());
-    }
-    let scene = s.scene_mut();
-    scene.objects.retain(|x| x.id != a.id);
-    let mut ids = Vec::new();
-    for (n, m) in parts {
-        ids.push(scene.add_placed(&n, m)?);
-    }
-    Ok(json!({"ids": ids}))
 }
 
 /// The first of `ids` combined with each of the others in turn, the operands replaced by the result.
@@ -198,12 +160,12 @@ mod tests {
     }
 
     #[test]
-    fn a_cut_makes_two_closed_parts_whose_volumes_add_up_the_upper_one_turned_onto_its_cut() {
+    fn a_cut_laid_out_makes_two_closed_parts_whose_volumes_add_up_side_by_side_on_the_plate() {
         let mut s = Session::new();
         s.register(COMMANDS);
         s.execute("add_primitive", &json!({"kind": "cylinder", "radius": 10, "height": 20, "segments": 32})).unwrap();
         let whole = s.scene.get(1).unwrap().world().volume();
-        let r = s.execute("cut", &json!({"id": 1, "z": 8})).unwrap();
+        let r = s.execute("cut", &json!({"id": 1, "z": 8, "connectors": {"kind": "none"}, "lay_out": true})).unwrap();
         let ids: Vec<u32> = r["ids"].as_array().unwrap().iter().map(|v| v.as_u64().unwrap() as u32).collect();
         assert_eq!(ids.len(), 2);
         let (lower, upper) = (s.scene.get(ids[0]).unwrap(), s.scene.get(ids[1]).unwrap());
@@ -212,7 +174,8 @@ mod tests {
         assert!((vl + vu - whole).abs() < 1e-3 * whole && (vl / whole - 0.4).abs() < 0.01, "{vl} {vu} {whole}");
         let (llo, lhi) = lower.bounds().unwrap();
         let (ulo, uhi) = upper.bounds().unwrap();
-        assert!((lhi[2] - 8.0).abs() < 1e-3 && (uhi[2] - 12.0).abs() < 1e-3 && ulo[2].abs() < 1e-6, "{lhi:?} {ulo:?} {uhi:?}");
+        assert!((lhi[2] - 8.0).abs() < 1e-3 && (uhi[2] - 12.0).abs() < 1e-3, "{lhi:?} {ulo:?} {uhi:?}");
+        assert!(llo[2].abs() < 1e-6 && ulo[2].abs() < 1e-6, "both on the plate: {llo:?} {ulo:?}");
         assert!(ulo[0] > lhi[0], "the upper part stands beside the lower one: {llo:?} {ulo:?}");
         s.execute("undo", &json!({})).unwrap();
         assert_eq!(s.scene.objects.len(), 1, "one undo puts the whole back");

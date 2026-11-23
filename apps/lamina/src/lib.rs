@@ -129,8 +129,10 @@ pub struct App {
     pub status: String,
     pub failed: bool,
     nudge: [f64; 3],
-    /// The height the Cut button cuts the picked object at.
-    cut_z: f64,
+    /// The Cut tools: the axis (0 x, 1 y, 2 z), where along it, and the connectors ("dowel", "pin" or "none").
+    cut_axis: usize,
+    cut_at: f64,
+    connector: &'static str,
     /// The picked object's position and size as the fields show them while they are edited: the object and the scene they were
     /// read from, so they are read again when either changes.
     fields: Option<Fields>,
@@ -213,7 +215,9 @@ impl App {
             status: String::new(),
             failed: false,
             nudge: [10.0, 0.0, 0.0],
-            cut_z: 10.0,
+            cut_axis: 2,
+            cut_at: f64::NAN,
+            connector: "dowel",
             fields: None,
             keep_proportions: true,
             axis: 2,
@@ -895,6 +899,7 @@ impl App {
     }
 
     fn plate_panel(&mut self, ui: &mut Ui) {
+        self.view.plane = None;
         ui.heading("Plate");
         let rows: Vec<(u32, String)> = self
             .session
@@ -970,6 +975,9 @@ impl App {
             move |s| s.execute(command, &params).map(work::Done::Value),
             |app, done| {
                 if let Ok(work::Done::Value(v)) = done {
+                    if let Some(note) = v["note"].as_str() {
+                        app.status = format!("Done; {note}.");
+                    }
                     let one = v["id"].as_u64().into_iter();
                     let many = v["ids"].as_array().into_iter().flatten().filter_map(Value::as_u64);
                     app.selected = one.chain(many).map(|i| i as u32).collect();
@@ -1032,16 +1040,7 @@ impl App {
                 self.run("scale", json!({ "id": id, "factor": self.factor }));
             }
         });
-        ui.horizontal(|ui| {
-            ui.add(egui::DragValue::new(&mut self.cut_z).speed(0.2).prefix("z ").suffix(" mm"));
-            if ui
-                .button("Cut")
-                .on_hover_text("Cut at this height: the top part is turned onto its cut face beside the bottom one")
-                .clicked()
-            {
-                self.boolean("cut", json!({ "id": id, "z": self.cut_z }));
-            }
-        });
+        egui::CollapsingHeader::new("Cut into pieces").show(ui, |ui| self.cut_ui(ui, id));
         // A heavy mesh (a scan, say) can be given fewer triangles; on a thread, as it can take seconds.
         let triangles = self.session.scene.get(id).map_or(0, |o| o.mesh.triangles.len());
         if triangles > 1000 {
@@ -1079,6 +1078,51 @@ impl App {
             }
             if ui.button("Delete").clicked() {
                 self.run("delete", json!({ "id": id }));
+            }
+        });
+    }
+
+    /// The Cut tools for the picked object: a plane square to an axis, shown in the 3D view, where the slider puts it; the connectors;
+    /// Cut, and Split to fit plate. Dowels are left to the command to place, so a face too small for them is cut without and said.
+    fn cut_ui(&mut self, ui: &mut Ui, id: u32) {
+        let Some((lo, hi)) = self.session.scene.get(id).ok().and_then(|o| o.bounds()) else { return };
+        ui.horizontal(|ui| {
+            ui.label("Across");
+            for (k, axis) in ["x", "y", "z"].into_iter().enumerate() {
+                ui.selectable_value(&mut self.cut_axis, k, axis);
+            }
+        });
+        let k = self.cut_axis.min(2);
+        if !(lo[k]..=hi[k]).contains(&self.cut_at) {
+            self.cut_at = (lo[k] + hi[k]) / 2.0;
+        }
+        ui.add(egui::Slider::new(&mut self.cut_at, lo[k]..=hi[k]).text("at").suffix(" mm").max_decimals(2));
+        let (ku, kv, m) = ((k + 1) % 3, (k + 2) % 3, 5.0);
+        self.view.plane = Some([(-m, -m), (m, -m), (m, m), (-m, m)].map(|(du, dv)| {
+            let mut p = [0.0; 3];
+            p[k] = self.cut_at;
+            p[ku] = if du < 0.0 { lo[ku] + du } else { hi[ku] + du };
+            p[kv] = if dv < 0.0 { lo[kv] + dv } else { hi[kv] + dv };
+            p
+        }));
+        ui.horizontal(|ui| {
+            ui.selectable_value(&mut self.connector, "dowel", "Dowels")
+                .on_hover_text("Holes in both pieces and loose pins to print; left out, and said, where the face is too small");
+            ui.selectable_value(&mut self.connector, "pin", "Pins").on_hover_text("Pegs on one piece, sockets in the other");
+            ui.selectable_value(&mut self.connector, "none", "None");
+        });
+        let connectors = if self.connector == "dowel" { json!({}) } else { json!({ "kind": self.connector }) };
+        ui.horizontal(|ui| {
+            if ui.button("Cut").on_hover_text("Cut here; each piece is turned to print and the plate laid out").clicked() {
+                let axis = ["x", "y", "z"][k];
+                self.boolean("cut", json!({ "id": id, "axis": axis, "at": self.cut_at, "connectors": connectors, "lay_out": true }));
+            }
+            if ui
+                .button("Split to fit plate")
+                .on_hover_text("Cut it into as few pieces as fit the printer, with connectors at every cut")
+                .clicked()
+            {
+                self.boolean("split_to_fit", json!({ "id": id, "connectors": connectors }));
             }
         });
     }
@@ -1646,6 +1690,46 @@ mod tests {
         app.wait();
         assert_eq!(app.session.scene.objects.len(), 3, "nothing lost and nothing applied");
         assert!(app.failed && app.status.contains("plate changed"), "{}", app.status);
+    }
+
+    #[test]
+    fn the_cut_tools_show_their_plane_cut_with_connectors_and_split_to_fit() {
+        let mut h = window();
+        h.state_mut().run("add_primitive", json!({"kind": "box", "size": [40, 40, 60]}));
+        h.state_mut().selected = vec![1];
+        h.run();
+        assert!(h.state().view.plane.is_none(), "no plane while the Cut tools are closed");
+        press(&mut h, "Cut into pieces");
+        let plane = h.state().view.plane.unwrap();
+        assert!(plane.iter().all(|p| (p[2] - 30.0).abs() < 1e-9), "level, through the middle: {plane:?}");
+        // Dowels by default: two pieces, a dowel for each pair of holes, one undo step.
+        press(&mut h, "Cut");
+        let app = h.state();
+        assert!(!app.failed, "{}", app.status);
+        assert_eq!((app.session.scene.objects.len(), app.selected.len(), app.session.undo_label()), (4, 2, Some("cut")));
+        assert!(app.session.scene.objects.iter().all(|o| o.bounds().unwrap().0[2].abs() < 1e-6), "laid out on the plate");
+        press(&mut h, "Undo");
+        // Across x, with pins: the plane stands upright through the middle, and no loose dowels are made.
+        let app = h.state_mut();
+        (app.selected, app.cut_axis) = (vec![1], 0);
+        h.run();
+        let plane = h.state().view.plane.unwrap();
+        assert!(plane.iter().all(|p| p[0].abs() < 1e-9), "{plane:?}");
+        press(&mut h, "Pins");
+        press(&mut h, "Cut");
+        assert_eq!(h.state().session.scene.objects.len(), 2, "{}", h.state().status);
+        // A part too tall for the printer is split into pieces that each fit.
+        press(&mut h, "Undo");
+        h.state_mut().run("add_primitive", json!({"kind": "cylinder", "radius": 25, "height": 300, "at": [80, 0]}));
+        h.state_mut().selected = vec![2];
+        h.run();
+        press(&mut h, "Dowels");
+        press(&mut h, "Split to fit plate");
+        let app = h.state();
+        assert!(!app.failed, "{}", app.status);
+        assert_eq!(app.session.undo_label(), Some("split_to_fit"));
+        assert!(app.session.scene.objects.len() >= 5, "two pieces, their dowels and the box");
+        assert!(app.session.scene.objects.iter().all(|o| o.bounds().unwrap().1[2] <= 250.0));
     }
 
     #[test]

@@ -719,13 +719,13 @@ struct Arrange {
 }
 
 /// The plate from the project's print settings, else the default 220 mm one.
-fn plate(s: &Session) -> [f64; 2] {
+pub fn plate(s: &Session) -> [f64; 2] {
     s.print["profile"]["bed"].as_array().and_then(|b| Some([b.first()?.as_f64()?, b.get(1)?.as_f64()?])).unwrap_or([220.0, 220.0])
 }
 
 /// Lays `ids` out in rows inside `bed` (a shelf packer: the deepest footprints first, each row as deep as its deepest), `gap` apart,
 /// and centres the whole on the plate. Returns whether it all fits.
-fn lay_out(s: &mut Session, ids: &[u32], gap: f64, bed: [f64; 2]) -> Result<bool, String> {
+pub fn lay_out(s: &mut Session, ids: &[u32], gap: f64, bed: [f64; 2]) -> Result<bool, String> {
     let mut boxes: Vec<(u32, P3, P3)> =
         ids.iter().map(|&id| s.scene.get(id).and_then(size_of).map(|(lo, hi)| (id, lo, hi))).collect::<Result<_, _>>()?;
     boxes.sort_by(|a, b| (b.2[1] - b.1[1]).total_cmp(&(a.2[1] - a.1[1])).then(a.0.cmp(&b.0)));

@@ -46,10 +46,23 @@ the result stands, as one undo step. The result keeps the first object's name un
 - Booleans are reliable on boxes, cylinders and spheres, upright or turned. A boolean that cannot give a clean solid says so and
   changes nothing: move or resize a shape by a hundredth of a millimetre and try again. Do turns before booleans where you can: the
   first boolean on an object sees its faces exactly flat, a later one only to the precision stored.
-- `cut {id, z}` splits an object at a height into two closed parts, the upper one turned onto its flat cut face beside the lower:
-  for a part too tall for the printer, or one that prints better in two halves.
 - Booleans take longer on shapes with many segments. Use 24 to 32 segments for a cutting tool.
 - Still missing: fillets and chamfers (a rounded box and a rounded_rect extrude round their edges), text, threads and sweeps. Say so plainly, and offer the closest thing that works.
+
+## Pieces that go back together
+
+- Too big for the printer: `split_to_fit {id}` cuts it into as few pieces as fit the plate and its height, with connectors at
+  every cut, turns each piece to print and arranges the plate. Read `each_fits` and `fits` (false: they need several plates) and
+  `note`. If the part would fit turned another way (a long bar standing up), `rotate` it first instead of cutting.
+- One cut where you choose: `cut {id, axis: "x", at: 10}` (mm along the axis; `{id, z}` cuts level). Cut where the faces are
+  wide and flat, away from thin walls and details, and where the seam shows least. `lay_out: true` turns the pieces to print and
+  arranges the plate; without it they stay put together, which is how to check them.
+- Connectors, `connectors: {kind}`: left out, dowels go where the face has room, else none and a `note` says so. Dowels
+  (`"dowel"`) are holes in both pieces and loose pins added as objects: both pieces can lie on their cut faces, and a bought steel
+  or wooden dowel of the same diameter can replace a printed one. Pins (`"pin"`) are pegs on piece 1 and sockets in piece 2: no
+  loose parts, but the peg piece prints pegs up. `"none"` for parts to glue. Two or more are spread over the face so the pieces
+  cannot turn; where only one fits it is a square key. Sizes come from the face (3 to 8 mm, holes 1.5 times as deep); give
+  `diameter`, `depth`, `count` or `clearance` (0.2 mm a side by default) only for a reason, and report what the reply says.
 
 ## Parts you may change later
 

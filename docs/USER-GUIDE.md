@@ -68,10 +68,32 @@ all, set the environment variable `LAMINA_NO_UPDATE_CHECK=1`: the menu items and
 - **Lay flat** (L): click a face to turn it down onto the plate. **Measure** (M): click two points.
 - **R** turns the picked objects 90 degrees, **F** frames them, **A** arranges the plate, **Ctrl+D** duplicates, **Delete**
   deletes. View, Keyboard shortcuts lists them all.
-- With one object picked, the panel also has Move by, Rotate, Mirror, Scale, Cut at a height, Duplicate and Drop to plate. With
+- With one object picked, the panel also has Move by, Rotate, Mirror, Scale, Cut into pieces, Duplicate and Drop to plate. With
   several, Union, Subtract and Intersect. A boolean that cannot give a sound solid says so and changes nothing.
 - **This object's settings** lets one object print differently from the rest: its own walls, infill, seam, speeds or supports.
 - **Undo** takes back a whole step, a drag or a chat turn alike; Edit, History goes back several at once.
+
+## Cutting a part into pieces
+
+Cut into pieces, under the picked object, cuts it with a plane and adds connectors so the printed pieces go back together. Pick the
+axis the plane crosses (x, y or z) and move the slider: the plane shows in the 3D view, translucent blue. Then pick the connectors:
+
+| Connectors | What is made | Printing |
+|---|---|---|
+| Dowels | holes in both pieces at the same places, and a loose pin for each pair, 0.2 mm a side smaller than its holes | both pieces can lie on their cut faces; a steel or wooden dowel of the hole's size can replace a printed pin |
+| Pins | pegs on one piece and sockets, 0.2 mm a side larger, in the other | the peg piece prints pegs up |
+| None | nothing: for parts you glue | |
+
+Two or more connectors are spread across the cut face, so the pieces cannot turn on them; where only one fits it is a square key.
+Their size comes from the face (3 to 8 mm across, the holes about one and a half times as deep, never through a wall or the far
+end). A face with no room for one is cut without and the status bar says so. Cut turns each piece to print and lays the plate out.
+
+Split to fit plate cuts a part too big for the printer into as few pieces as fit the plate and the printer's height: across its
+longest side that does not fit first, in equal pieces, with the connectors chosen at every cut. Each piece is turned onto a cut
+face where that leaves it no taller, the dowels stand beside them, and the plate is laid out. If the pieces do not all fit on the
+plate at once, the status bar says to print them in batches. Undo takes the whole cut or split back.
+
+The assistant has the same two commands (`cut` and `split_to_fit`), and can cut where you say along any axis.
 
 ## Presets of your own
 

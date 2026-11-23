@@ -334,6 +334,8 @@ pub struct View {
     pub tool: Tool,
     /// Points measured, drawn joined over the picture.
     pub marks: Vec<P3>,
+    /// The corners of a cut's plane, drawn translucent over the picture while the window shows the Cut tools; set each frame.
+    pub plane: Option<[P3; 4]>,
     /// Where the view was last drawn in the window, and its response, for the right-click menu.
     pub rect: Option<Rect>,
     pub response: Option<egui::Response>,
@@ -450,6 +452,13 @@ impl View {
                 };
                 painter.text(p + vec2(16.0, -16.0), egui::Align2::LEFT_BOTTOM, text, FontId::proportional(13.0), Color32::WHITE);
             }
+        }
+        // Painted over the picture, so it shows the same whichever draws it, the card or the processor.
+        let corners = self.plane.map(|q| q.map(|p| self.camera.project(p, f64::from(rect.width()), f64::from(rect.height()))));
+        if let Some([Some(a), Some(b), Some(c), Some(d)]) = corners {
+            let quad = [a, b, c, d].map(|q| pos2(rect.min.x + q[0] as f32, rect.min.y + q[1] as f32)).to_vec();
+            let edge = Color32::from_rgb(120, 200, 255);
+            painter.add(Shape::convex_polygon(quad, Color32::from_rgba_unmultiplied(120, 200, 255, 60), Stroke::new(1.5, edge)));
         }
         let marks: Vec<Pos2> = self
             .marks

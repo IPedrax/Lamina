@@ -36,7 +36,7 @@ command that fails, panics or leaves the scene invalid changes nothing, and each
 
 - `crates/core`: meshes, the scene, STL, 3MF, OBJ and glTF files, mesh repair, `.lamina` projects, the command engine.
 - `crates/slicer`: layers, walls, infill, G-code, printer profiles.
-- `crates/csg`: `union`, `difference` and `intersect` of objects, on csgrs (pure Rust).
+- `crates/csg`: `union`, `difference` and `intersect` of objects on csgrs (pure Rust), and `cut` and `split_to_fit` with connectors.
 - `crates/assistant`: the AI chat (Anthropic, OpenAI, Gemini; your own key). With `crates/printer` and `crates/update`, the only code
   that touches the network.
 - `crates/printer`: sending the G-code to Moonraker (Klipper), OctoPrint, PrusaLink or a Duet on your network, or streaming it to a

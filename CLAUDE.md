@@ -57,7 +57,8 @@ CI (`.github/workflows/ci.yml`) runs the same three on Linux, Windows and macOS 
   (`slice`, `slice_check`, `slicer_presets`, `slicer_profile`; an app adds them with `session.register(lamina_slicer::COMMANDS)`).
   `tests/golden/`: models whose G-code is compared line by line; a slicer change re-blesses them with `LAMINA_BLESS=1` and the diff
   is read before it is committed.
-- `crates/csg`: `boolean(op, a, b)`, the only code that knows csgrs, and the `union`, `difference`, `intersect` and `cut` commands. A result is
+- `crates/csg`: `boolean(op, a, b)`, the only code that knows csgrs, and the `union`, `difference` and `intersect` commands; `split.rs`
+  has `cut` (any axis, with dowels or pins placed on the cut face by the slicer's sections) and `split_to_fit`. A result is
   returned only if `sound` accepts it (closed, possible volume and bounds): refuse, never return a broken mesh. It builds the BSP
   trees itself (`build`, never on a sliver's plane) rather than with csgrs' `Node::build`. The crack repair it
   runs is `lamina_core::repair::close_with`. `child.rs`: the apps run each boolean in a copy of themselves (`--boolean-child`), so a

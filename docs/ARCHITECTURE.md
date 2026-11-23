@@ -53,7 +53,7 @@ desktop (lamina) ──────┘
 |---|---|---|
 | `lamina-core` | `Mesh`, `Transform`, STL and 3MF read/write, OBJ and glTF read, `.lamina` projects, mesh repair, sketches, `Scene`, `Session`, `bridge`, built-in commands | serde, miniz_oxide, quick-xml, i_overlay, i_triangle |
 | `lamina-slicer` | `slice` (mesh to loops), `geom` (polygon booleans and offsets on `i_overlay`), `print` (walls, infill, G-code), `profile`, the `slice` and `slicer_profile` commands | core, i_overlay |
-| `lamina-csg` | `boolean` over csgrs' BSP trees, crack repair, the soundness gate, the `union`, `difference` and `intersect` commands | core, csgrs |
+| `lamina-csg` | `boolean` over csgrs' BSP trees, crack repair, the soundness gate, the `union`, `difference` and `intersect` commands; `cut` along any axis with connectors and `split_to_fit` | core, slicer, csgrs |
 | `lamina-assistant` | provider clients, sealed key storage, tool layer, turn loop | core, ureq, ring |
 | `lamina-printer` | uploads to Moonraker, OctoPrint, PrusaLink and Duet, streams to a printer on a USB cable, the `send_to_printer` command | core, ureq, serial2 |
 | `lamina-update` | the updater: the latest release from GitHub, its installer downloaded and checked, put in place | ureq, ring, semver |
@@ -303,6 +303,19 @@ merges flat patches in the object's frame, where the cap is exactly flat, and mo
 f64's rounding, far inside csgrs' 1e-8. Upright, every cell is 100% but sphere with sphere union (6 of 7); tilted, every cell is. What is refused is refused with advice; nothing broken is returned. If csgrs ever recursed without end on some input, the stack overflow would abort the process: so the desktop and the CLI run
 each boolean in a copy of themselves (`child.rs`, `--boolean-child`, ported from BIMCraft's DWG reader), and a child that aborts or
 runs past two minutes is an error the app carries on from. Tests, and apps that do not ask, run booleans in the process.
+
+Cutting into pieces (`split.rs`) is booleans with a box bigger than the object on one side of the plane, then the connectors: holes
+cut from both pieces (dowels, with a loose chamfered pin for each pair) or pegs joined to one and sockets cut from the other (pins),
+each tool all its connectors merged into one closed mesh of several shells, so a cut is four booleans. Where they go is 2D work on the
+slicer's own tools, which is why `lamina-csg` depends on `lamina-slicer`: the cut face is `slice::layers_at` of the object turned so
+the cut's axis is z, intersected with the sections a millimetre apart to a wall beyond the bottom of each hole (so no hole breaks
+through a side or the far end), then `geom::inset` by the hole's radius and a wall. The centres are spread by farthest-point
+sampling over a grid of what is left and its corners, two by default, so the pieces cannot turn; one alone is a square key. The
+size steps down from one sixth of the face's square root (3 to 8 mm) until two fit. `split_to_fit` plans every plane first (each
+overflowing side in as few equal pieces as fit, the longest first) and keeps connectors off the planes across them, then cuts
+piece by piece. Laid out, a piece with pegs stands pegs up, and another turns onto a cut face when that leaves it no taller and the
+face is no smaller than what it stands on (half a ball lies on its flat; a cone's foot stays down). The check that matters, holes
+in line with holes and pegs with sockets when the pieces are put back together, is tested on the pieces' own sections.
 
 csgrs 0.20.1 also needs `core2`, every release of which is yanked, so `vendor/core2` stands in for it over `std::io` (the root
 `Cargo.toml` patches it in); remove it when csgrs stops asking.

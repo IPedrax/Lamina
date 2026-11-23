@@ -93,6 +93,15 @@ Priorities:
 - **3.6 Cut with a plane.** `cut {id, z, keep?}` in `lamina-csg`: a difference and an intersection with a box larger than the object
   above the plane; the lower part stays, the upper is turned onto its cut face and set beside it, both closed. A general plane is
   for later. A Cut control in the window.
+- **3.14 Cut into pieces with connectors, and split to fit.** `cut {id, axis, at, connectors?, lay_out?}` cuts along x, y or z
+  (`{id, z}` still works) and keeps the pieces where they stood unless asked to lay them out. Connectors are automatic by default:
+  dowels where the face has room (holes in both pieces and a loose chamfered pin each), else none with a note; or pins (pegs and
+  sockets with clearance), or none. They are placed on the cut face (the slicer's section, shrunk by the sections down each hole's
+  depth and inset by its radius and a wall) by farthest-point sampling, two or more so the pieces cannot turn, a square key where only
+  one fits. `split_to_fit {id, bed?, height?, connectors?, gap?}` cuts an object too big for the printer into as few equal pieces
+  as fit, longest side first, keeps connectors off the other cuts, turns each piece to print and arranges the plate. Tested through
+  the pieces' sections: holes line up with holes and pegs with sockets. A Cut into pieces section in the window, with the plane
+  drawn over the 3D view, and both commands in the modelling skill. Cuts are axis-aligned; a tilted plane is for later.
 - **3.8 More shapes.** `add_primitive` kinds `cone` (and frustum, with `radius_top`), `prism`, `pyramid`, `tube` (built directly),
   `torus` and `rounded_box` (each face's grid pushed out from the box shrunk by the radius, so edges are quarter cylinders and
   corners eighths of a sphere). Each is tested closed with its volume; the window has a More shapes menu.

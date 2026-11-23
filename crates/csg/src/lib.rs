@@ -8,6 +8,7 @@
 
 mod child;
 mod commands;
+mod split;
 
 use std::collections::{HashMap, HashSet};
 
