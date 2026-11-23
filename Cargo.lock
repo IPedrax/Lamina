@@ -2009,6 +2009,7 @@ dependencies = [
  "lamina-csg",
  "lamina-printer",
  "lamina-slicer",
+ "lamina-update",
  "pollster 1.0.3",
  "rfd",
  "serde",
@@ -2091,6 +2092,17 @@ dependencies = [
  "lamina-core",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "lamina-update"
+version = "0.1.0"
+dependencies = [
+ "lamina-core",
+ "ring",
+ "semver",
+ "serde_json",
+ "ureq",
 ]
 
 [[package]]

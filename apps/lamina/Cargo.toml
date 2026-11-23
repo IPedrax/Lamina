@@ -25,6 +25,8 @@ lamina-slicer = { workspace = true }
 lamina-csg = { workspace = true }
 lamina-assistant = { path = "../../crates/assistant" }
 lamina-printer = { workspace = true }
+# The updater: only this app may depend on it (the core's network_boundary test reads every manifest).
+lamina-update = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 eframe = "0.36"
@@ -36,6 +38,7 @@ rfd = "0.17"
 [dev-dependencies]
 lamina-assistant = { path = "../../crates/assistant", features = ["testing"] }
 lamina-printer = { workspace = true, features = ["testing"] }
+lamina-update = { workspace = true, features = ["testing"] }
 # `wgpu` lets a test render the whole window to a picture, to look at it.
 egui_kittest = { version = "0.36", features = ["wgpu"] }
 tempfile = "3"

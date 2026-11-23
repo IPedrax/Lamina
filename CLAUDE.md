@@ -18,8 +18,9 @@ Lamina is a 3D slicer and modelling tool with a built-in AI chat, a CLI and an M
   checks in `tmp`, never as a dependency). Skills for the AI are plain Markdown compiled in; a Three.js, WebGPU or Python skill
   from elsewhere is read for its ideas and never used as code.
 - **The core has no UI and no network.** `lamina-core` must not depend on a UI toolkit or an HTTP client, so front ends stay swappable.
-  Only two crates reach the network: the AI chat (`crates/assistant`) and the printer connection (`crates/printer`, to the one
-  address the user typed). The `network_boundary` test in `lamina-core` checks every manifest. The one other socket is the
+  Only three crates reach the network: the AI chat (`crates/assistant`), the printer connection (`crates/printer`, to the one
+  address the user typed) and the updater (`crates/update`, HTTPS to `api.github.com` and GitHub's release download hosts only,
+  and a dependency of `apps/lamina` alone). The `network_boundary` test in `lamina-core` checks every manifest. The one other socket is the
   window's control port for agents (`apps/lamina/src/control.rs`, and `apps/lamina-cli/src/window.rs` that asks it): 127.0.0.1
   only, with a token, never another address.
 - **Clean-room slicing.** PrusaSlicer, OrcaSlicer, Bambu Studio and Cura are AGPL or LGPL: read their documentation and behave
@@ -63,11 +64,19 @@ CI (`.github/workflows/ci.yml`) runs the same three on Linux, Windows and macOS 
   stand-in for a yanked crate csgrs asks for (see the root `Cargo.toml`).
 - `crates/assistant`: the AI chat, ported from BIMCraft. `skills/*.md` are the notes the model reads with `read_skill`
   (modelling, designing for FDM, slicer settings, supports, materials, calibration, troubleshooting, working from a picture), written for Lamina's own commands: a test checks that every
-  command they name exists. A command a skill promises must exist, and a new command the model needs gets a line in the skill. Notes: [crates/assistant/CLAUDE.md](crates/assistant/CLAUDE.md). The only
-  crate that may use `ring`, and with `crates/printer` the only ones that may use `ureq` (a test in `lamina-core` checks every manifest).
+  command they name exists. A command a skill promises must exist, and a new command the model needs gets a line in the skill. Notes: [crates/assistant/CLAUDE.md](crates/assistant/CLAUDE.md). With
+  `crates/update` the only crates that may use `ring`, and with `crates/printer` and `crates/update` the only ones that may use `ureq`
+  (a test in `lamina-core` checks every manifest).
 - `crates/printer`: sending G-code to Moonraker, OctoPrint, PrusaLink (`prusalink.rs`) or a Duet (`duet.rs`) on the user's network (`send`, the `send_to_printer` command), what
   it is doing (`status`, the window's watch, not a command so no agent can point it elsewhere), and a
-  fake printer for tests (`testing`, a feature). With the assistant, the only crate that may use `ureq`.
+  fake printer for tests (`testing`, a feature). With the assistant and the updater, the only crates that may use `ureq`.
+- `crates/update` (`lamina-update`): the updater, lifted from BIMCraft's. `lib.rs` (the latest release from GitHub's API, its tag
+  compared with semver, the asset for this install chosen by the names in `release.yml`, the download capped and checked against
+  GitHub's SHA-256 digest), `net.rs` (ureq, HTTPS only, redirects followed by hand and only to GitHub's release hosts), `detect.rs`
+  (which install this is: the MSI's copy in Program Files, an AppImage, `Lamina.app`), `install.rs` (Windows: a copy of the program
+  runs the MSI after the window exits, `--finish-update`), `appimage.rs` and `macos.rs` (the new file or bundle tried with
+  `--version`, then renamed in), `updater.rs` (the state the window draws, work on threads), `testing` (a feature: `Fake`, a
+  table of answers). Notes: [crates/update/CLAUDE.md](crates/update/CLAUDE.md). Only `apps/lamina` depends on it.
 - `apps/lamina`: the desktop app (`lamina`): `lib.rs` (the window: toolbar, plate panel, settings, tabs), `files.rs` (the File menu,
   recent projects, dropped files, the question before unsaved changes are lost), `autosave.rs` (the plate written every two minutes
   and offered back after an unclean exit), `view3d.rs` (the 3D view on
@@ -78,8 +87,10 @@ CI (`.github/workflows/ci.yml`) runs the same three on Linux, Windows and macOS 
   buttons), `work.rs` (slicing, booleans, export and sending on a thread, with a spinner and Cancel), `comfort.rs` (shortcuts,
   the right-click menu, the Edit menu with the undo history, the theme), `control.rs` (the control port: agents work on the
   window's plate through `lamina-cli mcp --connect`; from BIMCraft), `icon.rs` (the app icon, drawn, and its PNG, ICO and ICNS files), `startup.rs` (`lamina.log` beside the settings, panics
-  and failed starts, and another graphics backend after a start that died; from BIMCraft), `settings.rs` (the settings file: print settings,
-  presets, sealed keys; read hostilely, written whole and owner-only). Thin: it changes the scene only through `Session::execute`. UI behaviour is tested with
+  and failed starts, and another graphics backend after a start that died; from BIMCraft), `updates.rs` (the update banner, the box
+  that holds the window while one installs, and the File menu's Check for updates at start and Check for updates now; `main`
+  attaches the updater, so a window in a test has `updates: None`; from BIMCraft), `settings.rs` (the settings file: print settings,
+  presets, sealed keys, the update check's switch; read hostilely, written whole and owner-only). Thin: it changes the scene only through `Session::execute`. UI behaviour is tested with
   egui_kittest; `picture_of_the_window` (ignored, needs a GPU) renders it to a PNG to look at.
 - `apps/lamina-cli`: the `lamina-cli` binary, `mcp.rs` (the MCP server) and `window.rs` (`mcp --connect`: the tools run on an
   open window's plate through its control port).

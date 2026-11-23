@@ -31,6 +31,8 @@ pub enum Pending {
     /// Open, with the file still to be chosen.
     Choose,
     Close,
+    /// Restart and install: the window closes once the update is in.
+    Update,
 }
 
 /// A name safe in a file name: letters, digits, `-` and `_`, at most 60 characters.
@@ -108,6 +110,7 @@ impl App {
                 self.may_close = true;
                 self.closing = true;
             }
+            Pending::Update => self.install_update(),
         }
     }
 
@@ -300,6 +303,7 @@ impl App {
             if ui.button("Export G-code...").clicked() {
                 self.export();
             }
+            self.update_menu(ui);
             ui.separator();
             if ui.button("Quit").clicked() {
                 self.request(Pending::Close);

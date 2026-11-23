@@ -248,6 +248,15 @@ Priorities:
   (each start, the graphics adapter, panics with a backtrace, a failed start, and each error the status bar shows), a message box
   on Windows when the window cannot open, and after a start that died, the next tries another graphics backend (DirectX 12,
   Vulkan, OpenGL on Windows), keeping the one that stays up.
+- **7.9 Updater.** `crates/update` and `apps/lamina/src/updates.rs`, lifted from BIMCraft's: at the start the window asks
+  `api.github.com` for the latest release (not with File, Check for updates at start unticked, kept in the settings file, nor with
+  `LAMINA_NO_UPDATE_CHECK` set), compares its tag by semver, and offers it in a banner. Update now downloads the MSI, the AppImage
+  or the DMG for this install, by the names in `release.yml`, capped at its listed size and checked against GitHub's SHA-256
+  digest; Restart and install asks about unsaved changes, then on Windows a copy of the program runs the MSI after the window
+  exits, on Linux the AppImage is replaced, on macOS the DMG is mounted and the app bundle swapped. HTTPS only, redirects only to
+  GitHub's release hosts. The third crate allowed on the network, and a dependency of the window alone (`network_boundary`).
+  Tested on a fake network, a server on this machine and stand-in scripts for msiexec, hdiutil and the rest; not yet against a
+  real release, as none has been tagged.
 - **8.2 Benchmarks.** Ignored tests that print their times: `crates/slicer/tests/bench.rs` (about 100,000 triangles, three ways)
   and `crates/csg/tests/bench.rs` (a 5,120-triangle sphere with a 384-triangle cylinder, each boolean), plus
   `simplify::tests::heavy`. First run, on the session's machine in a dev build: slicing 6.1 s with the defaults, 9.4 s with gyroid
@@ -342,9 +351,6 @@ password (digest authentication) rather than an API key. Each its own module in 
 
 **7.6 Translations (P2).** How: lift BIMCraft's `crates/i18n` (PO files compiled in, English fallback) and pass every interface string
 through it.
-
-**7.9 Updater (P2).** How: lift BIMCraft's `crates/update`, which checks the releases and installs the MSI, the AppImage or the
-DMG, each checked against the SHA-256 digest GitHub gives the asset. The release names in `release.yml` are what it would look for.
 
 ## 8. Quality and infrastructure
 

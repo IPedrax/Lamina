@@ -13,7 +13,10 @@ const USAGE: &str = "USAGE: lamina [FILE]... [--control PORT]
   --control  let agents work on this window's plate (`lamina-cli mcp --connect`); 0 takes any free port. Only this computer can
              connect, with the token the window writes beside its settings
   --version  the release
-  --help     this text";
+  --help     this text
+
+It asks GitHub for a newer release when it starts (File, Check for updates at start switches that off).
+Set LAMINA_NO_UPDATE_CHECK=1 and it never asks.";
 
 /// What the arguments ask for before any window opens: the usage (`--help`, or an option the program does not know, which is an
 /// error), or nothing, and the window starts.
@@ -33,14 +36,19 @@ fn before_window(args: &[String]) -> Option<(String, bool)> {
 }
 
 fn main() -> ExitCode {
+    // On Windows an update runs the installer from a copy of this program, once the window has closed: nothing else here applies to
+    // it. Read as the system gives the arguments, since its paths need not be Unicode.
+    if let Some(finish) = lamina_update::install::parse(std::env::args_os().skip(1)) {
+        return lamina_update::install::run(&finish);
+    }
     // Started as the child that runs one boolean: do that and nothing else, with no window.
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let Some(code) = lamina_csg::child_main(&args) {
         return code;
     }
-    // What the packaging scripts run to check the program starts: no window.
+    // What the packaging scripts run to check the program starts, and what an update asks the new build: no window.
     if args.first().map(String::as_str) == Some("--version") {
-        println!("lamina {}", env!("CARGO_PKG_VERSION"));
+        println!("{}", lamina_update::version_line(env!("CARGO_PKG_VERSION")));
         return ExitCode::SUCCESS;
     }
     if let Some((text, ok)) = before_window(&args) {
@@ -118,6 +126,15 @@ fn main() -> ExitCode {
             format!("{} ({:?}, driver {} {})", info.name, info.backend, info.driver, info.driver_info)
         });
         startup::up(up_files.as_ref(), graphics, adapter.as_deref().unwrap_or("no wgpu adapter"));
+        // The update check runs on a thread of its own once the window exists, so it never delays the start; it asks
+        // api.github.com only, and not at all with LAMINA_NO_UPDATE_CHECK set or with the File menu's switch off.
+        let ctx = cc.egui_ctx.clone();
+        app.updates = lamina_update::Updater::desktop(move || ctx.request_repaint());
+        if app.update_check
+            && let Some(updates) = app.updates.as_mut()
+        {
+            updates.check_at_startup();
+        }
         Ok(Box::new(app))
     };
     match eframe::run_native("Lamina", options, Box::new(start)) {

@@ -59,6 +59,9 @@ pub struct Settings {
     /// The 3D view drawn on the processor even where there is a graphics card.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub cpu_view: bool,
+    /// File, Check for updates at start unticked: the window does not ask GitHub for a newer release when it starts.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub no_update_check: bool,
 }
 
 /// Where the settings file is (`lamina_core::bridge::settings_file`, which the CLI reads too, to find the window's bridge file).
@@ -156,6 +159,12 @@ impl Settings {
                 None => notes.push("The 3D view's processor setting was left out: it is not true or false".into()),
             }
         }
+        if let Some(v) = all.get("no_update_check") {
+            match v.as_bool() {
+                Some(b) => s.no_update_check = b,
+                None => notes.push("The update check's setting was left out: it is not true or false".into()),
+            }
+        }
         if let Some(v) = all.get("look") {
             match serde_json::from_value::<crate::comfort::Look>(v.clone()) {
                 Ok(l) => s.look = Some(l),
@@ -209,6 +218,7 @@ mod tests {
             connection_key: Some(seal::seal("ABCDEF0123456789").unwrap()),
             look: Some(crate::comfort::Look::Light),
             cpu_view: true,
+            no_update_check: true,
             ..Settings::default()
         };
         s.filaments

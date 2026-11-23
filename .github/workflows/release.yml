@@ -3,8 +3,9 @@
 #   Windows  lamina-<version>-windows-x64.msi
 #   Linux    lamina-<version>-linux-<x86_64|aarch64>.{AppImage,tar.gz}
 #   macOS    lamina-<version>-macos-universal.dmg, lamina-cli-<version>-macos-universal.zip
-# Lifted from BIMCraft's release workflow (same author, MIT OR Apache-2.0), without its Flatpak, Arch, riscv64, APT and Discord
-# jobs, and without an updater (roadmap 7.7 leaves that for later).
+# The window's updater (crates/update, `Target::asset_name`) looks for the MSI, the AppImage and the DMG by these names: rename one
+# and installed copies stop updating. Lifted from BIMCraft's release workflow (same author, MIT OR Apache-2.0), without its Flatpak,
+# Arch, riscv64, APT and Discord jobs.
 name: Release
 
 on:

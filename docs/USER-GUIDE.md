@@ -9,9 +9,24 @@ Each tagged release has an installer on the [releases page](https://github.com/I
 AppImage (or a tarball) for Linux, a DMG for macOS. From source, `cargo build --release` makes `target/release/lamina` (the window)
 and `target/release/lamina-cli` (the command line).
 
+## Updates
+
+When the window opens, Lamina asks GitHub whether a newer release is out. If one is, a banner under the toolbar says so; nothing is
+downloaded until you click Update now. Lamina then downloads the installer for your copy (the MSI on Windows, the AppImage on Linux,
+the DMG on macOS) and checks it against the SHA-256 digest GitHub lists for it, refusing any file that does not match. Restart and
+install asks you to save any changes, closes the window, puts the new version in place and opens it again with your project. Later
+hides the banner until the next start.
+
+A copy that cannot replace itself (a tarball, a build from source, or an MSI installed into a folder other than Program Files) gets a
+Download button instead, which opens the release page.
+
+The only addresses Lamina contacts for this are `api.github.com` and GitHub's release download hosts. To stop the check, untick File,
+Check for updates at start (File, Check for updates now still asks when you want it to). To keep Lamina from contacting GitHub at
+all, set the environment variable `LAMINA_NO_UPDATE_CHECK=1`: the menu items and the banner go away.
+
 ## The window
 
-- **The menu bar.** File (new, open, recent, save, import and export), Edit (undo, redo, the history of steps, duplicate, delete,
+- **The menu bar.** File (new, open, recent, save, import and export, the update check), Edit (undo, redo, the history of steps, duplicate, delete,
   pick all) and View (frame, the theme, the keyboard shortcuts).
 - **The toolbar.** Shapes to add, Import mesh, Undo and Redo, Frame all, Arrange, the three tools (Move, Lay flat, Measure),
   Prepare and Preview, Slice and Export G-code.

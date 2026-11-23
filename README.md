@@ -37,8 +37,11 @@ command that fails, panics or leaves the scene invalid changes nothing, and each
 - `crates/core`: meshes, the scene, STL, 3MF, OBJ and glTF files, mesh repair, `.lamina` projects, the command engine.
 - `crates/slicer`: layers, walls, infill, G-code, printer profiles.
 - `crates/csg`: `union`, `difference` and `intersect` of objects, on csgrs (pure Rust).
-- `crates/assistant`: the AI chat (Anthropic, OpenAI, Gemini; your own key). With `crates/printer`, the only code that touches the network.
+- `crates/assistant`: the AI chat (Anthropic, OpenAI, Gemini; your own key). With `crates/printer` and `crates/update`, the only code
+  that touches the network.
 - `crates/printer`: sending the G-code to Moonraker (Klipper) or OctoPrint on your network.
+- `crates/update`: the window's updater, which asks GitHub for a newer release and installs it when you click
+  (`LAMINA_NO_UPDATE_CHECK=1` turns it off).
 - `apps/lamina`: the desktop app, `lamina`: a 3D view of the plate, the objects' tools, print settings, a layer preview and the assistant.
 - `apps/lamina-cli`: `lamina-cli` and its MCP server (`lamina-cli mcp`, `--read-only` to let an agent look but not change,
   `--connect` to work on the plate open in the window).

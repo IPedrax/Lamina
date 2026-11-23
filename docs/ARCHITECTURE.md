@@ -56,12 +56,45 @@ desktop (lamina) ──────┘
 | `lamina-csg` | `boolean` over csgrs' BSP trees, crack repair, the soundness gate, the `union`, `difference` and `intersect` commands | core, csgrs |
 | `lamina-assistant` | provider clients, sealed key storage, tool layer, turn loop | core, ureq, ring |
 | `lamina-printer` | uploads to Moonraker and OctoPrint, the `send_to_printer` command | core, ureq |
-| `lamina` (apps/lamina) | the desktop window: 3D view, objects panel, settings, layer preview, assistant panel, printer connection | core, slicer, csg, assistant, printer, eframe (wgpu), rfd, pollster |
+| `lamina-update` | the updater: the latest release from GitHub, its installer downloaded and checked, put in place | ureq, ring, semver |
+| `lamina` (apps/lamina) | the desktop window: 3D view, objects panel, settings, layer preview, assistant panel, printer connection, update banner | core, slicer, csg, assistant, printer, update, eframe (wgpu), rfd, pollster |
 | `lamina-cli` | `lamina-cli` binary, MCP server | core, slicer, csg, printer |
 | `lamina-notices` (tools/notices) | checks every dependency's licence, writes the third-party notice a release carries | serde_json |
 
-A test in `lamina-core` reads every manifest and fails if any crate but `assistant` and `printer` depends on an HTTP client, or any but
-`assistant` on `ring`.
+A test in `lamina-core` reads every manifest and fails if any crate but `assistant`, `printer` and `update` depends on an HTTP client,
+any but `assistant` and `update` on `ring`, or any but the desktop app on `lamina-update`.
+
+## Updates
+
+`lamina-update` is BIMCraft's updater, lifted. When the window starts, `main` gives it the window and, unless File, Check for updates
+at start is unticked (kept in the settings file as `no_update_check`), it asks `https://api.github.com/repos/IPedrax/Lamina/releases/latest`
+on a thread. `LAMINA_NO_UPDATE_CHECK` set to anything takes the updater away altogether. Nothing else in Lamina phones home: the core,
+the CLI and the MCP server do not depend on it.
+
+- **What it trusts.** The reply is read up to 1 MB and parsed leniently: a draft, a pre-release, a tag that is not `vMAJOR.MINOR.PATCH`
+  is no update, and the tag is compared with the running version by semver. The file it takes is the one named for this version and
+  this install as `release.yml` names it (`lamina-<v>-windows-x64.msi`, `lamina-<v>-linux-<arch>.AppImage`,
+  `lamina-<v>-macos-universal.dmg`), uploaded, with a size up to 128 MB and the `sha256:` digest GitHub computes for each asset. Its
+  address is built from the tag and the name, never read from the reply.
+- **The network.** ureq with rustls, HTTPS only, no redirect followed by ureq: each hop is checked by `net::hop_allowed`, which lets
+  through `api.github.com` and `github.com` inside this repository's releases, and GitHub's two release download hosts
+  (`release-assets.githubusercontent.com`, `objects.githubusercontent.com`), with no port, credentials or `..`. Timeouts: 10 s to
+  connect, 15 s for the API's reply, 10 minutes for an installer.
+- **The download.** Into a folder made new in the temp folder, held to the listed size to the byte and hashed as it comes; any
+  mismatch removes the folder, and the banner offers the update again with the reason on the status bar.
+- **Which install this is.** The copy the MSI put in Program Files (running as a user, not an administrator), an AppImage (its
+  runtime's `APPIMAGE` and `APPDIR`, with this program inside the mount), or `Lamina.app` (by its bundle identifier). Anything else
+  (a tarball, a build from source, an MSI installed into another folder) is told of the release and sent to its page.
+- **Installing, on the user's click only.** Restart and install asks about unsaved changes first, then the file's SHA-256 is checked
+  once more. Windows: the program copies itself beside the MSI and starts the copy with `--finish-update`; the copy waits for the
+  window to exit, checks the MSI again while holding it open, runs `msiexec /i ... /passive` by its full path, and starts Lamina again
+  with the project. Linux: the new AppImage is copied beside the old one, must answer `--version` with the new version, then is
+  renamed over it and started. macOS: the DMG is mounted with `hdiutil`, `Lamina.app` copied out with `ditto` beside the installed
+  one, checked with `codesign --verify` and `--version`, then swapped in by two renames that are undone on failure. Every program
+  runs by its full path, with a time limit. While it runs, a box holds the window, which closes once the update is in.
+
+Tests never touch the network: `testing::Fake` is a table of answers, the real `net::Ureq` is tried against a server on this
+machine, and a window starts with `updates: None`. No real release exists yet, so the whole path against GitHub has not been run.
 
 ## Printers
 
@@ -268,7 +301,8 @@ BIMCraft is `/mnt/ai/RevCraft` (github.com/IPedrax/BIMCraft), same author, MIT O
 | `crates/core/src/autosave.rs` | `apps/lamina/src/autosave.rs` | simpler: one window, one file |
 | `apps/bimcraft/src/startup.rs` (log, graphics fallback) | `apps/lamina/src/startup.rs` | lifted; no translations, no old-mark reading |
 | `crates/dwg` (`in_child`, `child_main`, `run_child`) | `crates/csg/src/child.rs` | the same pattern, for booleans |
-| `packaging/` (env, Linux, Windows WiX, macOS), `.github/workflows/release.yml` | the same paths | AppImage, tarball, MSI and DMG only: no deb, rpm, Flatpak, Arch, riscv64, APT, Discord or updater; the icon is drawn in Rust (`apps/lamina/src/icon.rs`) |
+| `packaging/` (env, Linux, Windows WiX, macOS), `.github/workflows/release.yml` | the same paths | AppImage, tarball, MSI and DMG only: no deb, rpm, Flatpak, Arch, riscv64, APT or Discord; the icon is drawn in Rust (`apps/lamina/src/icon.rs`) |
+| `crates/update`, `crates/ui-egui/src/updates.rs`, the `--finish-update` step in `apps/bimcraft/src/main.rs` | `crates/update`, `apps/lamina/src/updates.rs`, `apps/lamina/src/main.rs` | lifted with its tests; no preferences file (the switch is in Lamina's settings file), no Skip this version, no SHA256SUMS cross-check, no Flatpak; ureq 3.5's exact body limit |
 | `crates/ui-egui/src/orbit.rs`, `camera.rs`, `retained.rs` (orbit/pan/zoom, picking) | `apps/lamina/src/view3d.rs`, own and smaller | the same interaction, drawn on the CPU or the card |
 | `crates/ui-egui/src/gpu.rs`, `gpu.wgsl` (wgpu 3D view) | `apps/lamina/src/gpu.rs`, `gpu.wgsl`, much smaller | the texture registered with egui, ids and depth targets, an edge pass over them, errors caught in error scopes; no sections, see-through, textures, levels, instancing or memory budgets |
 | `crates/ui-egui` panels, `assistant.rs` (chat palette) | `apps/lamina/src/chat.rs` | rewritten small on the same chat, with the same Remember and passphrase; no Co-Work |

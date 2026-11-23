@@ -82,8 +82,10 @@ to `main` as they were. Nothing is left to do here.
 
 Every P0 and P1 item is done except 0.2 (below). Of P2, these were left for a decision or a machine this session did not have:
 
-- 7.9 Updater: it downloads and replaces the installed program. It needs decisions first: where releases are signed, and how a
-  failed update rolls back. BIMCraft's `crates/update` is the model when it is wanted.
+- 7.9 Updater: done since, as BIMCraft's is. On the two questions it waited on: a download is trusted on the SHA-256 digest GitHub
+  computes for the asset (no signature of Lamina's own; on macOS `codesign --verify` must also pass), and a failed update leaves
+  the old program as it was (the AppImage and the app bundle are swapped in only once the new one has run; on Windows, Windows
+  Installer rolls back its own failures). Say if releases should carry a signature of their own.
 - 7.4 GPU viewport: it cannot be run or tested without a graphics adapter, which this session lacks (the same reason the window's
   picture is not made).
 - 7.6 Translations: the plumbing is BIMCraft's `crates/i18n`, but without translators there is nothing to show for it yet.

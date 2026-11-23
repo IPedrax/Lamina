@@ -14,6 +14,7 @@ pub mod preview;
 pub mod printer;
 pub mod settings;
 pub mod startup;
+pub mod updates;
 pub mod view3d;
 pub mod work;
 
@@ -191,6 +192,10 @@ pub struct App {
     /// it was last written there.
     pub chats: Option<PathBuf>,
     chat_saved: usize,
+    /// The updater, which `main` attaches (none in a test, or with `LAMINA_NO_UPDATE_CHECK`), and whether it looks at the start,
+    /// as the settings file keeps it.
+    pub updates: Option<lamina_update::Updater>,
+    pub update_check: bool,
 }
 
 impl App {
@@ -250,6 +255,8 @@ impl App {
             bridge_file: None,
             chats: None,
             chat_saved: 0,
+            updates: None,
+            update_check: true,
         }
         .ready()
     }
@@ -273,6 +280,7 @@ impl App {
         app.recent = s.recent.clone();
         app.look = s.look.unwrap_or_default();
         app.view.card.cpu = s.cpu_view;
+        app.update_check = !s.no_update_check;
         if let Some(u) = &s.local_url {
             app.chat.chat.local_url.clone_from(u);
         }
@@ -324,6 +332,7 @@ impl App {
             local_model: Some(self.chat.local_model.clone()).filter(|m| m != lamina_assistant::Provider::Local.default_model()),
             agents: Some(self.agents.clone()).filter(|a| *a != control::Agents::default()),
             cpu_view: self.view.card.cpu,
+            no_update_check: !self.update_check,
         }
     }
 
@@ -655,6 +664,10 @@ impl App {
     /// The whole window, one frame of it.
     pub fn show(&mut self, ui: &mut Ui) {
         let ctx = ui.ctx().clone();
+        // While an update is put in place nothing may change: the window closes once it is in.
+        if self.poll_updates(&ctx) {
+            return;
+        }
         // The window's print settings are the session's, so the assistant's `slice_check` and a saved project use what is shown.
         let print = self.print_json();
         if self.session.print != print {
@@ -677,6 +690,9 @@ impl App {
             });
             self.toolbar(ui);
         });
+        if self.has_update_banner() {
+            Panel::top("update").show(ui, |ui| self.update_banner(ui));
+        }
         self.poll_work(&ctx);
         self.answer_agents(&ctx);
         self.poll_printer(&ctx);
