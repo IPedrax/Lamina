@@ -4,6 +4,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub use crate::support::Support;
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct Profile {
@@ -45,6 +47,17 @@ pub struct Profile {
     pub retract_min_travel: f64,
     /// The part-cooling fan, 0 to 255, from the third layer on.
     pub fan_speed: f64,
+    // Supports
+    pub support: Support,
+    /// Degrees from vertical beyond which a surface is held up.
+    pub support_angle: f64,
+    /// 0 to 1: how much of the support's area its lines fill.
+    pub support_density: f64,
+    /// Space between the support's top and the model, mm (rounded to whole layers), and between the support and the model's walls.
+    pub support_z_gap: f64,
+    pub support_xy_gap: f64,
+    /// Denser layers at the top of the support, under the model.
+    pub support_interface_layers: u32,
 }
 
 pub const PLACEHOLDERS: &[&str] = &[
@@ -91,6 +104,12 @@ impl Default for Profile {
             retract_speed: 35.0,
             retract_min_travel: 1.5,
             fan_speed: 255.0,
+            support: Support::Off,
+            support_angle: 45.0,
+            support_density: 0.15,
+            support_z_gap: 0.2,
+            support_xy_gap: 0.6,
+            support_interface_layers: 2,
         }
     }
 }
@@ -146,6 +165,11 @@ impl Profile {
         within("retract_speed", self.retract_speed, 1.0, 200.0)?;
         within("retract_min_travel", self.retract_min_travel, 0.0, 100.0)?;
         within("fan_speed", self.fan_speed, 0.0, 255.0)?;
+        within("support_angle", self.support_angle, 10.0, 89.0)?;
+        within("support_density", self.support_density, 0.05, 1.0)?;
+        within("support_z_gap", self.support_z_gap, 0.0, 2.0)?;
+        within("support_xy_gap", self.support_xy_gap, 0.0, 5.0)?;
+        within("support_interface_layers", f64::from(self.support_interface_layers), 0.0, 10.0)?;
         self.expand(&self.start_gcode)?;
         self.expand(&self.end_gcode)?;
         Ok(())
@@ -205,6 +229,8 @@ mod tests {
             json!({"start_gcode": "M104 S[nope]"}),
             json!({"start_gcode": "M104 S[nozzle_temp"}),
             json!({"bed": [0, 0]}),
+            json!({"support": "sometimes"}),
+            json!({"support": "everywhere", "support_angle": 0}),
         ] {
             assert!(Profile::from_json(&bad).is_err(), "{bad}");
         }

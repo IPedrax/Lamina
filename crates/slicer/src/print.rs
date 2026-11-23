@@ -2,7 +2,7 @@
 //! relative extrusion (`G90`, `M83`), which Marlin, Klipper and RepRap all take.
 //!
 //! shortcut: every infill line is its own stroke with a retraction before it when the travel is long, and walls are not tied to a seam
-//! rule; connecting infill lines, seams, supports and bridging are the next steps (docs/ROADMAP.md).
+//! rule; connecting infill lines, seams and bridging are the next steps (docs/ROADMAP.md).
 
 use std::f64::consts::PI;
 
@@ -11,11 +11,14 @@ use lamina_core::Mesh;
 use crate::geom::{self, Region};
 use crate::profile::Profile;
 use crate::slice::{self, P2};
+use crate::support;
 
 /// Vertical moves are slow and fixed, mm/s.
 const Z_SPEED: f64 = 20.0;
 /// Infill reaches into the innermost wall by this share of a line, so the two bond.
 const INFILL_OVERLAP: f64 = 0.1;
+/// How much of the area the support's interface lines fill.
+const SUPPORT_INTERFACE_DENSITY: f64 = 0.7;
 
 #[derive(Debug)]
 pub struct Output {
@@ -116,6 +119,8 @@ fn flow(height: f64, width: f64, filament: f64) -> f64 {
 fn plan(mesh: &Mesh, p: &Profile, w: f64) -> Result<ObjectPlan, String> {
     let layers = slice::layers(mesh, p.first_layer_height, p.layer_height)?;
     let regions: Vec<Region> = layers.iter().map(|l| geom::region(&l.loops)).collect();
+    let heights: Vec<f64> = layers.iter().map(|l| l.height).collect();
+    let supports = support::plan(&regions, &heights, p);
     let walls = f64::from(p.perimeters);
     let inner: Vec<Region> =
         regions.iter().map(|r| if p.perimeters == 0 { r.clone() } else { geom::inset(r, walls * w - INFILL_OVERLAP * w) }).collect();
@@ -123,6 +128,18 @@ fn plan(mesh: &Mesh, p: &Profile, w: f64) -> Result<ObjectPlan, String> {
     for (k, layer) in layers.iter().enumerate() {
         let speed = |s: f64| if k == 0 { p.first_layer_speed } else { s };
         let mut strokes = Vec::new();
+        // Supports: sparse lines all run one way, so the layers stack into thin walls; the interface crosses them, denser, to carry
+        // the overhang. The writer prints a layer's loops (the walls) before its lines.
+        let s = &supports[k];
+        for (area, spacing, angle) in [(&s.sparse, w / p.support_density, 0.0), (&s.interface, w / SUPPORT_INTERFACE_DENSITY, 90.0)] {
+            if !geom::is_empty(area) {
+                strokes.extend(fill_lines(area, spacing, angle).into_iter().map(|pts| Stroke {
+                    pts,
+                    closed: false,
+                    speed: speed(p.infill_speed),
+                }));
+            }
+        }
         for i in (0..p.perimeters).rev() {
             for shape in geom::inset(&regions[k], w / 2.0 + f64::from(i) * w) {
                 strokes.extend(shape.into_iter().map(|pts| Stroke { pts, closed: true, speed: speed(p.perimeter_speed) }));
@@ -385,6 +402,31 @@ mod tests {
         let mut open = Mesh::cuboid([10.0, 10.0, 10.0]);
         open.triangles.pop();
         assert!(gcode(&[(1, open)], &p).unwrap().warnings[0].contains("not a closed mesh"));
+    }
+
+    #[test]
+    fn supports_add_plastic_under_a_tee_and_only_when_asked() {
+        let pillar = Mesh::cuboid([6.0, 6.0, 4.0]);
+        let arms = Mesh::cuboid([18.0, 6.0, 2.0]).transformed(&lamina_core::Transform::translate([0.0, 0.0, 4.0]));
+        // Two closed boxes overlapping a hair would print twice; touching faces are fine for the slicer, which unions each layer.
+        let tee = vec![(1, Mesh::merged([&pillar, &arms]))];
+        let off = Profile::default();
+        let on = Profile { support: support::Support::Everywhere, ..Profile::default() };
+        let (a, b) = (gcode(&tee, &off).unwrap(), gcode(&tee, &on).unwrap());
+        let (va, vb) = (volume(&a.gcode, &off), volume(&b.gcode, &on));
+        // Two columns about 5.4 x 6 x 3.8 mm at 15 %, and two denser layers at the top: a few tens of mm3 more.
+        assert!(vb - va > 15.0 && vb - va < 120.0, "{va} {vb}");
+        // The support is under the arms: an extrusion on layer 5 (z 1.2) reaches beyond the pillar, never without supports.
+        let reach = |g: &str| {
+            g.split(";LAYER:5\n").nth(1).and_then(|l| l.split(";LAYER:6").next()).map_or(0.0, |l| {
+                l.lines()
+                    .filter(|l| l.starts_with("G1 X"))
+                    .filter_map(|l| l[4..].split(' ').next()?.parse::<f64>().ok())
+                    .map(|x| (x - 110.0).abs())
+                    .fold(0.0, f64::max)
+            })
+        };
+        assert!(reach(&a.gcode) < 3.1 && reach(&b.gcode) > 7.0, "{} {}", reach(&a.gcode), reach(&b.gcode));
     }
 
     #[test]

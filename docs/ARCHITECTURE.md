@@ -178,6 +178,12 @@ straight line, and i_overlay's offset turns a corner of no turn into doubled poi
 and below, and fills with lines anchored to a global grid so layers and objects align. `Writer` turns strokes into moves, with
 retraction on long travels and a flow model from line width, layer height and filament diameter.
 
+`support::plan` works on the layer regions of one object. A layer whose part beyond the layer below grown by `height x
+tan(support_angle)` is not empty is too steep there; what is held up is all of that layer over air near the steep part, so a slope gets
+one area and not a comb of thin strips. Overhangs are carried down, clipped by the model (support rests on it), or with `from_plate`
+kept only where each layer's column continues to the plate. The printed area keeps an xy gap from the walls, a z gap of whole layers
+below the model, and loses what is narrower than a line; its top layers are a denser interface.
+
 Golden files (`crates/slicer/tests/golden/`) hold the G-code of a few small models. A change to the slicer that changes them fails
 the test until they are re-blessed (`LAMINA_BLESS=1`), so every change in output is seen in a diff and judged a fix or a regression.
 

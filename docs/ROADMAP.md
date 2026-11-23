@@ -39,6 +39,10 @@ Priorities:
   inside another (a void). `import_mesh` repairs on the way in and says what it did; `repair {id}` mends an object, as one undo step.
 - **2.3 Report problems clearly.** `info` gives `open_edges`, `nonmanifold_edges` and `flipped_faces` for each object; the plate
   panel shows a warning sign with the problems on hover, and a Repair button for the picked object.
+- **4.1 Supports.** `crates/slicer/src/support.rs`: where a layer leans past `support_angle` from vertical, all of it that is over
+  air is held up; overhangs are carried down to the model or the plate (`support`: `off`, `everywhere`, `from_plate`), keep
+  `support_xy_gap` from the walls and stop `support_z_gap` below the model, with `support_interface_layers` of denser lines on top.
+  Sparse lines run one way so layers stack; the interface crosses them. A golden T is sliced with supports.
 - **7.1 File menu and drag and drop.** New, Open, Open recent, Save, Save as (with Ctrl shortcuts), Import mesh, Export G-code and
   Quit; the title shows the project and a star for unsaved changes; New, Open and closing ask first when something would be lost;
   files dropped on the window are opened (`.lamina`) or imported (meshes). `apps/lamina/src/files.rs`.
@@ -158,14 +162,7 @@ between two clicked points in the window, and add a core `measure {a, b}` for ag
 
 ## 4. Slicer
 
-**4.1 Supports (P0).** How, in `crates/slicer`:
-1. Find overhangs per layer: the layer's region minus the layer below grown by `layer_height * tan(overhang angle)`.
-2. Project them down: support area at layer k is the union of overhangs above, minus the model's own region grown by an xy gap.
-3. Stop a few layers short of the model (a z gap).
-4. Fill with sparse lines, with denser interface layers just under the model.
-
-Add profile fields: `support` (off, everywhere, from the plate only), `support_angle`, `support_density`, `support_z_gap`. Test with a T
-shape: support appears only under the arms and stops a z gap below them. Tree supports are P2.
+**4.1b Tree supports (P2).** Branches that grow from the plate toward each overhang, using less plastic than the straight columns of 4.1.
 
 **4.2 Brim and raft (P0 for brim).** How: a brim is outward offsets of each object's first-layer outer contours, touching the part,
 `brim_width / line width` loops. It is the skirt code with distance 0, per object. A raft is a few layers of coarse lines under the
@@ -339,7 +336,7 @@ project files and can return after 1.1.
 
 ## Known limits today
 
-- Walls are constant width, so thin features vanish instead of getting gap fill. No supports, so overhangs print in the air. No bridging.
+- Walls are constant width, so thin features vanish instead of getting gap fill. Supports are straight columns, not trees. No bridging.
 - Infill lines are separate strokes. The skirt is an outline of the first layer, not a hull. Time is distance over speed, without acceleration.
 - A mesh whose holes are too big to fill without guessing stays open, and prints with parts missing, with a warning. STL and 3MF only (OBJ and glTF are 1.3).
 - Booleans refuse about half of tilted cylinder pairs.

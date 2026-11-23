@@ -7,5 +7,6 @@ pub mod presets;
 pub mod print;
 pub mod profile;
 pub mod slice;
+pub mod support;
 
 pub use commands::COMMANDS;

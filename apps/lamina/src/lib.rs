@@ -681,6 +681,25 @@ impl App {
                     ui.add(egui::DragValue::new(&mut p.first_layer_bed_temp).range(0.0..=400.0));
                 });
                 ui.end_row();
+                ui.label("Supports");
+                ui.horizontal(|ui| {
+                    use lamina_slicer::profile::Support;
+                    let name = |s: Support| match s {
+                        Support::Off => "Off",
+                        Support::Everywhere => "Everywhere",
+                        Support::FromPlate => "From the plate only",
+                    };
+                    egui::ComboBox::from_id_salt("support").selected_text(name(p.support)).show_ui(ui, |ui| {
+                        for s in [Support::Off, Support::Everywhere, Support::FromPlate] {
+                            ui.selectable_value(&mut p.support, s, name(s));
+                        }
+                    });
+                    if p.support != Support::Off {
+                        ui.add(egui::DragValue::new(&mut p.support_angle).range(10.0..=89.0).suffix(" deg"))
+                            .on_hover_text("A surface leaning further than this from vertical is held up");
+                    }
+                });
+                ui.end_row();
                 ui.label("Plate, mm");
                 ui.horizontal(|ui| {
                     ui.add(egui::DragValue::new(&mut p.bed[0]).range(10.0..=2000.0));
@@ -1036,6 +1055,15 @@ mod tests {
         assert_eq!(h.state().selected.len(), 2);
         drop_file(&mut h, dir.path().join("notes.txt"));
         assert!(h.state().failed && h.state().status.contains(".lamina"), "{}", h.state().status);
+    }
+
+    #[test]
+    fn supports_are_chosen_in_the_print_settings() {
+        let mut h = window();
+        h.get_by_label("Supports");
+        h.state_mut().profile.support = lamina_slicer::profile::Support::FromPlate;
+        h.run();
+        assert_eq!(h.state().print_json()["profile"]["support"], "from_plate");
     }
 
     #[test]

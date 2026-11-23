@@ -42,7 +42,7 @@ cargo test --workspace
   problems `info` reports), `threemf.rs` and `zip.rs` (3MF in and out), `base64.rs`.
   `bridge.rs` (what an agent may ask: execute, script, catalog; read-only access; `REPLACES`, the commands that replace the plate).
 - `crates/slicer`: `slice.rs` (mesh to closed loops per layer), `geom.rs` (polygon booleans, offsets, line clipping on i_overlay),
-  `print.rs` (walls, skins, infill, skirt, the G-code writer), `profile.rs` (settings, checks, `[name]` placeholders), `presets.rs`
+  `print.rs` (walls, skins, infill, skirt, the G-code writer), `support.rs` (overhangs, supports and their interface), `profile.rs` (settings, checks, `[name]` placeholders), `presets.rs`
   (built-in printers and filaments, each setting only its own fields; `apply` and `capture`), `commands.rs`
   (`slice`, `slice_check`, `slicer_presets`, `slicer_profile`; an app adds them with `session.register(lamina_slicer::COMMANDS)`).
   `tests/golden/`: models whose G-code is compared line by line; a slicer change re-blesses them with `LAMINA_BLESS=1` and the diff

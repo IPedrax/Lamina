@@ -30,6 +30,11 @@ presets live in the app's settings panel, not in these commands.
 - Cooling and retraction: `fan_speed` 0 to 255 (PLA full, PETG about half, ABS off). `retract_length` about 0.5 to 2 mm on a
   direct-drive extruder and 3 to 6 mm on a Bowden tube, `retract_speed` 25 to 45.
 - The skirt (`skirt_loops`, `skirt_distance`) primes the nozzle. There is no brim yet.
+- Supports: `support` is `"off"` (the default), `"everywhere"` or `"from_plate"` (only where the column below reaches the plate,
+  so nothing stands on the model). `support_angle` (degrees from vertical, 45 by default; a surface leaning further is held up),
+  `support_density` (0.1 to 0.2), `support_z_gap` (one layer, 0.2 mm, so it breaks away), `support_xy_gap` (0.6 mm from the walls)
+  and `support_interface_layers` (2 denser layers under the model). Turn them on for a model with overhangs past 45 degrees or
+  flat parts over air: `slice_check {profile: {support: "everywhere"}}`. Better still, turn the part so it needs none.
 
 ## Reading the result
 
@@ -41,5 +46,5 @@ presets live in the app's settings panel, not in these commands.
 
 ## What is not there yet
 
-Supports, bridging, brim, raft, seam control, gap fill and multi-material. Say so when a model needs one, instead of letting the
+Tree supports, bridging, brim, raft, seam control, gap fill and multi-material. Say so when a model needs one, instead of letting the
 user find out at the printer. Nothing has been verified on a real printer, so never promise that a print will succeed.

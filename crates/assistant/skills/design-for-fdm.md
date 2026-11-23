@@ -17,8 +17,9 @@ a fit matters, say that the clearances are defaults and that the first print is 
 
 ## Overhangs and bridges
 
-- A surface that leans more than about 45 degrees from vertical needs support to print cleanly. Lamina has no supports yet, so
-  design without them: keep undersides at 45 degrees or steeper.
+- A surface that leans more than about 45 degrees from vertical needs support to print cleanly. Lamina can add supports (`support`
+  in the slicer's profile), but they cost plastic and time and leave marks where they touch: design without them when you can, and
+  keep undersides at 45 degrees or steeper.
 - A sphere touches the plate at a point and overhangs badly below its equator. Tell the user a sphere will print poorly without
   support, and suggest another shape when the use allows.
 - A flat span over air of up to about 5 mm usually works. At 10 mm it sags, and longer needs support. Lamina has no bridging logic.
