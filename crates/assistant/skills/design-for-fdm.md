@@ -22,7 +22,8 @@ a fit matters, say that the clearances are defaults and that the first print is 
   keep undersides at 45 degrees or steeper.
 - A sphere touches the plate at a point and overhangs badly below its equator. Tell the user a sphere will print poorly without
   support, and suggest another shape when the use allows.
-- A flat span over air of up to about 5 mm usually works. At 10 mm it sags, and longer needs support. Lamina has no bridging logic.
+- A flat span over air between two supports is printed as a bridge (straight lines from one side to the other, slow, fan up). Up
+  to about 10 mm usually works; longer sags and needs support. A flat overhang held on one side only is not a bridge.
 
 ## Orientation
 

@@ -114,6 +114,9 @@ Priorities:
   (three at 60 degrees, a triangular lattice), gyroid (marching squares on Schoen's surface at the layer's height, its period set so
   the share filled matches the density) and honeycomb (a hexagon tiling, each edge once). Each is tested to fill within 15 % of the
   density asked for; the new patterns are joined only along the boundary. A golden gyroid cube.
+- **4.6 Bridging.** The solid infill not over the layer below (without slivers) is a bridge: lines at the angle, in steps of 15
+  degrees, whose ends rest on the layer below the most (a point a line's width past each end is tested), else the shortest; printed
+  at `bridge_speed` with `bridge_flow` and `bridge_fan`, the fan set back after. A golden span between two pillars.
 - **4.13 Feature types in the G-code.** Every stroke has a kind, written as `;TYPE:outer-wall` (inner-wall, solid-infill,
   sparse-infill, skirt, brim, support, support-interface, raft) before it, again after each layer change. `slice_check` returns
   the filament of each kind (`features`), so the assistant can count them.
@@ -172,10 +175,6 @@ the AI's skills what is not possible.
 ## 4. Slicer
 
 **4.1b Tree supports (P2).** Branches that grow from the plate toward each overhang, using less plastic than the straight columns of 4.1.
-
-**4.6 Bridging (P1).** How: find solid infill that lies over air (the solid region not covered by the layer below). Print it with
-`bridge_speed`, `bridge_flow` and the fan on. Choose the direction by trying angles and keeping the one with the shortest lines across
-the gap.
 
 **4.7 Gap fill and thin walls (P1).** Today a wall thinner than a line vanishes. How: what the wall insets leave unprinted, wider than
 a quarter line, is printed as single lines along its centre. Find the centreline with a straight skeleton or a Voronoi diagram:
@@ -308,7 +307,7 @@ project files and can return after 1.1.
 
 ## Known limits today
 
-- Walls are constant width, so thin features vanish instead of getting gap fill. Supports are straight columns, not trees. No bridging.
+- Walls are constant width, so thin features vanish instead of getting gap fill. Supports are straight columns, not trees.
 - The skirt is an outline of the first layer, not a hull. Time is distance over speed, without acceleration.
 - A mesh whose holes are too big to fill without guessing stays open, and prints with parts missing, with a warning. STL, 3MF, OBJ and glTF in; STL and 3MF out.
 - Booleans refuse about 1 in 100 random pairs (the rest of a sphere-with-sphere union mostly), and a boolean of a boolean's result

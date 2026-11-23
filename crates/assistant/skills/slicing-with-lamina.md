@@ -37,6 +37,9 @@ presets live in the app's settings panel, not in these commands.
 - Seams: `seam` is where each wall loop starts and ends, which leaves a small mark: `"aligned"` (the default, one tidy line up the
   part), `"rear"` (at the back, out of sight), `"sharpest"` (hidden in an inside corner) or `"nearest"` (least travel, marks
   scattered).
+- Bridges: solid infill over air (a span between two supports) is printed straight across, at the angle whose lines rest on the
+  layer below at both ends, with `bridge_speed` (25 mm/s), `bridge_flow` (1.0 of the normal flow) and `bridge_fan` (255). A span
+  up to about 10 mm bridges; longer ones need support.
 - Supports: `support` is `"off"` (the default), `"everywhere"` or `"from_plate"` (only where the column below reaches the plate,
   so nothing stands on the model). `support_angle` (degrees from vertical, 45 by default; a surface leaning further is held up),
   `support_density` (0.1 to 0.2), `support_z_gap` (one layer, 0.2 mm, so it breaks away), `support_xy_gap` (0.6 mm from the walls)
@@ -55,5 +58,5 @@ presets live in the app's settings panel, not in these commands.
 
 ## What is not there yet
 
-Tree supports, bridging, gap fill and multi-material. Say so when a model needs one, instead of letting the
+Tree supports, gap fill and multi-material. Say so when a model needs one, instead of letting the
 user find out at the printer. Nothing has been verified on a real printer, so never promise that a print will succeed.

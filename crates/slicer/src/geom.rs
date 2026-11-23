@@ -136,6 +136,24 @@ pub fn clip_lines(lines: &[Vec<P2>], r: &Region) -> Vec<Vec<P2>> {
     lines.to_vec().clip_by(r, FillRule::NonZero, ClipRule { invert: false, boundary_included: true })
 }
 
+/// Whether `p` is inside `r` (its outer contours wind counter-clockwise, its holes clockwise, so the winding number says).
+pub fn contains(r: &Region, p: P2) -> bool {
+    let mut winding = 0i32;
+    for c in r.iter().flatten() {
+        let n = c.len();
+        for i in 0..n {
+            let (a, b) = (c[i], c[(i + 1) % n]);
+            let side = (b[0] - a[0]) * (p[1] - a[1]) - (p[0] - a[0]) * (b[1] - a[1]);
+            if a[1] <= p[1] && b[1] > p[1] && side > 0.0 {
+                winding += 1;
+            } else if a[1] > p[1] && b[1] <= p[1] && side < 0.0 {
+                winding -= 1;
+            }
+        }
+    }
+    winding != 0
+}
+
 /// A region's area, mm²: outer contours minus holes.
 pub fn area(r: &Region) -> f64 {
     r.iter().flatten().map(|c| crate::slice::area(c)).sum()
@@ -171,6 +189,14 @@ mod tests {
         let ring = region(&[square(0.0, 0.0, 10.0), hole]);
         assert!((area(&ring) - 84.0).abs() < 1e-6);
         assert!((area(&inset(&ring, 1.0)) - (64.0 - 36.0)).abs() < 1e-6, "{}", area(&inset(&ring, 1.0)));
+    }
+
+    #[test]
+    fn a_point_is_inside_a_region_but_not_in_its_hole() {
+        let mut hole = square(3.0, 3.0, 4.0);
+        hole.reverse();
+        let ring = region(&[square(0.0, 0.0, 10.0), hole]);
+        assert!(contains(&ring, [1.0, 1.0]) && !contains(&ring, [5.0, 5.0]) && !contains(&ring, [11.0, 5.0]));
     }
 
     #[test]

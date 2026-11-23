@@ -70,6 +70,12 @@ pub struct Profile {
     pub fan_speed: f64,
     /// Where each wall loop starts, which leaves a small mark.
     pub seam: Seam,
+    // Bridges: solid infill over air
+    pub bridge_speed: f64,
+    /// Its flow, as a share of the normal flow.
+    pub bridge_flow: f64,
+    /// The part-cooling fan while a bridge prints, 0 to 255.
+    pub bridge_fan: f64,
     // Supports
     pub support: Support,
     /// Degrees from vertical beyond which a surface is held up.
@@ -131,6 +137,9 @@ impl Default for Profile {
             retract_min_travel: 1.5,
             fan_speed: 255.0,
             seam: Seam::Aligned,
+            bridge_speed: 25.0,
+            bridge_flow: 1.0,
+            bridge_fan: 255.0,
             support: Support::Off,
             support_angle: 45.0,
             support_density: 0.15,
@@ -194,6 +203,9 @@ impl Profile {
         within("retract_speed", self.retract_speed, 1.0, 200.0)?;
         within("retract_min_travel", self.retract_min_travel, 0.0, 100.0)?;
         within("fan_speed", self.fan_speed, 0.0, 255.0)?;
+        within("bridge_speed", self.bridge_speed, 1.0, 1000.0)?;
+        within("bridge_flow", self.bridge_flow, 0.5, 1.5)?;
+        within("bridge_fan", self.bridge_fan, 0.0, 255.0)?;
         within("support_angle", self.support_angle, 10.0, 89.0)?;
         within("support_density", self.support_density, 0.05, 1.0)?;
         within("support_z_gap", self.support_z_gap, 0.0, 2.0)?;
