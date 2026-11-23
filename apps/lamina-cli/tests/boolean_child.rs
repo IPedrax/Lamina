@@ -31,10 +31,19 @@ fn a_boolean_runs_in_the_child_and_comes_back_closed() {
     assert!(in_child(exe(), Op::Union, (&cube, I), (&open, I), Duration::from_secs(60)).unwrap_err().contains("not a closed mesh"));
 }
 
+/// Two spheres that cross, within the cap one boolean takes: a child that refused them as too big would end on its own, and the
+/// stopping below would race it.
+fn spheres() -> (Mesh, Mesh) {
+    let (a, b) = (Mesh::sphere(10.0, 64), Mesh::sphere(10.0, 64).transformed(&Transform::translate([5.0, 1.0, 2.0])));
+    assert!(a.triangles.len() + b.triangles.len() <= lamina_csg::MAX_INPUT_TRIANGLES);
+    (a, b)
+}
+
 #[test]
 fn a_child_that_is_stopped_is_an_error_and_the_next_boolean_still_works() {
-    let (a, b) = (Mesh::sphere(10.0, 128), Mesh::sphere(10.0, 128).transformed(&lamina_core::Transform::translate([5.0, 1.0, 2.0])));
-    let err = in_child(exe(), Op::Union, (&a, I), (&b, I), Duration::from_millis(1)).unwrap_err();
+    let (a, b) = spheres();
+    // No time at all: the child is ended at the first look, before it could have read its input, let alone refused or answered it.
+    let err = in_child(exe(), Op::Union, (&a, I), (&b, I), Duration::ZERO).unwrap_err();
     assert!(err.contains("stopped"), "{err}");
     let (c, d) = (
         Mesh::cuboid([10.0, 10.0, 10.0]),
@@ -47,7 +56,7 @@ fn a_child_that_is_stopped_is_an_error_and_the_next_boolean_still_works() {
 fn a_cancelled_boolean_ends_its_child_at_once() {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
-    let (a, b) = (Mesh::sphere(10.0, 128), Mesh::sphere(10.0, 128).transformed(&lamina_core::Transform::translate([5.0, 1.0, 2.0])));
+    let (a, b) = spheres();
     // Asked to stop before it starts: the child is ended at its first look, long before it could finish.
     let flag = Arc::new(AtomicBool::new(false));
     flag.store(true, Ordering::Relaxed);
