@@ -262,8 +262,11 @@ impl Writer<'_> {
     }
 
     fn extrude(&mut self, to: P2, per_mm: f64, speed: f64) {
-        self.unretract();
         let len = self.at.map_or(0.0, |from| dist(from, to));
+        if len < 1e-6 {
+            return; // a move of no length pushes no plastic and only fills the printer's buffer
+        }
+        self.unretract();
         let (m, e) = (self.machine(to), len * per_mm);
         self.line(format!("G1 X{:.3} Y{:.3} E{e:.5} F{:.0}", m[0], m[1], speed * 60.0));
         self.filament += e;

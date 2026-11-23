@@ -154,9 +154,14 @@ csgrs 0.20.1 also needs `core2`, every release of which is yanked, so `vendor/co
 
 `slice::layers` cuts a closed mesh at the middle of each layer. Segments are chained by the vertex pair of the edge they cross, not
 by float equality, so adjacent triangles agree exactly. Loops wind counter-clockwise for material and clockwise for holes.
+`geom::region` simplifies each loop (Douglas and Peucker, 5 microns) before anything is offset: a mesh's faces leave points in a
+straight line, and i_overlay's offset turns a corner of no turn into doubled points and spikes.
 `print::plan` then insets the region for each wall, finds top and bottom skins by intersecting the infill areas of the layers above
 and below, and fills with lines anchored to a global grid so layers and objects align. `Writer` turns strokes into moves, with
 retraction on long travels and a flow model from line width, layer height and filament diameter.
+
+Golden files (`crates/slicer/tests/golden/`) hold the G-code of a few small models. A change to the slicer that changes them fails
+the test until they are re-blessed (`LAMINA_BLESS=1`), so every change in output is seen in a diff and judged a fix or a regression.
 
 ## What is ported from BIMCraft
 

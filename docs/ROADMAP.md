@@ -25,6 +25,10 @@ Priorities:
   slice is given). `save`, `open` and `new` commands; `open` and `new` start a new history, are in `bridge::REPLACES` (refused to a
   read-only agent) and are refused to the window's assistant. Unknown keys are left out and listed, a newer format is refused. The
   CLI opens a `.lamina` given to `run`, `info` or `slice`.
+- **0.1 Golden G-code tests.** `crates/slicer/tests/golden/`: a cube, a tube, a T with overhanging arms and a two-object project,
+  each sliced and compared line by line (numbers to just under their written precision, so CI on three systems agrees);
+  `LAMINA_BLESS=1` writes the new output to be read in the diff. The first run found spikes and doubled points in walls on round
+  shapes (offsetting points in a straight line), fixed by simplifying loops before they are offset.
 - **7.1 File menu and drag and drop.** New, Open, Open recent, Save, Save as (with Ctrl shortcuts), Import mesh, Export G-code and
   Quit; the title shows the project and a star for unsaved changes; New, Open and closing ask first when something would be lost;
   files dropped on the window are opened (`.lamina`) or imported (meshes). `apps/lamina/src/files.rs`.
@@ -34,7 +38,7 @@ Priorities:
 The P0 items, in the order that unblocks the most:
 
 1. Project files (1.1). Done.
-2. Golden G-code tests and real test prints (0.1, 0.2). Nothing here has touched a printer.
+2. Golden G-code tests and real test prints (0.1, 0.2). The golden tests are done; the test prints need hardware.
 3. Mesh repair on import, and 3MF import (2.2, 2.3). Most models people download are imperfect STLs or 3MF files.
 4. Supports and brim (4.1, 4.2). Without them, most real parts fail on the plate.
 5. Connected infill and seam placement (4.3, 4.4), so prints are clean and do not string.
@@ -46,11 +50,6 @@ After those, the P1 items below, roughly top to bottom within each area.
 ---
 
 ## 0. Foundations
-
-**0.1 Golden G-code tests (P0).** Small models whose G-code is checked line by line, so any change to the slicer shows up as a diff and
-is either a fix or a regression. How: add `crates/slicer/tests/golden/` with a few `.stl` and expected `.gcode` files, and a test that
-slices each and compares. With `LAMINA_BLESS=1` set it writes the new output instead, to be reviewed in the diff. Start with a cube, a
-tube, a part with an overhang, and two objects.
 
 **0.2 Real test prints (P0).** How: export a 20 mm calibration cube, a 0.4 mm single-wall box and a bridge test with `lamina-cli slice`.
 Print each on one Marlin and one Klipper printer. Measure with calipers. Write the results, with photos, in `docs/PRINT-TESTS.md`. Fix

@@ -1,0 +1,4 @@
+# Golden files are compared line by line: keep them as they were blessed on every system.
+crates/slicer/tests/golden/*.gcode text eol=lf
+crates/slicer/tests/golden/*.lamina text eol=lf
+crates/slicer/tests/golden/*.stl binary

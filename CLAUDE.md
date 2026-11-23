@@ -44,6 +44,8 @@ cargo test --workspace
   `print.rs` (walls, skins, infill, skirt, the G-code writer), `profile.rs` (settings, checks, `[name]` placeholders), `presets.rs`
   (built-in printers and filaments, each setting only its own fields; `apply` and `capture`), `commands.rs`
   (`slice`, `slice_check`, `slicer_presets`, `slicer_profile`; an app adds them with `session.register(lamina_slicer::COMMANDS)`).
+  `tests/golden/`: models whose G-code is compared line by line; a slicer change re-blesses them with `LAMINA_BLESS=1` and the diff
+  is read before it is committed.
 - `crates/csg`: `boolean(op, a, b)`, the only code that knows csgrs, and the `union`, `difference` and `intersect` commands. A result is
   returned only if `sound` accepts it (closed, possible volume and bounds): refuse, never return a broken mesh. `vendor/core2` is a
   stand-in for a yanked crate csgrs asks for (see the root `Cargo.toml`).
