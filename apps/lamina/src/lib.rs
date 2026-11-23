@@ -6,6 +6,7 @@
 pub mod chat;
 pub mod files;
 pub mod preview;
+pub mod printer;
 pub mod settings;
 pub mod view3d;
 
@@ -25,11 +26,12 @@ use crate::view3d::Pick;
 /// The colour of a warning: a mesh with problems, a plate changed since its slice.
 const WARNING: Color32 = Color32::from_rgb(230, 180, 90);
 
-/// A session with every command: the core's, the slicer's and the booleans'.
+/// A session with every command: the core's, the slicer's, the booleans' and the printer connection's.
 pub fn session() -> Session {
     let mut s = Session::new();
     s.register(lamina_slicer::COMMANDS);
     s.register(lamina_csg::COMMANDS);
+    s.register(lamina_printer::COMMANDS);
     s
 }
 
@@ -113,6 +115,8 @@ pub struct App {
     may_close: bool,
     closing: bool,
     title: String,
+    /// Where a sliced plate is sent.
+    pub link: printer::PrinterPanel,
     /// What is wrong with each mesh, by the address of its `Arc`, worked out once and kept while the mesh lives.
     problems: std::collections::HashMap<usize, lamina_core::repair::Problems>,
 }
@@ -152,6 +156,7 @@ impl App {
             closing: false,
             title: String::new(),
             problems: std::collections::HashMap::new(),
+            link: printer::PrinterPanel::default(),
         }
         .ready()
     }
@@ -173,6 +178,9 @@ impl App {
         (app.printer, app.filament, app.my_printers, app.my_filaments) =
             (s.printer.clone(), s.filament.clone(), s.printers.clone(), s.filaments.clone());
         app.recent = s.recent.clone();
+        let (panel, note) = printer::PrinterPanel::restore(s.connection.clone(), s.connection_key.clone());
+        app.link = panel;
+        notes.extend(note);
         notes.extend(app.chat.restore(s.keys.clone()));
         if !notes.is_empty() {
             (app.failed, app.status) = (true, notes.join(" "));
@@ -193,6 +201,8 @@ impl App {
             filaments: self.my_filaments.clone(),
             keys: self.chat.saved.clone(),
             recent: self.recent.clone(),
+            connection: Some(self.link.connection.clone()).filter(|c| !c.address.trim().is_empty()),
+            connection_key: self.link.sealed.clone(),
         }
     }
 
@@ -600,6 +610,7 @@ impl App {
         ui.separator();
         self.presets_ui(ui);
         self.print_settings(ui);
+        self.printer_ui(ui);
     }
 
     fn boolean(&mut self, command: &str, params: Value) {
@@ -1146,6 +1157,49 @@ mod tests {
         assert!(h.state().status.contains("closed now"), "{}", h.state().status);
         assert!(h.state_mut().problems_of(1).is_none());
         assert!(h.state().session.scene.get(1).unwrap().mesh.is_watertight());
+    }
+
+    #[test]
+    fn the_plate_is_sliced_and_sent_to_the_printer() {
+        let (address, got) = lamina_printer::testing::printer(201, "{}");
+        let mut h = window();
+        press(&mut h, "Add box");
+        let app = h.state_mut();
+        app.send_to_printer(true);
+        assert!(app.failed && app.status.contains("address"), "no address yet: {}", app.status);
+        app.link.connection = printer::Connection { kind: lamina_printer::Kind::Octoprint, address: address.clone() };
+        app.send_to_printer(true);
+        assert!(app.failed && app.status.contains("API key"), "OctoPrint needs its key: {}", app.status);
+        app.link.key = "ABCDEF0123456789".into();
+        app.send_to_printer(true);
+        assert!(!app.failed && app.status.contains("is printing"), "{}", app.status);
+        let got = got.lock().unwrap();
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].header("X-Api-Key"), Some("ABCDEF0123456789"));
+        let body = got[0].body_text();
+        assert!(body.contains("filename=\"plate.gcode\"") && body.contains(";LAYER:99"), "the whole slice went");
+    }
+
+    #[test]
+    fn the_printer_key_is_kept_sealed_only_when_remembered() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let net = || -> Arc<dyn Net> { Arc::new(lamina_assistant::testing::Fake::default()) };
+        let mut first = App::with_settings(session(), net(), path.clone());
+        first.link.connection.address = "printer.local:7125".into();
+        first.link.key = "secret-key-123".into();
+        let mut h = Harness::builder().with_size([1400.0, 860.0]).build_ui_state(|ui, app: &mut App| app.show(ui), first);
+        h.get_by_label("Printer connection").click();
+        h.run();
+        h.run();
+        assert!(!std::fs::read_to_string(&path).unwrap().contains("secret-key"), "not remembered, not written");
+        h.state_mut().link.remember = true;
+        h.run();
+        h.run();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("printer.local:7125") && !text.contains("secret-key-123"), "sealed, never as typed");
+        let again = App::with_settings(session(), net(), path);
+        assert_eq!((again.link.key.as_str(), again.link.remember), ("secret-key-123", true));
     }
 
     /// The whole window as a picture, for looking at: `cargo test -p lamina -- --ignored picture_of_the_window`.

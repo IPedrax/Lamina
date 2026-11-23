@@ -36,6 +36,11 @@ pub struct Settings {
     /// Recent projects, newest first.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub recent: Vec<String>,
+    /// Where the window sends a sliced plate, and its API key when remembered (sealed).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connection: Option<crate::printer::Connection>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connection_key: Option<String>,
 }
 
 /// Where the settings file is: `LAMINA_SETTINGS` when set, else `settings.json` in the user's settings folder (found as BIMCraft
@@ -106,6 +111,18 @@ impl Settings {
             .take(crate::files::MAX_RECENT)
             .map(str::to_string)
             .collect();
+        if let Some(v) = all.get("connection") {
+            match serde_json::from_value::<crate::printer::Connection>(v.clone()) {
+                Ok(c) if c.address.len() <= 500 => s.connection = Some(c),
+                _ => notes.push("The printer connection was left out: it does not read".into()),
+            }
+        }
+        if let Some(v) = all.get("connection_key") {
+            match v.as_str().filter(|t| seal::well_formed(t)) {
+                Some(t) => s.connection_key = Some(t.to_string()),
+                None => notes.push("The saved printer key was left out: it is not a sealed key".into()),
+            }
+        }
         for (provider, sealed) in all.get("keys").and_then(Value::as_object).into_iter().flatten() {
             match sealed.as_str().filter(|t| Provider::from_key(provider).is_some() && seal::well_formed(t)) {
                 Some(t) => {
@@ -149,6 +166,8 @@ mod tests {
             profile: Some(Profile { infill_density: 0.35, ..Profile::default() }),
             printer: Some("Generic 300 mm, Klipper".into()),
             recent: vec!["/home/me/plate.lamina".into()],
+            connection: Some(crate::printer::Connection { kind: lamina_printer::Kind::Octoprint, address: "octopi.local".into() }),
+            connection_key: Some(seal::seal("ABCDEF0123456789").unwrap()),
             ..Settings::default()
         };
         s.filaments

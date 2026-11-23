@@ -12,6 +12,7 @@ rust-version = "1.90"
 lamina-core = { path = "crates/core" }
 lamina-slicer = { path = "crates/slicer" }
 lamina-csg = { path = "crates/csg" }
+lamina-printer = { path = "crates/printer" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
@@ -38,6 +39,8 @@ opt-level = 2
 [profile.dev.package.lamina-core]
 opt-level = 2
 [profile.dev.package.lamina-csg]
+opt-level = 2
+[profile.dev.package.lamina-printer]
 opt-level = 2
 # The desktop draws its 3D view on the processor: unoptimised, orbiting stutters.
 [profile.dev.package.lamina]

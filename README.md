@@ -6,7 +6,7 @@ models it, and Lamina slices it to G-code for a real printer.
 **Status: early.** The desktop app, a CLI and an MCP server work today: build a plate from primitives, STL or 3MF files, move objects by dragging them in 3D, rotate
 and scale them, join and cut them (`union`, `difference`, `intersect`), slice them to Marlin-style G-code (walls, solid and
 sparse infill, skirt, retraction, time and filament estimates), look through the layers, and ask the built-in assistant to do any
-of it. A plate and its print settings are saved as a `.lamina` project. Nothing has been printed on real hardware yet. The plan is in [docs/ROADMAP.md](docs/ROADMAP.md).
+of it, and send the result to a Moonraker or OctoPrint printer. A plate and its print settings are saved as a `.lamina` project. Nothing has been printed on real hardware yet. The plan is in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ![The Lamina window: objects on the plate in 3D, their tools and the print settings on the left, the assistant on the right](docs/lamina-window.png)
 
@@ -32,7 +32,8 @@ command that fails, panics or leaves the scene invalid changes nothing, and each
 - `crates/core`: meshes, the scene, STL and 3MF files, mesh repair, `.lamina` projects, the command engine.
 - `crates/slicer`: layers, walls, infill, G-code, printer profiles.
 - `crates/csg`: `union`, `difference` and `intersect` of objects, on csgrs (pure Rust).
-- `crates/assistant`: the AI chat (Anthropic, OpenAI, Gemini; your own key). The only crate that touches the network.
+- `crates/assistant`: the AI chat (Anthropic, OpenAI, Gemini; your own key). With `crates/printer`, the only code that touches the network.
+- `crates/printer`: sending the G-code to Moonraker (Klipper) or OctoPrint on your network.
 - `apps/lamina`: the desktop app, `lamina`: a 3D view of the plate, the objects' tools, print settings, a layer preview and the assistant.
 - `apps/lamina-cli`: `lamina-cli` and its MCP server (`lamina-cli mcp`, `--read-only` to let an agent look but not change).
 

@@ -18,7 +18,8 @@ Lamina is a 3D slicer and modelling tool with a built-in AI chat, a CLI and an M
   checks in `tmp`, never as a dependency). Skills for the AI are plain Markdown compiled in; a Three.js, WebGPU or Python skill
   from elsewhere is read for its ideas and never used as code.
 - **The core has no UI and no network.** `lamina-core` must not depend on a UI toolkit or an HTTP client, so front ends stay swappable.
-  Only the desktop's AI chat will reach the network, through its own crate.
+  Only two crates reach the network: the AI chat (`crates/assistant`) and the printer connection (`crates/printer`, to the one
+  address the user typed). The `network_boundary` test in `lamina-core` checks every manifest.
 - **Clean-room slicing.** PrusaSlicer, OrcaSlicer, Bambu Studio and Cura are AGPL or LGPL: read their documentation and behave
   alike, never copy their code. Prefer permissively licensed crates (MIT or Apache-2.0), and check the licence before adding one.
 - **Units.** Millimetres, x east, y north, z up. The scene's origin is the middle of the plate, z = 0 is the plate's surface. A
@@ -56,11 +57,14 @@ CI (`.github/workflows/ci.yml`) runs the same three on Linux, Windows and macOS 
 - `crates/assistant`: the AI chat, ported from BIMCraft. `skills/*.md` are the notes the model reads with `read_skill`
   (modelling, designing for FDM, slicer settings, working from a picture), written for Lamina's own commands: a test checks that every
   command they name exists. A command a skill promises must exist, and a new command the model needs gets a line in the skill. Notes: [crates/assistant/CLAUDE.md](crates/assistant/CLAUDE.md). The only
-  crate that may use `ureq` or `ring` (a test in `lamina-core` checks every manifest).
+  crate that may use `ring`, and with `crates/printer` the only ones that may use `ureq` (a test in `lamina-core` checks every manifest).
+- `crates/printer`: sending G-code to Moonraker or OctoPrint on the user's network (`send`, the `send_to_printer` command), and a
+  fake printer for tests (`testing`, a feature). With the assistant, the only crate that may use `ureq`.
 - `apps/lamina`: the desktop app (`lamina`): `lib.rs` (the window: toolbar, plate panel, settings, tabs), `files.rs` (the File menu,
   recent projects, dropped files, the question before unsaved changes are lost), `view3d.rs` (orbit camera,
   a CPU rasterizer that keeps an object id per pixel for picking, and the move gizmo), `preview.rs` (layers read back from the G-code, one drawn at a
-  time), `chat.rs` (the assistant panel, with Remember and a passphrase for the key), `settings.rs` (the settings file: print settings,
+  time), `chat.rs` (the assistant panel, with Remember and a passphrase for the key), `printer.rs` (the printer connection and the Send
+buttons), `settings.rs` (the settings file: print settings,
   presets, sealed keys; read hostilely, written whole and owner-only). Thin: it changes the scene only through `Session::execute`. UI behaviour is tested with
   egui_kittest; `picture_of_the_window` (ignored, needs a GPU) renders it to a PNG to look at.
 - `apps/lamina-cli`: the `lamina-cli` binary and `mcp.rs`, the MCP server.

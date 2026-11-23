@@ -1996,6 +1996,7 @@ dependencies = [
  "lamina-assistant",
  "lamina-core",
  "lamina-csg",
+ "lamina-printer",
  "lamina-slicer",
  "rfd",
  "serde",
@@ -2022,6 +2023,7 @@ version = "0.1.0"
 dependencies = [
  "lamina-core",
  "lamina-csg",
+ "lamina-printer",
  "lamina-slicer",
  "serde_json",
 ]
@@ -2046,6 +2048,16 @@ dependencies = [
  "nalgebra",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "lamina-printer"
+version = "0.1.0"
+dependencies = [
+ "lamina-core",
+ "serde",
+ "serde_json",
+ "ureq",
 ]
 
 [[package]]

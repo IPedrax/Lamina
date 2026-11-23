@@ -59,6 +59,13 @@ Priorities:
 - **4.4 Seam placement.** `seam`: `aligned` (the default: each loop starts nearest the seam below that is nearest it, the first
   layer at the rear), `rear` (greatest y, the leftmost of ties), `sharpest` (the sharpest inside corner, else the sharpest corner,
   rearmost of near ties) or `nearest` (where the head is, as before). Skirt and brim loops follow the same rule.
+- **6.1 Send to Moonraker** and **6.2 Send to OctoPrint.** `crates/printer`: one multipart upload to the address the user typed
+  (`/server/files/upload` with `root` and `print`, or `/api/files/local` with `select` and `print` and the key in `X-Api-Key`),
+  no redirects, the reply read up to 1 MB, the address checked (http or https, no credentials, query or fragment). The
+  `send_to_printer` command reads a G-code file, so the assistant never runs it; `lamina-cli run` has it, the MCP server does not.
+  The window's Printer connection keeps the kind and address, and the key only when Remember is ticked, sealed as the
+  assistant's is; Send to printer and Send and print slice the plate and upload it. Tested against a fake printer on this machine.
+  The second crate allowed on the network (`network_boundary` in `lamina-core`).
 - **7.1 File menu and drag and drop.** New, Open, Open recent, Save, Save as (with Ctrl shortcuts), Import mesh, Export G-code and
   Quit; the title shows the project and a star for unsaved changes; New, Open and closing ask first when something would be lost;
   files dropped on the window are opened (`.lamina`) or imported (meshes). `apps/lamina/src/files.rs`.
@@ -73,7 +80,7 @@ The P0 items, in the order that unblocks the most:
 4. Supports and brim (4.1, 4.2). Done.
 5. Connected infill and seam placement (4.3, 4.4). Done.
 6. One undo step per chat turn and continuous integration (0.3, 8.1). Done.
-7. Send to Moonraker and OctoPrint (6.1, 6.2).
+7. Send to Moonraker and OctoPrint (6.1, 6.2). Done.
 
 After those, the P1 items below, roughly top to bottom within each area.
 
@@ -252,14 +259,6 @@ is unclear.
 recursive-descent evaluator in `profile.rs`, with a length limit.
 
 ## 6. Printers
-
-**6.1 Send to Moonraker, for Klipper (P0).** How: a new crate `crates/printer` that the desktop and the CLI use. It does
-`POST /server/files/upload` (multipart, `print=true`) to the address the user typed, and nothing else. It is the second crate that
-reaches the network, so add it to the allow list of the `network_boundary` test in `crates/core/src/lib.rs`. Its request goes only to
-the configured host. Desktop: a "Send to printer" button and a printer address in the settings.
-
-**6.2 Send to OctoPrint (P0).** How: the same crate. `POST /api/files/local` (multipart, `print=true`) with the key in `X-Api-Key`.
-The key is sealed like the assistant's.
 
 **6.3 Printer status (P2).** How: poll Moonraker's or OctoPrint's job endpoints for progress and temperatures, and show them in the
 window.

@@ -13,8 +13,12 @@ path = "src/main.rs"
 [lints]
 workspace = true
 
+[dev-dependencies]
+lamina-printer = { workspace = true, features = ["testing"] }
+
 [dependencies]
 lamina-core = { workspace = true }
 lamina-slicer = { workspace = true }
 lamina-csg = { workspace = true }
+lamina-printer = { workspace = true }
 serde_json = { workspace = true }

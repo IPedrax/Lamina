@@ -55,10 +55,21 @@ desktop (lamina) ──────┘
 | `lamina-slicer` | `slice` (mesh to loops), `geom` (polygon booleans and offsets on `i_overlay`), `print` (walls, infill, G-code), `profile`, the `slice` and `slicer_profile` commands | core, i_overlay |
 | `lamina-csg` | `boolean` over csgrs' BSP trees, crack repair, the soundness gate, the `union`, `difference` and `intersect` commands | core, csgrs |
 | `lamina-assistant` | provider clients, sealed key storage, tool layer, turn loop | core, ureq, ring |
-| `lamina` (apps/lamina) | the desktop window: 3D view, objects panel, settings, layer preview, assistant panel | core, slicer, csg, assistant, eframe, rfd |
-| `lamina-cli` | `lamina-cli` binary, MCP server | core, slicer, csg |
+| `lamina-printer` | uploads to Moonraker and OctoPrint, the `send_to_printer` command | core, ureq |
+| `lamina` (apps/lamina) | the desktop window: 3D view, objects panel, settings, layer preview, assistant panel, printer connection | core, slicer, csg, assistant, printer, eframe, rfd |
+| `lamina-cli` | `lamina-cli` binary, MCP server | core, slicer, csg, printer |
 
-A test in `lamina-core` reads every manifest and fails if any crate but `assistant` depends on an HTTP client or `ring`.
+A test in `lamina-core` reads every manifest and fails if any crate but `assistant` and `printer` depends on an HTTP client, or any but
+`assistant` on `ring`.
+
+## Printers
+
+`lamina-printer` sends a G-code file to the printer the user names: Moonraker's `POST /server/files/upload` or OctoPrint's
+`POST /api/files/local`, one multipart request each, with `print` set when the user asks it to start. The address is checked first
+(http or https, a host, a port and a path, nothing else), the key goes only in `X-Api-Key`, no redirect is followed and the reply is
+read up to 1 MB. `send_to_printer` reads a file, so the assistant (which refuses every command that touches a file) never runs it, and
+the MCP server's session does not register it: starting a print is a physical act only the user takes. Tests run a fake printer on
+this machine (`testing::printer`); nothing contacts a real one.
 
 ## The stack is Rust
 

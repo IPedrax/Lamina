@@ -33,6 +33,11 @@ pub enum Pending {
     Close,
 }
 
+/// A name safe in a file name: letters, digits, `-` and `_`, at most 60 characters.
+pub fn clean_name(name: &str) -> String {
+    name.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' }).take(60).collect()
+}
+
 /// Whether `path` names a project file.
 pub fn is_project(path: &Path) -> bool {
     path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case(EXTENSION))

@@ -1,0 +1,21 @@
+[package]
+name = "lamina-printer"
+description = "Lamina's printer connections: send G-code to Moonraker (Klipper) or OctoPrint on the user's own network"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# `testing::printer`, a fake printer on this machine, for the desktop's tests too.
+testing = []
+
+[dependencies]
+lamina-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# HTTP to the printer the user names (HTTPS with rustls when the address asks for it), the same ureq the assistant uses.
+ureq = { version = "3", default-features = false, features = ["rustls"] }

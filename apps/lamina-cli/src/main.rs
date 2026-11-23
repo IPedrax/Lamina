@@ -14,7 +14,8 @@ const USAGE: &str = "USAGE:
   lamina-cli run [FILE] [--cmd 'ID {json}']... [--script FILE]...
       Open FILE (a .lamina project, or a mesh put on the plate) or start empty, then run the commands and scripts in the order
       given (a script is one `ID {json}` per line). Each result is printed as a line of JSON. `export_mesh {\"path\": \"out.stl\"}`
-      writes the plate, `save {\"path\": \"plate.lamina\"}` the project.
+      writes the plate, `save {\"path\": \"plate.lamina\"}` the project, and after `slice`, `send_to_printer` uploads the
+      G-code to Moonraker or OctoPrint (see `lamina-cli commands`).
   lamina-cli slice FILE OUT.gcode [PROFILE.json]
                                  slice a mesh, or a project with its own print settings, to G-code. PROFILE.json holds only the
                                  settings that differ (`lamina-cli run --cmd slicer_profile` prints them all)
@@ -46,6 +47,8 @@ fn print(out: &mut impl Write, v: &Value) -> Result<(), String> {
 
 fn run(args: &[String], out: &mut impl Write) -> Result<(), String> {
     let mut s = session();
+    // Sending to a printer is for the user's own runs and scripts; the MCP server's agents never get it.
+    s.register(lamina_printer::COMMANDS);
     let mut it = args.iter().peekable();
     // A leading bare argument is a file to put on the plate.
     if let Some(file) = it.next_if(|a| !a.starts_with("--")) {
@@ -123,6 +126,26 @@ mod tests {
         let r = lines(&["run", "--cmd", r#"add_primitive {"kind":"box","size":[10,10,10]}"#, "--cmd", "info"]).unwrap();
         assert_eq!(r.len(), 2);
         assert_eq!(r[1]["objects"][0]["watertight"], true);
+    }
+
+    #[test]
+    fn a_run_slices_and_sends_to_a_printer_but_an_agent_cannot() {
+        let (address, got) = lamina_printer::testing::printer(201, "{}");
+        let gcode = std::env::temp_dir().join(format!("lamina-cli-send-{}.gcode", std::process::id())).to_string_lossy().into_owned();
+        let r = lines(&[
+            "run",
+            "--cmd",
+            r#"add_primitive {"kind":"box","size":[10,10,4]}"#,
+            "--cmd",
+            &format!(r#"slice {{"path":"{gcode}"}}"#),
+            "--cmd",
+            &format!(r#"send_to_printer {{"path":"{gcode}","printer":"moonraker","address":"{address}"}}"#),
+        ])
+        .unwrap();
+        std::fs::remove_file(&gcode).unwrap();
+        assert_eq!(r[2]["printing"], false);
+        assert!(got.lock().unwrap()[0].body_text().contains(";LAYER:19"));
+        assert!(session().find("send_to_printer").is_none(), "the MCP server's session has no such command");
     }
 
     #[test]

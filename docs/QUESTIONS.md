@@ -25,3 +25,26 @@ Reads work.
 
 - Taken: a changed plate always; changed print settings only when the project has a file or the plate is not empty. An empty,
   unnamed window with other settings loses nothing, since the settings file keeps them.
+
+## Sending to a printer: upload only unless asked
+
+- Options: `send_to_printer` starts the print by default (`print=true`, as the roadmap's request shape has it); or uploads only
+  unless `print: true` is given.
+- Taken: upload only by default. Starting a print is a physical act; the window has two buttons, Send to printer and Send and print,
+  so the choice is the user's each time.
+
+## Sending to a printer: not for agents
+
+- Options: register `send_to_printer` everywhere; or only where the user acts.
+- Taken: the window and `lamina-cli run` have it; the MCP server's session does not, and the assistant refuses it because it reads a
+  file. Say if MCP agents should be able to send (perhaps behind a flag such as `--allow-printer`).
+
+## The printer's API key: no passphrase yet
+
+- Taken: Remember seals the key under the program's secret (`lm1`), as the assistant's default is, and the panel says it is
+  scrambling, not protection. The assistant's passphrase option (`lm2`) is not offered for the printer key yet.
+
+## Sending blocks the window
+
+- The slice and the upload run in the frame, so the window waits for them (seconds on a home network). Running them on a thread
+  with a spinner and Cancel is roadmap 7.2.

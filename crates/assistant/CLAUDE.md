@@ -1,7 +1,8 @@
 # lamina-assistant
 
 The AI chat of the desktop: a conversation with a model (Anthropic, OpenAI or Google, the user's choice and the user's key) that
-manages the scene on the plate through the commands, and the only code in Lamina that reaches the network. The desktop attaches
+manages the scene on the plate through the commands, and with the printer connection (`crates/printer`) the only code in Lamina that
+reaches the network. The desktop attaches
 `net::Ureq` and draws the chat; `lamina-core`, the CLI and the MCP server must not depend on this crate. Ported from BIMCraft's
 assistant crate (same author, MIT OR Apache-2.0); the safety rules below came with it.
 
