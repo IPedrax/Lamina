@@ -29,7 +29,10 @@ presets live in the app's settings panel, not in these commands.
   bed 70 to 85. ABS: nozzle 230 to 260, bed 90 to 110.
 - Cooling and retraction: `fan_speed` 0 to 255 (PLA full, PETG about half, ABS off). `retract_length` about 0.5 to 2 mm on a
   direct-drive extruder and 3 to 6 mm on a Bowden tube, `retract_speed` 25 to 45.
-- The skirt (`skirt_loops`, `skirt_distance`) primes the nozzle. There is no brim yet.
+- The skirt (`skirt_loops`, `skirt_distance`) primes the nozzle. `brim_width` (mm, 0 by default; 3 to 8 for parts with a small
+  footprint or sharp corners that may lift, and for ABS) adds loops round the first layer, touching it. `raft_layers` (0 by default,
+  2 or 3 when used) prints coarse layers under the part and lifts it onto them: for a warped bed or a tiny contact area; it costs
+  time and a rougher underside.
 - Supports: `support` is `"off"` (the default), `"everywhere"` or `"from_plate"` (only where the column below reaches the plate,
   so nothing stands on the model). `support_angle` (degrees from vertical, 45 by default; a surface leaning further is held up),
   `support_density` (0.1 to 0.2), `support_z_gap` (one layer, 0.2 mm, so it breaks away), `support_xy_gap` (0.6 mm from the walls)
@@ -46,5 +49,5 @@ presets live in the app's settings panel, not in these commands.
 
 ## What is not there yet
 
-Tree supports, bridging, brim, raft, seam control, gap fill and multi-material. Say so when a model needs one, instead of letting the
+Tree supports, bridging, seam control, gap fill and multi-material. Say so when a model needs one, instead of letting the
 user find out at the printer. Nothing has been verified on a real printer, so never promise that a print will succeed.

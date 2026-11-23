@@ -681,6 +681,14 @@ impl App {
                     ui.add(egui::DragValue::new(&mut p.first_layer_bed_temp).range(0.0..=400.0));
                 });
                 ui.end_row();
+                ui.label("Brim, mm / raft layers");
+                ui.horizontal(|ui| {
+                    ui.add(egui::DragValue::new(&mut p.brim_width).speed(0.5).range(0.0..=50.0))
+                        .on_hover_text("Loops round the first layer that hold its edges down; 0 for none");
+                    ui.add(egui::DragValue::new(&mut p.raft_layers).range(0..=10))
+                        .on_hover_text("Layers of lines under the part, which is lifted onto them; 0 for none");
+                });
+                ui.end_row();
                 ui.label("Supports");
                 ui.horizontal(|ui| {
                     use lamina_slicer::profile::Support;

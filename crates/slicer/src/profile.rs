@@ -30,6 +30,10 @@ pub struct Profile {
     pub infill_density: f64,
     pub skirt_loops: u32,
     pub skirt_distance: f64,
+    /// How far a brim reaches out from the first layer's outer walls, mm; 0 for none. A raft takes its place.
+    pub brim_width: f64,
+    /// Layers of coarse lines under the objects, which are lifted onto them; 0 for none.
+    pub raft_layers: u32,
     // Speeds, mm/s
     pub perimeter_speed: f64,
     pub infill_speed: f64,
@@ -92,6 +96,8 @@ impl Default for Profile {
             infill_density: 0.15,
             skirt_loops: 1,
             skirt_distance: 3.0,
+            brim_width: 0.0,
+            raft_layers: 0,
             perimeter_speed: 45.0,
             infill_speed: 80.0,
             first_layer_speed: 20.0,
@@ -145,6 +151,8 @@ impl Profile {
         within("infill_density", self.infill_density, 0.0, 1.0)?;
         within("skirt_loops", f64::from(self.skirt_loops), 0.0, 10.0)?;
         within("skirt_distance", self.skirt_distance, 0.0, 50.0)?;
+        within("brim_width", self.brim_width, 0.0, 50.0)?;
+        within("raft_layers", f64::from(self.raft_layers), 0.0, 10.0)?;
         for (what, s) in [
             ("perimeter_speed", self.perimeter_speed),
             ("infill_speed", self.infill_speed),

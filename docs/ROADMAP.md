@@ -43,6 +43,9 @@ Priorities:
   air is held up; overhangs are carried down to the model or the plate (`support`: `off`, `everywhere`, `from_plate`), keep
   `support_xy_gap` from the walls and stop `support_z_gap` below the model, with `support_interface_layers` of denser lines on top.
   Sparse lines run one way so layers stack; the interface crosses them. A golden T is sliced with supports.
+- **4.2 Brim and raft.** `brim_width`: loops outward from the outer walls of everything on the first layer, touching it, merged
+  where objects are close; the skirt moves out past it. `raft_layers`: a coarse base, crossing middle layers and a solid top, 2 mm
+  beyond the footprint, with the objects lifted 0.15 mm above it. Golden cases for both.
 - **7.1 File menu and drag and drop.** New, Open, Open recent, Save, Save as (with Ctrl shortcuts), Import mesh, Export G-code and
   Quit; the title shows the project and a star for unsaved changes; New, Open and closing ask first when something would be lost;
   files dropped on the window are opened (`.lamina`) or imported (meshes). `apps/lamina/src/files.rs`.
@@ -54,7 +57,7 @@ The P0 items, in the order that unblocks the most:
 1. Project files (1.1). Done.
 2. Golden G-code tests and real test prints (0.1, 0.2). The golden tests are done; the test prints need hardware.
 3. Mesh repair on import, and 3MF import (2.2, 2.3, 1.4). Done.
-4. Supports and brim (4.1, 4.2). Without them, most real parts fail on the plate.
+4. Supports and brim (4.1, 4.2). Done.
 5. Connected infill and seam placement (4.3, 4.4), so prints are clean and do not string.
 6. One undo step per chat turn (0.3), and continuous integration (8.1).
 7. Send to Moonraker and OctoPrint (6.1, 6.2).
@@ -163,10 +166,6 @@ between two clicked points in the window, and add a core `measure {a, b}` for ag
 ## 4. Slicer
 
 **4.1b Tree supports (P2).** Branches that grow from the plate toward each overhang, using less plastic than the straight columns of 4.1.
-
-**4.2 Brim and raft (P0 for brim).** How: a brim is outward offsets of each object's first-layer outer contours, touching the part,
-`brim_width / line width` loops. It is the skirt code with distance 0, per object. A raft is a few layers of coarse lines under the
-object, with the object lifted by the raft's height plus a gap. Fields: `brim_width`, `raft_layers`.
 
 **4.3 Connected infill (P0).** Today every infill line is its own stroke, with a retraction between long travels. How: after clipping,
 join each line's end to the next line's start with a short path along the region's boundary. Use it only when it stays inside the
