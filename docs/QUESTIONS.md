@@ -84,6 +84,23 @@ Reads work.
   asks. Not covered: a PrusaLink printer set to a user name and password (digest authentication; Lamina sends `X-Api-Key`), and a
   Duet run by a single-board computer (DSF), whose API differs. Both are 6.4b. The first real upload to each will tell.
 
+## P2 items not started, and why
+
+Every P0 and P1 item is done except 0.2 (below). Of P2, these were left for a decision or a machine this session did not have:
+
+- 9.6 Streaming replies: each provider's server-sent events would be written from memory of their formats and tested only against
+  recordings made the same way. A wrong guess would break a chat that works today. Worth doing against the real APIs.
+- 7.9 Updater: it downloads and replaces the installed program. It needs decisions first: where releases are signed, and how a
+  failed update rolls back. BIMCraft's `crates/update` is the model when it is wanted.
+- 7.4 GPU viewport: it cannot be run or tested without a graphics adapter, which this session lacks (the same reason the window's
+  picture is not made).
+- 7.6 Translations: the plumbing is BIMCraft's `crates/i18n`, but without translators there is nothing to show for it yet.
+- 4.1b Tree supports, 4.17 multi-material and sequential printing: each is a large slicer feature better started with test prints
+  to check against (0.2).
+- 6.4b Bambu over the LAN, USB serial, Duet on a single-board computer, PrusaLink with a password: each needs the hardware, and
+  Bambu its own authorisation.
+- 3.11's bottom-edge chamfer for any object: it needs the object's bottom outline lofted to an inset of itself.
+
 ## Blocked: real test prints (roadmap 0.2)
 
 - Printing the calibration cube, the single-wall box and the bridge test on a Marlin and a Klipper printer needs the printers, and
