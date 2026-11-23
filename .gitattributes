@@ -6,3 +6,5 @@ crates/slicer/tests/golden/*.stl binary
 assets/app-icon/* binary
 # Shell scripts run on Linux and macOS runners whatever system checked them out.
 packaging/**/*.sh text eol=lf
+# The skills are compiled into the assistant: the same text on every system.
+crates/assistant/skills/*.md text eol=lf

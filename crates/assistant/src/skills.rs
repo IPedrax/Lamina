@@ -25,7 +25,10 @@ const FILES: &[&str] = &[
 ];
 
 fn parse(file: &'static str) -> Option<Skill> {
-    let (head, text) = file.strip_prefix("---\n")?.split_once("\n---\n")?;
+    // A checkout on Windows may end its lines with `\r\n` (`.gitattributes` asks for `\n`, but a copy made without git ignores it).
+    let file = file.strip_prefix("---")?;
+    let file = file.strip_prefix("\r\n").or_else(|| file.strip_prefix('\n'))?;
+    let (head, text) = file.split_once("\n---\n").or_else(|| file.split_once("\n---\r\n"))?;
     let field = |key: &str| head.lines().find_map(|l| l.strip_prefix(key)?.strip_prefix(':')).map(str::trim);
     Some(Skill { name: field("name")?, description: field("description")?, text: text.trim() })
 }
@@ -114,6 +117,17 @@ mod tests {
         let write = call("execute", json!({"command": "slice", "params": {"path": path.to_string_lossy()}}));
         assert!(run(&mut s, &write, Access::Edit).unwrap_err().contains("never does"));
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn a_skill_with_windows_line_ends_reads_the_same() {
+        let unix = "---\nname: one\ndescription: a note on one thing\n---\n\nThe text.\nMore.\n";
+        let windows: &'static str = unix.replace('\n', "\r\n").leak();
+        let (a, b) = (parse(unix).unwrap(), parse(windows).unwrap());
+        assert_eq!((a.name, a.description), (b.name, b.description));
+        assert_eq!((b.name, b.description), ("one", "a note on one thing"));
+        assert_eq!(b.text.replace("\r\n", "\n"), a.text);
+        assert!(parse("name: one\n").is_none() && parse("---").is_none() && parse("---\r").is_none() && parse("--").is_none());
     }
 
     #[test]
