@@ -106,12 +106,18 @@ never in the project file, and never with the key): opening the project brings t
 
 ## Sending to a printer
 
-Printer connection, in the plate panel, takes the kind of server (Moonraker for Klipper, OctoPrint, PrusaLink for Prusa's
-printers, or a Duet board) and its address, such as
-`192.168.1.20` or `http://printer.local:7125`. OctoPrint needs an API key (from its settings, Application Keys) and so does PrusaLink (the
-printer's Settings, Network); Moonraker only if it asks for one; for a Duet, the key field is the board's password, if it has one. Lamina sends only to that address, and only when you press Send. Tick Show what it is doing to see the printer's
-state, file, progress and temperatures, asked every five seconds. The key is kept like the assistant's: in memory, or
-sealed in the settings file when Remember is ticked.
+Printer connection, in the plate panel, takes the kind of printer, its address and what it asks for to let Lamina in. Lamina
+sends only to that address, and only when you press Send.
+
+| Server | Address | Key | Notes |
+|---|---|---|---|
+| Moonraker | `192.168.1.20` or `http://printer.local:7125` | only if Moonraker asks for one | Klipper, with Mainsail or Fluidd |
+| OctoPrint | `http://octopi.local` | its API key (OctoPrint's settings, Application Keys) | |
+| PrusaLink | `192.168.1.30` | its API key; or, with User filled in (usually `maker`), its password | the printer's Settings, Network, PrusaLink shows both; the password itself never leaves the computer (HTTP digest) |
+| Duet | `192.168.1.40` | the board's password, if it has one | a board running RepRapFirmware on its own |
+
+Tick Show what it is doing to see the printer's state, file, progress and temperatures, asked every five seconds. The key or
+password is kept like the assistant's key: in memory, or sealed in the settings file when Remember is ticked.
 
 ## Letting an agent work on your plate
 

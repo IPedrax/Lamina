@@ -105,6 +105,11 @@ read up to 1 MB. `send_to_printer` reads a file, so the assistant (which refuses
 the MCP server's session does not register it: starting a print is a physical act only the user takes. Tests run a fake printer on
 this machine (`testing::printer`); nothing contacts a real one.
 
+PrusaLink (`prusalink.rs`) takes either an API key in `X-Api-Key` or a user name and password by HTTP digest (`digest.rs`, RFC 7616,
+with MD5 and SHA-256 written from their standards so the crate needs no hashing library): an unsigned status request fetches the
+printer's challenge, then the upload carries the answer. The password is only ever hashed, and the challenge is read as hostile
+(a control character or a value over 1 KB refuses it; what goes back is quoted and escaped).
+
 `status` asks what the printer is doing (Moonraker's printer objects; OctoPrint's job and printer): state, file, progress and
 temperatures, read leniently, five seconds at most. The window asks every five seconds while the user ticks Show what it is doing,
 on a thread. It is deliberately not a command: an agent steered by text on the plate could otherwise use it to probe addresses on

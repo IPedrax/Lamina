@@ -67,7 +67,8 @@ CI (`.github/workflows/ci.yml`) runs the same three on Linux, Windows and macOS 
   command they name exists. A command a skill promises must exist, and a new command the model needs gets a line in the skill. Notes: [crates/assistant/CLAUDE.md](crates/assistant/CLAUDE.md). With
   `crates/update` the only crates that may use `ring`, and with `crates/printer` and `crates/update` the only ones that may use `ureq`
   (a test in `lamina-core` checks every manifest).
-- `crates/printer`: sending G-code to Moonraker, OctoPrint, PrusaLink (`prusalink.rs`) or a Duet (`duet.rs`) on the user's network (`send`, the `send_to_printer` command), what
+- `crates/printer`: sending G-code to Moonraker, OctoPrint, PrusaLink (`prusalink.rs`, with an API key or a user name and password by
+  HTTP digest, `digest.rs`) or a Duet (`duet.rs`) on the user's network (`send`, the `send_to_printer` command), what
   it is doing (`status`, the window's watch, not a command so no agent can point it elsewhere), and a
   fake printer for tests (`testing`, a feature). With the assistant and the updater, the only crates that may use `ureq`.
 - `crates/update` (`lamina-update`): the updater, lifted from BIMCraft's. `lib.rs` (the latest release from GitHub's API, its tag

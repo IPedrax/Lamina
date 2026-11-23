@@ -13,11 +13,13 @@ use crate::App;
 use crate::work::Done;
 use lamina_core::Session;
 
-/// What the settings file keeps of the connection: the kind and the address (the key is apart, sealed).
+/// What the settings file keeps of the connection: the kind, the address and PrusaLink's user name (the key is apart, sealed).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Connection {
     pub kind: Kind,
     pub address: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub user: String,
 }
 
 #[derive(Default)]
@@ -77,9 +79,10 @@ impl App {
         let path = std::env::temp_dir().join(format!("lamina-send-{}-{}.gcode", std::process::id(), crate::files::clean_name(&stem)));
         let profile = serde_json::to_value(&self.profile).unwrap_or_default();
         let key = Some(self.link.key.trim()).filter(|k| !k.is_empty()).map(str::to_string);
+        let user = Some(c.user.trim()).filter(|u| !u.is_empty() && c.kind == Kind::PrusaLink).map(str::to_string);
         let slice = json!({ "path": path, "profile": profile });
-        let send =
-            json!({ "path": path, "printer": c.kind, "address": c.address, "key": key, "name": format!("{stem}.gcode"), "print": print });
+        let send = json!({ "path": path, "printer": c.kind, "address": c.address, "key": key, "user": user, "name": format!("{stem}.gcode"),
+            "print": print });
         // Slicing and the upload both on the thread: a slow printer does not stop the window. (Cancel during the upload stops the
         // window waiting, not the upload.)
         let work = move |s: &mut Session| {
@@ -113,6 +116,7 @@ impl App {
                 kind: p.connection.kind,
                 address: p.connection.address.clone(),
                 key: Some(p.key.trim().to_string()).filter(|k| !k.is_empty()),
+                user: Some(p.connection.user.trim().to_string()).filter(|u| !u.is_empty()),
             };
             let (tx, rx) = std::sync::mpsc::channel();
             let wake = ctx.clone();
@@ -139,7 +143,13 @@ impl App {
                 ui.label("Address");
                 ui.add(egui::TextEdit::singleline(&mut p.connection.address).hint_text("192.168.1.20 or http://printer.local:7125"));
                 ui.end_row();
-                ui.label("API key");
+                if p.connection.kind == Kind::PrusaLink {
+                    ui.label("User");
+                    ui.add(egui::TextEdit::singleline(&mut p.connection.user).hint_text("maker, or empty for an API key"))
+                        .on_hover_text("PrusaLink's user name, when it asks for a user name and password: the password goes below");
+                    ui.end_row();
+                }
+                ui.label(if p.connection.kind == Kind::PrusaLink && !p.connection.user.trim().is_empty() { "Password" } else { "API key" });
                 ui.add(egui::TextEdit::singleline(&mut p.key).password(true).hint_text(match p.connection.kind {
                     Kind::Octoprint => "OctoPrint's settings, Application Keys",
                     Kind::PrusaLink => "the printer's Settings, Network, PrusaLink",

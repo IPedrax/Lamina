@@ -1,14 +1,15 @@
-//! Sending G-code to a printer on the user's own network: Moonraker (Klipper's API server) and OctoPrint, from their public API
-//! documentation. To the address the user typed and nowhere else: a multipart upload of the file, which may also start the print,
-//! and [`status`], what the printer is doing, which the window asks while the user watches. With the assistant, this is the only crate that reaches the network (the `network_boundary` test in
-//! `lamina-core` lists both).
+//! Sending G-code to a printer on the user's own network: Moonraker (Klipper's API server), OctoPrint, PrusaLink (`prusalink.rs`) and
+//! Duet boards (`duet.rs`), from their public API documentation. To the address the user typed and nowhere else: an upload of the
+//! file, which may also start the print, and [`status`], what the printer is doing, which the window asks while the user watches.
+//! With the assistant, this is the only crate that reaches the network (the `network_boundary` test in `lamina-core` lists both).
 //!
-//! What goes out is the user's file and, for OctoPrint (or a Moonraker that asks for one), the user's API key in the `X-Api-Key`
-//! header, never in an address or a message. A redirect is never followed, so no reply can send the file or the key elsewhere, and
-//! a reply is read only up to [`MAX_REPLY`].
+//! What goes out is the user's file and, for OctoPrint (or a Moonraker or PrusaLink that asks for one), the user's API key in the
+//! `X-Api-Key` header, never in an address or a message. A PrusaLink password is only hashed (HTTP digest, `digest.rs`). A redirect
+//! is never followed, so no reply can send the file or the key elsewhere, and a reply is read only up to [`MAX_REPLY`].
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 mod commands;
+pub mod digest;
 mod duet;
 mod prusalink;
 
@@ -136,11 +137,13 @@ fn multipart(fields: &[(&str, &str)], name: &str, file: &[u8]) -> (String, Vec<u
 }
 
 /// A printer and how to reach it.
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Default, PartialEq)]
 pub struct Printer {
     pub kind: Kind,
     pub address: String,
     pub key: Option<String>,
+    /// PrusaLink's user name, when it asks for a user name and password (digest) rather than an API key: `key` is the password then.
+    pub user: Option<String>,
 }
 
 /// Not the key.
@@ -148,10 +151,11 @@ impl std::fmt::Debug for Printer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Printer {{ kind: {:?}, address: {:?}, key: {} }}",
+            "Printer {{ kind: {:?}, address: {:?}, key: {}, user: {:?} }}",
             self.kind,
             self.address,
-            if self.key.is_some() { "set" } else { "none" }
+            if self.key.is_some() { "set" } else { "none" },
+            self.user
         )
     }
 }
@@ -170,7 +174,10 @@ pub fn send(printer: &Printer, name: &str, gcode: &[u8], print: bool) -> Result<
         return Err(format!("the G-code is {} bytes, more than the {MAX_GCODE} sent", gcode.len()));
     }
     let base = base(&printer.address)?;
+    let user = user(printer)?;
     let key = match printer.key.as_deref().map(str::trim).filter(|k| !k.is_empty()) {
+        // A digest password is hashed, never sent, so any text will do.
+        Some(k) if user.is_some() && k.len() <= 200 && !k.chars().any(char::is_control) => Some(k),
         Some(k) if key_ok(k) => Some(k),
         Some(_) => return Err("the API key has spaces or odd characters in it".into()),
         None if printer.kind == Kind::Octoprint => return Err("OctoPrint needs an API key (OctoPrint's settings, Application Keys)".into()),
@@ -178,7 +185,7 @@ pub fn send(printer: &Printer, name: &str, gcode: &[u8], print: bool) -> Result<
     };
     let name = file_name(name);
     match printer.kind {
-        Kind::PrusaLink => return prusalink::send(&base, key, &name, gcode, print),
+        Kind::PrusaLink => return prusalink::send(&base, key, user, &name, gcode, print),
         Kind::Duet => return duet::send(&base, key, &name, gcode, print),
         Kind::Moonraker | Kind::Octoprint => {}
     }
@@ -209,6 +216,14 @@ pub fn send(printer: &Printer, name: &str, gcode: &[u8], print: bool) -> Result<
         200..=299 => Ok(Sent { name, printing: print }),
         401 | 403 => Err(format!("{what} at {base} refused the upload ({status}): check the API key")),
         _ => Err(format!("{what} at {base} answered {status}: {}", text.chars().take(300).collect::<String>())),
+    }
+}
+
+/// PrusaLink's user name for digest, when one is given; it goes in a header, so printable ASCII without quotes.
+fn user(printer: &Printer) -> Result<Option<&str>, String> {
+    match printer.user.as_deref().map(str::trim).filter(|u| !u.is_empty() && printer.kind == Kind::PrusaLink) {
+        Some(u) if !key_ok(u) || u.contains(['"', '\\']) => Err("the user name has spaces or odd characters in it".into()),
+        u => Ok(u),
     }
 }
 
@@ -299,7 +314,11 @@ fn get(printer: &Printer, path: &str) -> Result<serde_json::Value, String> {
 pub fn status(printer: &Printer) -> Result<Status, String> {
     let key = printer.key.as_deref().map(str::trim).filter(|k| !k.is_empty() && key_ok(k));
     match printer.kind {
-        Kind::PrusaLink => prusalink::status(&base(&printer.address)?, key),
+        Kind::PrusaLink => {
+            let user = user(printer)?;
+            let password = printer.key.as_deref().map(str::trim).filter(|_| user.is_some());
+            prusalink::status(&base(&printer.address)?, password.or(key), user)
+        }
         Kind::Duet => duet::status(&base(&printer.address)?, key),
         Kind::Moonraker => {
             let v = get(printer, "/printer/objects/query?print_stats&virtual_sdcard&extruder&heater_bed")?;
@@ -356,8 +375,16 @@ pub mod testing {
         }
     }
 
-    /// Starts the server; returns its address (`127.0.0.1:port`) and what it gets.
+    /// What the fake printer answers a request with: a status, headers, and a body.
+    pub type Answer = (u16, Vec<(String, String)>, String);
+
+    /// Starts the server, answering every request with `status` and `reply`; returns its address (`127.0.0.1:port`) and what it gets.
     pub fn printer(status: u16, reply: &'static str) -> (String, Arc<Mutex<Vec<Got>>>) {
+        serve(move |_| (status, Vec::new(), reply.to_string()))
+    }
+
+    /// Starts a server that answers each request with what `answer` makes of it.
+    pub fn serve(answer: impl Fn(&Got) -> Answer + Send + 'static) -> (String, Arc<Mutex<Vec<Got>>>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap().to_string();
         let got = Arc::new(Mutex::new(Vec::new()));
@@ -385,9 +412,11 @@ pub mod testing {
                 let mut body = vec![0; len];
                 reader.read_exact(&mut body).unwrap();
                 g.body = body;
+                let (status, headers, reply) = answer(&g);
                 kept.lock().unwrap().push(g);
+                let headers: String = headers.iter().map(|(k, v)| format!("{k}: {v}\r\n")).collect();
                 let text = format!(
-                    "HTTP/1.1 {status} Fake\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
+                    "HTTP/1.1 {status} Fake\r\nContent-Type: application/json\r\n{headers}Content-Length: {}\r\nConnection: close\r\n\r\n{reply}",
                     reply.len()
                 );
                 stream.write_all(text.as_bytes()).unwrap();
@@ -406,7 +435,7 @@ mod tests {
     #[test]
     fn prusalink_takes_the_file_in_one_put_and_says_its_state() {
         let (address, got) = testing::printer(201, "");
-        let p = Printer { kind: Kind::PrusaLink, address: address.clone(), key: Some("ABCDEF0123456789".into()) };
+        let p = Printer { kind: Kind::PrusaLink, address: address.clone(), key: Some("ABCDEF0123456789".into()), ..Default::default() };
         assert_eq!(send(&p, "my part", GCODE, true).unwrap(), Sent { name: "my_part.gcode".into(), printing: true });
         {
             let got = got.lock().unwrap();
@@ -419,16 +448,20 @@ mod tests {
             200,
             r#"{"job": {"progress": 30.0}, "printer": {"state": "PRINTING", "temp_nozzle": 215.2, "target_nozzle": 215, "temp_bed": 60, "target_bed": 60}}"#,
         );
-        let s = status(&Printer { kind: Kind::PrusaLink, address, key: None }).unwrap();
+        let s = status(&Printer { kind: Kind::PrusaLink, address, key: None, ..Default::default() }).unwrap();
         assert_eq!(s.line(), "printing, 30 %; nozzle 215 / 215 C, bed 60 / 60 C");
         let (address, _) = testing::printer(401, "");
-        assert!(send(&Printer { kind: Kind::PrusaLink, address, key: None }, "a", GCODE, false).unwrap_err().contains("API key"));
+        assert!(
+            send(&Printer { kind: Kind::PrusaLink, address, key: None, ..Default::default() }, "a", GCODE, false)
+                .unwrap_err()
+                .contains("API key")
+        );
     }
 
     #[test]
     fn a_duet_connects_takes_the_file_and_starts_it() {
         let (address, got) = testing::printer(200, r#"{"err": 0, "sessionKey": 77}"#);
-        let p = Printer { kind: Kind::Duet, address, key: Some("secret".into()) };
+        let p = Printer { kind: Kind::Duet, address, key: Some("secret".into()), ..Default::default() };
         assert_eq!(send(&p, "part", GCODE, true).unwrap(), Sent { name: "part.gcode".into(), printing: true });
         let got = got.lock().unwrap();
         let paths: Vec<&str> = got.iter().map(|g| g.path.as_str()).collect();
@@ -448,11 +481,15 @@ mod tests {
             r#"{"err": 0, "status": "P", "fractionPrinted": 55.5, "temps": {"bed": {"current": 60, "active": 60}, "current": [60, 209], "tools": {"active": [[210]]}}}"#,
         );
         assert_eq!(
-            status(&Printer { kind: Kind::Duet, address, key: None }).unwrap().line(),
+            status(&Printer { kind: Kind::Duet, address, key: None, ..Default::default() }).unwrap().line(),
             "printing, 56 %; nozzle 209 / 210 C, bed 60 / 60 C"
         );
         let (address, _) = testing::printer(200, r#"{"err": 1}"#);
-        assert!(send(&Printer { kind: Kind::Duet, address, key: None }, "a", GCODE, false).unwrap_err().contains("wrong password"));
+        assert!(
+            send(&Printer { kind: Kind::Duet, address, key: None, ..Default::default() }, "a", GCODE, false)
+                .unwrap_err()
+                .contains("wrong password")
+        );
     }
 
     #[test]
@@ -461,7 +498,7 @@ mod tests {
             "virtual_sdcard": {"progress": 0.4217}, "extruder": {"temperature": 209.6, "target": 210.0},
             "heater_bed": {"temperature": 60.1, "target": 60.0}}}}"#;
         let (address, got) = testing::printer(200, moon);
-        let s = status(&Printer { kind: Kind::Moonraker, address, key: None }).unwrap();
+        let s = status(&Printer { kind: Kind::Moonraker, address, key: None, ..Default::default() }).unwrap();
         assert_eq!((s.state.as_str(), s.file.as_deref()), ("printing", Some("part.gcode")));
         assert_eq!(s.line(), "printing part.gcode, 42 %; nozzle 210 / 210 C, bed 60 / 60 C");
         assert!(got.lock().unwrap()[0].path.starts_with("/printer/objects/query?print_stats"));
@@ -469,7 +506,7 @@ mod tests {
         let octo = r#"{"state": "Printing", "job": {"file": {"name": "a.gcode"}}, "progress": {"completion": 12.5},
             "temperature": {"tool0": {"actual": 200, "target": 205}, "bed": {"actual": 55, "target": 60}}}"#;
         let (address, got) = testing::printer(200, octo);
-        let s = status(&Printer { kind: Kind::Octoprint, address, key: Some("ABCDEF0123456789".into()) }).unwrap();
+        let s = status(&Printer { kind: Kind::Octoprint, address, key: Some("ABCDEF0123456789".into()), ..Default::default() }).unwrap();
         assert_eq!(s.line(), "printing a.gcode, 12 %; nozzle 200 / 205 C, bed 55 / 60 C");
         let got = got.lock().unwrap();
         assert_eq!((got[0].path.as_str(), got[1].path.as_str()), ("/api/job", "/api/printer"));
@@ -479,18 +516,18 @@ mod tests {
     #[test]
     fn an_odd_status_reply_is_read_leniently_or_said() {
         let (address, _) = testing::printer(200, r#"{"result": {"status": {"virtual_sdcard": {"progress": "lots"}, "extruder": 5}}}"#);
-        let s = status(&Printer { kind: Kind::Moonraker, address, key: None }).unwrap();
+        let s = status(&Printer { kind: Kind::Moonraker, address, key: None, ..Default::default() }).unwrap();
         assert_eq!(s, Status { state: "unknown".into(), ..Status::default() });
         let (address, _) = testing::printer(401, "{}");
-        assert!(status(&Printer { kind: Kind::Moonraker, address, key: None }).unwrap_err().contains("API key"));
+        assert!(status(&Printer { kind: Kind::Moonraker, address, key: None, ..Default::default() }).unwrap_err().contains("API key"));
         let (address, _) = testing::printer(200, "<html>");
-        assert!(status(&Printer { kind: Kind::Moonraker, address, key: None }).unwrap_err().contains("not JSON"));
+        assert!(status(&Printer { kind: Kind::Moonraker, address, key: None, ..Default::default() }).unwrap_err().contains("not JSON"));
     }
 
     #[test]
     fn moonraker_gets_a_multipart_upload_that_starts_the_print() {
         let (address, got) = testing::printer(201, r#"{"result": {"print_started": true}}"#);
-        let p = Printer { kind: Kind::Moonraker, address: address.clone(), key: None };
+        let p = Printer { kind: Kind::Moonraker, address: address.clone(), key: None, ..Default::default() };
         let sent = send(&p, "my part", GCODE, true).unwrap();
         assert_eq!(sent, Sent { name: "my_part.gcode".into(), printing: true });
         let got = got.lock().unwrap();
@@ -506,7 +543,12 @@ mod tests {
     #[test]
     fn octoprint_gets_the_key_in_a_header_and_refuses_without_one() {
         let (address, got) = testing::printer(201, r#"{"done": true}"#);
-        let mut p = Printer { kind: Kind::Octoprint, address: format!("http://{address}/"), key: Some("ABCDEF0123456789".into()) };
+        let mut p = Printer {
+            kind: Kind::Octoprint,
+            address: format!("http://{address}/"),
+            key: Some("ABCDEF0123456789".into()),
+            ..Default::default()
+        };
         send(&p, "cube.gcode", GCODE, false).unwrap();
         {
             let got = got.lock().unwrap();
@@ -524,14 +566,14 @@ mod tests {
     #[test]
     fn a_refusal_and_an_unreachable_printer_are_errors_that_say_so() {
         let (address, _) = testing::printer(401, r#"{"error": "Unauthorized"}"#);
-        let p = Printer { kind: Kind::Octoprint, address, key: Some("wrong".into()) };
+        let p = Printer { kind: Kind::Octoprint, address, key: Some("wrong".into()), ..Default::default() };
         assert!(send(&p, "x", GCODE, true).unwrap_err().contains("check the API key"));
         let (address, _) = testing::printer(500, r#"{"error": "disk full"}"#);
-        let p = Printer { kind: Kind::Moonraker, address, key: None };
+        let p = Printer { kind: Kind::Moonraker, address, key: None, ..Default::default() };
         assert!(send(&p, "x", GCODE, true).unwrap_err().contains("disk full"));
         // A port nothing listens on: bind one, learn it, and let it go.
         let free = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap();
-        let p = Printer { kind: Kind::Moonraker, address: free.to_string(), key: None };
+        let p = Printer { kind: Kind::Moonraker, address: free.to_string(), key: None, ..Default::default() };
         assert!(send(&p, "x", GCODE, true).is_err());
     }
 
@@ -546,8 +588,16 @@ mod tests {
         assert_eq!(file_name("../../etc/passwd"), "_.._etc_passwd.gcode");
         assert_eq!(file_name(""), "lamina.gcode");
         assert_eq!(file_name("Bracket v2.gcode"), "Bracket_v2.gcode");
-        let p = Printer { kind: Kind::Octoprint, address: "x".into(), key: Some("secret-key".into()) };
+        let p = Printer { kind: Kind::Octoprint, address: "x".into(), key: Some("secret-key".into()), ..Default::default() };
         assert!(!format!("{p:?}").contains("secret-key"));
+    }
+
+    #[test]
+    fn the_guide_has_a_row_for_every_kind_of_printer() {
+        let guide = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/USER-GUIDE.md")).unwrap();
+        for k in Kind::ALL {
+            assert!(guide.replace("\r\n", "\n").contains(&format!("\n| {} |", k.name())), "docs/USER-GUIDE.md has no row for {}", k.name());
+        }
     }
 
     #[test]

@@ -125,7 +125,7 @@ impl Settings {
             .collect();
         if let Some(v) = all.get("connection") {
             match serde_json::from_value::<crate::printer::Connection>(v.clone()) {
-                Ok(c) if c.address.len() <= 500 => s.connection = Some(c),
+                Ok(c) if c.address.len() <= 500 && c.user.len() <= 200 => s.connection = Some(c),
                 _ => notes.push("The printer connection was left out: it does not read".into()),
             }
         }
@@ -214,7 +214,11 @@ mod tests {
             profile: Some(Profile { infill_density: 0.35, ..Profile::default() }),
             printer: Some("Generic 300 mm, Klipper".into()),
             recent: vec!["/home/me/plate.lamina".into()],
-            connection: Some(crate::printer::Connection { kind: lamina_printer::Kind::Octoprint, address: "octopi.local".into() }),
+            connection: Some(crate::printer::Connection {
+                kind: lamina_printer::Kind::PrusaLink,
+                address: "mk4.local".into(),
+                user: "maker".into(),
+            }),
             connection_key: Some(seal::seal("ABCDEF0123456789").unwrap()),
             look: Some(crate::comfort::Look::Light),
             cpu_view: true,

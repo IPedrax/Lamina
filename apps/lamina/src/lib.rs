@@ -2404,7 +2404,7 @@ fill_angle = 45
         let (address, _) = lamina_printer::testing::printer(200, moon);
         let mut h = window();
         let app = h.state_mut();
-        app.link.connection = printer::Connection { kind: lamina_printer::Kind::Moonraker, address };
+        app.link.connection = printer::Connection { kind: lamina_printer::Kind::Moonraker, address, ..Default::default() };
         app.link.watch = true;
         let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
         while !matches!(h.state().link.status, Some(Ok(_))) {
@@ -2423,7 +2423,7 @@ fill_angle = 45
         let app = h.state_mut();
         app.send_to_printer(true);
         assert!(app.failed && app.status.contains("address"), "no address yet: {}", app.status);
-        app.link.connection = printer::Connection { kind: lamina_printer::Kind::Octoprint, address: address.clone() };
+        app.link.connection = printer::Connection { kind: lamina_printer::Kind::Octoprint, address: address.clone(), ..Default::default() };
         app.send_to_printer(true);
         app.wait();
         assert!(app.failed && app.status.contains("API key"), "OctoPrint needs its key: {}", app.status);
@@ -2489,6 +2489,35 @@ fill_angle = 45
         assert!(text.contains("printer.local:7125") && !text.contains("secret-key-123"), "sealed, never as typed");
         let again = App::with_settings(session(), net(), path);
         assert_eq!((again.link.key.as_str(), again.link.remember), ("secret-key-123", true));
+    }
+
+    #[test]
+    fn a_prusalink_with_a_user_name_is_sent_its_digest_answer() {
+        let (address, got) = lamina_printer::testing::serve(|g| match g.header("Authorization") {
+            Some(_) => (201, Vec::new(), String::new()),
+            None => (401, vec![("WWW-Authenticate".into(), r#"Digest realm="Printer API", nonce="n1""#.into())], String::new()),
+        });
+        // Tall enough that Printer connection is on the screen, where its labels can be found.
+        let app = App::new(session(), Arc::new(lamina_assistant::testing::Fake::default()));
+        let mut h = Harness::builder().with_size([1400.0, 2000.0]).build_ui_state(|ui, app: &mut App| app.show(ui), app);
+        press(&mut h, "Add box");
+        h.get_by_label("Printer connection").click();
+        h.run();
+        h.get_by_label("Address");
+        assert!(h.query_by_label("User").is_none(), "Moonraker asks for no user name");
+        let app = h.state_mut();
+        app.link.connection = printer::Connection { kind: lamina_printer::Kind::PrusaLink, address, user: "maker".into() };
+        app.link.key = "pass word".into();
+        h.run();
+        h.get_by_label("User");
+        h.get_by_label("Password");
+        let app = h.state_mut();
+        app.send_to_printer(false);
+        app.wait();
+        assert!(!app.failed, "{}", app.status);
+        let got = got.lock().unwrap();
+        let auth = got[1].header("Authorization").unwrap();
+        assert!(auth.contains(r#"username="maker""#) && !auth.contains("pass word"), "{auth}");
     }
 
     /// The window's 3D view on a real graphics card, through egui's own renderer: the card's picture shown in the window, a click

@@ -72,11 +72,15 @@ to `main` as they were. Nothing is left to do here.
   brace (a Klipper macro pasted in, say) now fails its check with a message saying where, rather than going out changed. Taken
   because PrusaSlicer's start G-code uses braces the same way, so users expect it. Say if a different escape is wanted.
 
-## PrusaLink and Duet: untried on a printer (roadmap 6.4)
+## PrusaLink and Duet: untried on a printer (roadmap 6.4, 6.4b)
 
 - Both are written from their published API descriptions and tested only against the fake printer on this machine, as the brief
-  asks. Not covered: a PrusaLink printer set to a user name and password (digest authentication; Lamina sends `X-Api-Key`), and a
-  Duet run by a single-board computer (DSF), whose API differs. Both are 6.4b. The first real upload to each will tell.
+  asks. The first real upload to each will tell.
+- PrusaLink with a user name and password (6.4b): digest is checked against RFC 7616's and RFC 2617's worked examples, not against a
+  Prusa printer. Each request costs one more: an unsigned status request first, for the printer's challenge, so a large file is
+  never sent only to be refused. The nonce is used once and not kept; a printer that marks a nonce stale mid-upload would refuse
+  the upload, and Lamina says so rather than sending the file again.
+- Not covered yet: a Duet run by a single-board computer (DSF), whose API differs.
 
 ## P2 items not started, and why
 

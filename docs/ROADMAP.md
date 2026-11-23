@@ -216,6 +216,11 @@ Priorities:
   `X-Api-Key`; `GET /api/v1/status`) and `duet.rs` (`rr_connect` with the board's password, then `rr_upload` into `0:/gcodes/` and
   `M32` through `rr_gcode`, with the session key; `rr_status`), from their published API descriptions. Both in `send_to_printer`,
   the window's Printer connection and its status line. Tested against the fake printer only.
+- **6.4b PrusaLink with a user name and password.** `crates/printer/src/digest.rs`: HTTP digest from RFC 7616 and RFC 2617 (MD5 and
+  SHA-256 and their `-sess` forms, `qop=auth` or RFC 2069's form without it, `userhash`), with MD5 and SHA-256 written from RFC 1321
+  and FIPS 180-4. An unsigned status request fetches the printer's challenge and the upload carries the answer; the password never
+  leaves the computer. `send_to_printer` takes `user`, the window a User field for PrusaLink. Tested against the RFCs' worked
+  examples, the standards' hash examples, a fuzzed challenge parser, and a fake printer that issues a challenge and checks the answer.
 - **7.1 File menu and drag and drop.** New, Open, Open recent, Save, Save as (with Ctrl shortcuts), Import mesh, Export G-code and
   Quit; the title shows the project and a star for unsaved changes; New, Open and closing ask first when something would be lost;
   files dropped on the window are opened (`.lamina`) or imported (meshes). `apps/lamina/src/files.rs`.
@@ -344,8 +349,7 @@ sequential printing a check of the print head's clearance.
 ## 6. Printers
 
 **6.4b More printers still (P2).** Bambu over the LAN (MQTT and FTPS, now limited by Bambu's own authorization), USB serial with
-line numbers and resends, a Duet run by a single-board computer (DSF's own API), and PrusaLink printers set to a user name and
-password (digest authentication) rather than an API key. Each its own module in `crates/printer`.
+line numbers and resends, and a Duet run by a single-board computer (DSF's own API). Each its own module in `crates/printer`.
 
 ## 7. Desktop
 
