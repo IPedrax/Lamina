@@ -64,10 +64,16 @@ holds, as they are shown. Your presets are listed under the built-in ones, marke
 
 ## The assistant
 
-Choose a provider (Anthropic Claude, OpenAI or Google Gemini) and give it an API key. The key is used for that session only, unless
+Choose a provider (Anthropic Claude, OpenAI or Google Gemini) and give it an API key, or choose On this computer to use a model
+running on your own machine (below). The key is used for that session only, unless
 you tick Remember: then the settings file keeps it sealed. By default it is sealed under a secret built into Lamina, which scrambles
 it but does not protect it from anyone who has Lamina; with a passphrase it is encrypted under that, and you type the passphrase
 once a session. A key in `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `GEMINI_API_KEY` is used instead of any typed one.
+
+**A model on your own computer.** With Ollama or LM Studio running, choose On this computer, give the server's address
+(`http://localhost:11434/v1` for Ollama, `http://localhost:1234/v1` for LM Studio) and the model's name as the server gives it
+(`qwen3`, `llama3.2:3b`). Nothing leaves the machine, and no key is needed. Lamina refuses any address that is not this computer.
+Choose a model that supports tool calling; small models follow the tools less well than the providers' large ones.
 
 The assistant can model (shapes, outlines extruded into parts, booleans, cuts, arranging), set up and check a slice, and read notes
 on design for FDM and on slicer settings. It can look at the plate too: it draws a picture of it to compare a part with a photo you

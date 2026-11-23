@@ -48,6 +48,11 @@ pub struct Settings {
     /// The theme, when it is not the default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub look: Option<crate::comfort::Look>,
+    /// The assistant's local model server and model, when they are not the defaults.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_model: Option<String>,
 }
 
 /// Where the settings file is: `LAMINA_SETTINGS` when set, else `settings.json` in the user's settings folder (found as BIMCraft
@@ -128,6 +133,18 @@ impl Settings {
             match v.as_str().filter(|t| seal::well_formed(t)) {
                 Some(t) => s.connection_key = Some(t.to_string()),
                 None => notes.push("The saved printer key was left out: it is not a sealed key".into()),
+            }
+        }
+        if let Some(v) = all.get("local_url") {
+            match v.as_str().filter(|u| lamina_assistant::local::endpoint(u).is_ok()) {
+                Some(u) => s.local_url = Some(u.to_string()),
+                None => notes.push("The local model's address was left out: it is not on this computer".into()),
+            }
+        }
+        if let Some(v) = all.get("local_model") {
+            match v.as_str().filter(|m| lamina_assistant::model_ok_for(Provider::Local, m)) {
+                Some(m) => s.local_model = Some(m.to_string()),
+                None => notes.push("The local model's name was left out: it is not a model id".into()),
             }
         }
         if let Some(v) = all.get("look") {

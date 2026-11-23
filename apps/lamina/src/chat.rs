@@ -28,6 +28,8 @@ pub struct ChatPanel {
     problem: Option<String>,
     pub input: String,
     woke: bool,
+    /// The model last used on a local server, given back when Local is chosen again (and kept in the settings file).
+    pub local_model: String,
 }
 
 impl ChatPanel {
@@ -40,6 +42,7 @@ impl ChatPanel {
             problem: None,
             input: String::new(),
             woke: false,
+            local_model: Provider::Local.default_model().into(),
         }
     }
 
@@ -145,7 +148,8 @@ impl ChatPanel {
             });
         } else {
             let typed = self.keys.entry(p.key()).or_default();
-            let edited = ui.add(TextEdit::singleline(typed).password(true).hint_text(format!("{} API key", p.name()))).changed();
+            let hint = if p.needs_key() { format!("{} API key", p.name()) } else { "API key, only if the server asks for one".into() };
+            let edited = ui.add(TextEdit::singleline(typed).password(true).hint_text(hint)).changed();
             let sealed = self.saved.get(p.key()).cloned();
             if edited && let Some(sealed) = &sealed {
                 // The key changed under a saved one: seal the new one the same way, or ask for the passphrase again.
@@ -204,22 +208,44 @@ impl ChatPanel {
                 for p in Provider::ALL {
                     if ui.selectable_label(self.chat.provider == p, p.name()).clicked() && self.chat.provider != p {
                         self.chat.provider = p;
-                        self.chat.model = p.default_model().into();
+                        self.chat.model = if p == Provider::Local { self.local_model.clone() } else { p.default_model().into() };
                     }
                 }
             });
-            egui::ComboBox::from_id_salt("model").selected_text(self.chat.model.as_str()).show_ui(ui, |ui| {
-                for m in self.chat.provider.models() {
-                    ui.selectable_value(&mut self.chat.model, (*m).to_string(), *m);
-                }
-            });
+            if self.chat.provider != Provider::Local {
+                egui::ComboBox::from_id_salt("model").selected_text(self.chat.model.as_str()).show_ui(ui, |ui| {
+                    for m in self.chat.provider.models() {
+                        ui.selectable_value(&mut self.chat.model, (*m).to_string(), *m);
+                    }
+                });
+            }
         });
+        if self.chat.provider == Provider::Local {
+            // Any model the server has, by the name it gives it, and the server's address on this computer.
+            egui::Grid::new("local model").num_columns(2).show(ui, |ui| {
+                ui.label("Server");
+                ui.add(TextEdit::singleline(&mut self.chat.local_url).hint_text(lamina_assistant::local::DEFAULT_URL).desired_width(210.0))
+                    .on_hover_text(
+                        "Ollama: http://localhost:11434/v1. LM Studio: http://localhost:1234/v1. Only this computer is allowed.",
+                    );
+                ui.end_row();
+                ui.label("Model");
+                ui.add(TextEdit::singleline(&mut self.chat.model).hint_text("as the server names it, e.g. qwen3").desired_width(210.0));
+                ui.end_row();
+            });
+            self.local_model.clone_from(&self.chat.model);
+            if let Err(e) = lamina_assistant::local::endpoint(&self.chat.local_url) {
+                ui.label(RichText::new(e).small().color(Color32::from_rgb(230, 180, 90)));
+            }
+        }
         self.key_ui(ui);
-        ui.label(
-            RichText::new(format!("Your messages and what is on the plate go to {} under your key.", self.chat.provider.name()))
-                .small()
-                .weak(),
-        );
+        let going = match self.chat.provider {
+            Provider::Local => {
+                "Your messages and what is on the plate go to the model's server on this computer; nothing leaves it.".to_string()
+            }
+            p => format!("Your messages and what is on the plate go to {} under your key.", p.name()),
+        };
+        ui.label(RichText::new(going).small().weak());
         ui.separator();
         let input_height = 96.0;
         ScrollArea::vertical()

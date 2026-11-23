@@ -251,6 +251,12 @@ impl App {
             (s.printer.clone(), s.filament.clone(), s.printers.clone(), s.filaments.clone());
         app.recent = s.recent.clone();
         app.look = s.look.unwrap_or_default();
+        if let Some(u) = &s.local_url {
+            app.chat.chat.local_url.clone_from(u);
+        }
+        if let Some(m) = &s.local_model {
+            app.chat.local_model.clone_from(m);
+        }
         (app.process, app.my_processes) = (s.process.clone(), s.processes.clone());
         let (panel, note) = printer::PrinterPanel::restore(s.connection.clone(), s.connection_key.clone());
         app.link = panel;
@@ -284,6 +290,8 @@ impl App {
             connection: Some(self.link.connection.clone()).filter(|c| !c.address.trim().is_empty()),
             connection_key: self.link.sealed.clone(),
             look: Some(self.look).filter(|l| *l != comfort::Look::default()),
+            local_url: Some(self.chat.chat.local_url.clone()).filter(|u| u != lamina_assistant::local::DEFAULT_URL),
+            local_model: Some(self.chat.local_model.clone()).filter(|m| m != lamina_assistant::Provider::Local.default_model()),
         }
     }
 
@@ -1725,6 +1733,35 @@ mod tests {
         let log = std::fs::read_to_string(dir.path().join("lamina.log")).unwrap();
         assert_eq!(log.matches("error: ").count(), 1, "{log}");
         assert!(log.contains("99"), "{log}");
+    }
+
+    #[test]
+    fn a_local_model_is_chosen_with_its_server_and_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let app = App::with_settings(session(), Arc::new(lamina_assistant::testing::Fake::default()), path.clone());
+        let mut h = Harness::builder().with_size([1400.0, 860.0]).build_ui_state(|ui, app: &mut App| app.show(ui), app);
+        h.run();
+        let app = h.state_mut();
+        app.chat.chat.provider = lamina_assistant::Provider::Local;
+        app.chat.chat.model = app.chat.local_model.clone();
+        h.run();
+        h.get_by_label_contains("nothing leaves it");
+        h.get_by_label("Server");
+        let app = h.state_mut();
+        assert_eq!(app.chat.chat.model, "qwen3");
+        app.chat.chat.model = "llama3.2:3b".into();
+        app.chat.chat.local_url = "http://192.168.1.20:11434".into();
+        h.run();
+        h.get_by_label_contains("must be on this computer");
+        h.state_mut().chat.chat.local_url = "localhost:1234".into();
+        h.run();
+        let (s, notes) = Settings::read(&path);
+        assert!(notes.is_empty(), "{notes:?}");
+        assert_eq!((s.local_url.as_deref(), s.local_model.as_deref()), (Some("localhost:1234"), Some("llama3.2:3b")));
+        // The next window has them back.
+        let next = App::with_settings(session(), Arc::new(lamina_assistant::testing::Fake::default()), path);
+        assert_eq!((next.chat.chat.local_url.as_str(), next.chat.local_model.as_str()), ("localhost:1234", "llama3.2:3b"));
     }
 
     #[test]

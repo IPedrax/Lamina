@@ -15,8 +15,7 @@ use crate::attach::{self, Attached, Attachment};
 use crate::net::Net;
 use crate::tools::{self, TODO, Todo, to_text};
 use crate::{
-    Call, Done, MAX_CALLS, MAX_FILES_TOTAL, MAX_HISTORY, MAX_ROUNDS, MAX_TEXT, Msg, Provider, Reply, Usage, clip, complete, key_ok,
-    model_ok,
+    Call, Done, MAX_CALLS, MAX_FILES_TOTAL, MAX_HISTORY, MAX_ROUNDS, MAX_TEXT, Msg, Provider, Reply, Usage, clip, complete, model_ok_for,
 };
 
 /// How many lines of the log are kept.
@@ -47,6 +46,8 @@ struct Turn {
     key: String,
     provider: Provider,
     model: String,
+    /// The local server's address, for `Provider::Local`.
+    local: String,
     rounds: usize,
     /// The name of the turn's undo step, unique to the turn, so two turns in a row stay two steps.
     label: String,
@@ -55,6 +56,8 @@ struct Turn {
 pub struct Chat {
     pub provider: Provider,
     pub model: String,
+    /// The address of the model's server when the provider is `Provider::Local`, as the user typed it (`local::endpoint` checks it).
+    pub local_url: String,
     pub log: Vec<Line>,
     pub(crate) history: Vec<Msg>,
     net: Arc<dyn Net>,
@@ -82,6 +85,7 @@ impl Chat {
         Chat {
             provider: Provider::Anthropic,
             model: Provider::Anthropic.default_model().into(),
+            local_url: crate::local::DEFAULT_URL.into(),
             log: Vec::new(),
             history: Vec::new(),
             net,
@@ -169,8 +173,13 @@ impl Chat {
         if self.busy() || text.is_empty() {
             return;
         }
-        if !key_ok(key) || !model_ok(&self.model) {
+        if !self.provider.key_given(key) || !model_ok_for(self.provider, &self.model) {
             return self.note("Give a key and a model id first.");
+        }
+        if self.provider == Provider::Local
+            && let Err(e) = crate::local::endpoint(&self.local_url)
+        {
+            return self.note(e);
         }
         if text.chars().count() > MAX_TEXT {
             return self.note(format!("That message is longer than {MAX_TEXT} characters: shorten it."));
@@ -197,7 +206,14 @@ impl Chat {
         self.turns += 1;
         let label = format!("assistant: {}", clip(text, 40));
         let label = format!("{label} (turn {})", self.turns);
-        self.turn = Some(Turn { key: key.into(), provider: self.provider, model: self.model.clone(), rounds: 0, label });
+        self.turn = Some(Turn {
+            key: key.into(),
+            provider: self.provider,
+            model: self.model.clone(),
+            local: self.local_url.clone(),
+            rounds: 0,
+            label,
+        });
         if let Err(e) = self.launch() {
             self.note(e);
             self.turn = None;
@@ -232,13 +248,13 @@ impl Chat {
         if self.history.iter().map(Msg::size).sum::<usize>() > MAX_HISTORY {
             return Err("Stopped: the conversation has grown past what is sent at once. Clear the chat to start a new one.".into());
         }
-        let (provider, model, key) = (turn.provider, turn.model.clone(), turn.key.clone());
+        let (provider, model, key, local) = (turn.provider, turn.model.clone(), turn.key.clone(), turn.local.clone());
         let (net, history, wake) = (Arc::clone(&self.net), self.history.clone(), Arc::clone(&self.wake));
         let (tx, rx) = channel();
         std::thread::Builder::new()
             .name("assistant".into())
             .spawn(move || {
-                let _ = tx.send(complete(provider, net.as_ref(), &model, &key, &history));
+                let _ = tx.send(complete(provider, net.as_ref(), &local, &model, &key, &history));
                 wake();
             })
             .map_err(|e| format!("could not start the request: {e}"))?;

@@ -210,6 +210,11 @@ Priorities:
   prints as it has no temperature tower, retraction towers), `materials` (the five presets, nylon, PC, filled filaments, food and
   heat) and `supports` (when they are needed, turning and cutting first, every support setting). The skill test now takes the
   tools from `tools::all()`, so a skill may name `preview`.
+- **9.3 Local models.** `Provider::Local` (`crates/assistant/src/local.rs`): an OpenAI-compatible server on this computer
+  (Ollama, LM Studio, llama.cpp), spoken to in Chat Completions, with tools and pictures. `local::endpoint` refuses any host but
+  this computer and writes `localhost` as 127.0.0.1; `net::allowed` lets plain HTTP through to 127.0.0.1 and ::1 only, by address,
+  with tests that every other host is refused. No key is needed. The window shows the server's address and a free model field,
+  kept in the settings file. A whole turn is tested against a server on this machine.
 
 ## Order of work
 
@@ -304,10 +309,6 @@ DMG, each checked against the SHA-256 digest GitHub gives the asset. The release
 regressions are seen.
 
 ## 9. The assistant
-
-**9.3 Local models (P1).** These keep everything on the machine. How: an "OpenAI-compatible" provider with a base URL limited to
-`localhost` or `127.0.0.1` (Ollama, LM Studio). Add it to `net::allowed` by address, not by name, with a test that any other host is
-refused.
 
 **9.4 Agents on the open window (P1).** How: let an external agent drive the window's plate through `lamina-cli mcp --connect`. Lift
 BIMCraft's control port: `bridge.rs` request parsing with a token, `apps/bimcraft-cli/src/window.rs`, and the window's listener. It is

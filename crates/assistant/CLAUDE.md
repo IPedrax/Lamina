@@ -1,6 +1,7 @@
 # lamina-assistant
 
-The AI chat of the desktop: a conversation with a model (Anthropic, OpenAI or Google, the user's choice and the user's key) that
+The AI chat of the desktop: a conversation with a model (Anthropic, OpenAI or Google, the user's choice and the user's key, or a
+model on the user's own computer) that
 manages the scene on the plate through the commands, and with the printer connection (`crates/printer`) the only code in Lamina that
 reaches the network. The desktop attaches
 `net::Ureq` and draws the chat; `lamina-core`, the CLI and the MCP server must not depend on this crate. Ported from BIMCraft's
@@ -10,9 +11,14 @@ What comes from the network is hostile, and what goes out is the user's:
 
 - A reply is read up to `MAX_REPLY` and parsed leniently; one that is not what the provider documents is an `Err` for the chat to show,
   never a panic. A tool call's arguments are checked before anything runs (`tools::run`).
-- Requests go only to the three hosts (`net::allowed`), over HTTPS, with no redirect followed; the key travels in a header and is in
-  no address, no message and no `Debug` (`Request`'s prints no headers). A key or model id with odd characters never reaches a header
-  or an address (`key_ok`, `model_ok`).
+- Requests go only to the three hosts (`net::allowed`), over HTTPS, or to a local model's server over plain HTTP at 127.0.0.1 or
+  ::1 (`net::loopback`: by address, never a name, any port, no credentials), with no redirect followed; the key travels in a header
+  and is in no address, no message and no `Debug` (`Request`'s prints no headers). A key or model id with odd characters never
+  reaches a header or an address (`key_ok`, `model_ok`, `model_ok_for`).
+- `local.rs`: `Provider::Local`, an OpenAI-compatible server on this computer (Ollama, LM Studio), spoken to in Chat Completions,
+  which all of them serve. `local::endpoint` takes the address the user typed, refuses any host but this computer, and writes
+  `localhost` as 127.0.0.1. No key is needed (`Provider::needs_key`); one is sent only when given. A tool message takes words, so
+  pictures follow in a user message, as for OpenAI and Gemini.
 - What goes out is capped: a tool result (`MAX_RESULT`), the conversation (`MAX_HISTORY`), the replies one message may take
   (`MAX_ROUNDS`) and the calls honoured in one reply (`MAX_CALLS`).
 - The tools run on the window's session through `bridge::run`, as a connected agent's do, and refuse every command whose catalog

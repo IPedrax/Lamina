@@ -240,11 +240,11 @@ fn a_key_or_model_that_is_no_key_or_model_never_reaches_a_request() {
     let history = [Msg::user("hi")];
     for model in ["", "a b", "x/../y", "m?key=1", "m:generate"] {
         assert!(!model_ok(model), "{model:?}");
-        assert!(complete(Provider::Gemini, &net, model, KEY, &history).is_err());
+        assert!(complete(Provider::Gemini, &net, "", model, KEY, &history).is_err());
     }
     for key in ["", "short", "has space in it ok", "line\nbreak-in-it-0123", "ключ-0123456789"] {
         assert!(!key_ok(key), "{key:?}");
-        assert!(complete(Provider::OpenAi, &net, "gpt-6-astra", key, &history).is_err());
+        assert!(complete(Provider::OpenAi, &net, "", "gpt-6-astra", key, &history).is_err());
     }
     assert!(net.seen().is_empty());
 }
@@ -252,7 +252,7 @@ fn a_key_or_model_that_is_no_key_or_model_never_reaches_a_request() {
 #[test]
 fn every_provider_lists_models_the_ids_of_which_pass() {
     for p in Provider::ALL {
-        assert!(p.models().iter().all(|m| model_ok(m)), "{p:?}");
+        assert!(p.models().iter().all(|m| crate::model_ok_for(p, m)), "{p:?}");
         assert_eq!(Provider::from_key(p.key()), Some(p));
     }
     assert_eq!(Provider::Anthropic.default_model(), "claude-sonnet-5-5");
@@ -1222,4 +1222,109 @@ fn a_preview_call_in_a_turn_sends_the_model_the_picture() {
     assert_eq!(results[1]["tool_use_id"], "b");
     let png = results[1]["content"][1]["source"]["data"].as_str().unwrap();
     assert_eq!(&lamina_core::base64::decode(png).unwrap()[..4], b"\x89PNG");
+}
+
+// ---------- a model on this computer ----------
+
+#[test]
+fn a_local_server_is_this_computer_by_address_and_nothing_else() {
+    use crate::local::endpoint;
+    assert_eq!(endpoint("localhost:11434").unwrap(), "http://127.0.0.1:11434/v1/chat/completions");
+    assert_eq!(endpoint("http://localhost:11434/v1/").unwrap(), "http://127.0.0.1:11434/v1/chat/completions");
+    assert_eq!(endpoint("http://127.0.0.1:1234/v1").unwrap(), "http://127.0.0.1:1234/v1/chat/completions");
+    assert_eq!(endpoint("http://[::1]:8080/v1/chat/completions").unwrap(), "http://[::1]:8080/v1/chat/completions");
+    assert_eq!(endpoint("http://LOCALHOST").unwrap(), "http://127.0.0.1/v1/chat/completions");
+    for no in [
+        "http://192.168.1.20:11434/v1",
+        "http://example.com/v1",
+        "http://localhost.evil.example:11434",
+        "http://127.0.0.1.nip.io:11434",
+        "http://127.0.0.2:11434",
+        "http://0.0.0.0:11434",
+        "http://user@127.0.0.1:11434",
+        "http://evil.example@127.0.0.1",
+        "http://127.0.0.1:11434@evil.example",
+        "https://127.0.0.1:11434/v1",
+        "ftp://127.0.0.1",
+        "http://127.0.0.1:99999",
+        "http://127.0.0.1:11434/v1?x=1",
+        "http://127.0.0.1:11434/../v1",
+        "",
+        "http://127.0.0.1 /v1",
+    ] {
+        assert!(endpoint(no).is_err(), "{no}");
+    }
+    // The network allows plain HTTP to the loopback addresses only, never by name, and the providers stay HTTPS.
+    assert!(allowed("http://127.0.0.1:11434/v1/chat/completions") && allowed("http://[::1]:1234/v1/chat/completions"));
+    for no in ["http://localhost:11434/v1", "http://127.0.0.1.nip.io/", "http://u:p@127.0.0.1:1/", "http://api.openai.com/v1/responses"] {
+        assert!(!allowed(no), "{no}");
+    }
+}
+
+#[test]
+fn the_local_provider_writes_chat_completions_and_reads_tool_calls() {
+    let url = crate::local::endpoint("localhost:11434").unwrap();
+    // No key for a local server: no Authorization header at all.
+    let sent = crate::local::request(&url, "llama3.2:3b", "", &[Msg::user("a box")]);
+    assert!(sent.headers.is_empty());
+    let body: Value = serde_json::from_str(&sent.body).unwrap();
+    assert_eq!((body["model"].as_str(), body["stream"].as_bool()), (Some("llama3.2:3b"), Some(false)));
+    assert_eq!(body["messages"][0]["role"], "system");
+    assert_eq!(body["messages"][1], json!({"role": "user", "content": "a box"}));
+    assert_eq!(body["tools"][0]["function"]["name"], "execute");
+    // A reply with a call whose arguments are text, and one with no id.
+    let reply = json!({"choices": [{"message": {"role": "assistant", "content": "", "reasoning_content": "a box first", "tool_calls": [
+        {"id": "call_a", "type": "function", "function": {"name": "execute", "arguments": BOX}},
+        {"type": "function", "function": {"name": "inspect_scene", "arguments": ""}},
+    ]}, "finish_reason": "tool_calls"}], "usage": {"prompt_tokens": 900, "completion_tokens": 40}});
+    let r = crate::local::parse(200, &reply.to_string()).unwrap();
+    assert_eq!(r.calls.len(), 2);
+    assert_eq!(r.calls[0].args, serde_json::from_str::<Value>(BOX).unwrap());
+    assert_eq!((r.calls[1].id.as_str(), &r.calls[1].args), ("call_1", &json!({})));
+    assert_eq!((r.thinking.as_str(), r.usage.input), ("a box first", 900));
+    // What goes back: the model's message with the ids it was given, then each answer as a tool message, then any picture.
+    let done = vec![
+        Done::text(&r.calls[0], "{\"id\":1}".into(), false),
+        Done { image: Some("iVBORw0KGgo=".into()), ..Done::text(&r.calls[1], "seen".into(), false) },
+    ];
+    let next = crate::local::request(&url, "llama3.2:3b", KEY, &[Msg::user("a box"), Msg::Assistant(r), Msg::Results(done)]);
+    assert_eq!(next.headers, vec![("Authorization".to_string(), format!("Bearer {KEY}"))]);
+    let body: Value = serde_json::from_str(&next.body).unwrap();
+    let m = body["messages"].as_array().unwrap();
+    assert_eq!(m[2]["tool_calls"][1]["id"], "call_1");
+    assert_eq!(m[3], json!({"role": "tool", "tool_call_id": "call_a", "content": "{\"id\":1}"}));
+    assert_eq!(m[4]["tool_call_id"], "call_1");
+    assert_eq!(m[5]["content"][1]["image_url"]["url"], "data:image/png;base64,iVBORw0KGgo=");
+    // Errors are said, never a panic.
+    for (status, bad) in [
+        (500, r#"{"error":{"message":"model not found"}}"#),
+        (200, "{}"),
+        (200, "nope"),
+        (200, r#"{"choices":[{"message":{"content":""},"finish_reason":"length"}]}"#),
+    ] {
+        assert!(crate::local::parse(status, bad).is_err(), "{bad}");
+    }
+}
+
+#[test]
+fn a_turn_with_a_local_model_needs_no_key_and_goes_to_this_computer() {
+    let answer = json!({"choices": [{"message": {"role": "assistant", "content": "Hello from here."}, "finish_reason": "stop"}]});
+    let (base, server) = serve(vec![(200, answer.to_string().into_bytes())]);
+    // The window's own network, which keeps to the loopback addresses for a local model.
+    let mut chat = Chat::new(Arc::new(Ureq::new()));
+    chat.provider = Provider::Local;
+    chat.model = "qwen3".into();
+    chat.local_url = base.replace("127.0.0.1", "localhost");
+    let mut s = Session::new();
+    chat.send("hi", "");
+    drive(&mut chat, &mut s);
+    assert!(chat.log.iter().any(|l| matches!(l, Line::Says(t) if t == "Hello from here.")), "{:?}", chat.log);
+    let said = server.join().unwrap();
+    assert!(said[0].starts_with("POST /v1/chat/completions "), "{}", said[0]);
+    assert!(!said[0].to_ascii_lowercase().contains("authorization"), "no key, no header");
+    // An address that is not this computer is refused before anything is sent.
+    chat.local_url = "http://192.168.1.20:11434".into();
+    chat.send("again", "");
+    assert!(!chat.busy());
+    assert!(matches!(chat.log.last(), Some(Line::Note(n)) if n.contains("this computer")), "{:?}", chat.log.last());
 }
