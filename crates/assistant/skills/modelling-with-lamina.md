@@ -20,6 +20,8 @@ with `move {id, by: [x, y, 0]}`.
 - Place and reshape: `move`, `rotate` (about the object's centre, then it is set back on the plate), `scale` (positive factors,
   one per axis with `by`, so a sphere can become an ellipsoid and a cylinder a disc), `mirror {id, axis}` (a left part from a right
   one), `drop_to_bed`, `delete`, `undo`, `redo`.
+- `lay_flat {id, face}` turns an object so one of its triangles lies on the plate (the user usually clicks the face in the window);
+  `measure {a, b}` gives the distance between two points.
 - Several parts: `duplicate {id, count?}` makes copies and lays the plate out; `arrange {}` lays every object out in rows, none
   touching, and says whether they fit the plate.
 - Opening and saving files is the user's job in the app. You cannot read or write files.

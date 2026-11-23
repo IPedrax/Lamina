@@ -404,6 +404,22 @@ impl App {
         self.view.camera.frame_all(bounds.unwrap_or(([-bx / 2.0, -by / 2.0, 0.0], [bx / 2.0, by / 2.0, 0.0])));
     }
 
+    /// A point clicked with the measure tool: the first of two, or the second, which measures between them.
+    pub fn measure(&mut self, p: [f64; 3]) {
+        if self.view.marks.len() >= 2 {
+            self.view.marks.clear();
+        }
+        self.view.marks.push(p);
+        if let [a, b] = self.view.marks[..]
+            && let Some(m) = self.run("measure", json!({ "a": a, "b": b }))
+        {
+            let f = |k: &str| m[k].as_f64().unwrap_or(0.0);
+            self.status = format!("{:.2} mm (x {:+.2}, y {:+.2}, z {:+.2})", f("distance"), f("dx"), f("dy"), f("dz"));
+        } else if self.view.marks.len() == 1 {
+            self.status = "Click a second point to measure to.".into();
+        }
+    }
+
     /// Slices the plate with the settings shown and opens the preview.
     pub fn slice(&mut self) {
         let objects: Vec<(u32, Mesh)> = self.session.scene.objects.iter().map(|o| (o.id, o.world())).collect();
@@ -548,6 +564,19 @@ impl App {
                         (self.failed, self.status) = (true, "They do not all fit the plate: some stand off it.".into());
                     }
                     self.frame_all();
+                }
+            }
+            ui.separator();
+            {
+                use crate::view3d::Tool;
+                let before = self.view.tool;
+                ui.selectable_value(&mut self.view.tool, Tool::Move, "Move").on_hover_text("Pick objects and drag them with the arrows");
+                ui.selectable_value(&mut self.view.tool, Tool::LayFlat, "Lay flat")
+                    .on_hover_text("Click a face to turn it down onto the plate");
+                ui.selectable_value(&mut self.view.tool, Tool::Measure, "Measure")
+                    .on_hover_text("Click two points to measure between them");
+                if self.view.tool != before {
+                    self.view.marks.clear();
                 }
             }
             ui.separator();
@@ -839,6 +868,15 @@ impl App {
         let shown = self.view.show(ui, &scene, &self.selected, self.profile.bed);
         if let Some((id, by)) = shown.moved {
             self.run("move", json!({ "id": id, "by": by }));
+        }
+        if let Some((id, face)) = shown.face
+            && self.run("lay_flat", json!({ "id": id, "face": face })).is_some()
+        {
+            self.selected = vec![id];
+            self.status = "Laid flat on the face clicked.".into();
+        }
+        if let Some(p) = shown.point {
+            self.measure(p);
         }
         match shown.pick {
             Some(Pick::Object(id)) => self.pick(id, ui),
@@ -1208,6 +1246,45 @@ mod tests {
         h.state_mut().profile.support = lamina_slicer::profile::Support::FromPlate;
         h.run();
         assert_eq!(h.state().print_json()["profile"]["support"], "from_plate");
+    }
+
+    #[test]
+    fn the_measure_tool_measures_between_two_clicks_and_lay_flat_turns_a_face_down() {
+        let mut h = window();
+        press(&mut h, "Add box");
+        press(&mut h, "Measure");
+        let app = h.state_mut();
+        assert_eq!(app.view.tool, view3d::Tool::Measure);
+        app.measure([0.0, 0.0, 0.0]);
+        app.measure([3.0, 4.0, 0.0]);
+        assert!(app.status.starts_with("5.00 mm"), "{}", app.status);
+        app.measure([1.0, 1.0, 1.0]);
+        assert_eq!(app.view.marks.len(), 1, "a third click starts again");
+        // Lay flat: a click in the middle of the view, looking at the box, turns the face there down.
+        press(&mut h, "Lay flat");
+        let app = h.state_mut();
+        app.view.camera = view3d::Camera { target: [0.0, 0.0, 10.0], azimuth: -90.0, elevation: 0.0, distance: 200.0 };
+        h.run();
+        h.run();
+        let middle = h.state().view.rect.unwrap().center();
+        h.hover_at(middle);
+        h.run();
+        h.event(egui::Event::PointerButton {
+            pos: middle,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.run();
+        h.event(egui::Event::PointerButton {
+            pos: middle,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.run();
+        assert!(h.state().status.contains("Laid flat"), "{}", h.state().status);
+        assert!(h.state().session.can_undo());
     }
 
     #[test]

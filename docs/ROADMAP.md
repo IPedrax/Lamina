@@ -68,6 +68,10 @@ Priorities:
   inside another (a void). `import_mesh` repairs on the way in and says what it did; `repair {id}` mends an object, as one undo step.
 - **2.3 Report problems clearly.** `info` gives `open_edges`, `nonmanifold_edges` and `flipped_faces` for each object; the plate
   panel shows a warning sign with the problems on hover, and a Repair button for the picked object.
+- **3.3 Lay flat on a face** and **3.13 Measure.** The 3D view's picture keeps each pixel's triangle and depth beside its object.
+  With the Lay flat tool a click gives a face, and `lay_flat {id, face}` turns its normal straight down (`Transform::rotate_axis`,
+  Rodrigues' formula) and sets the object on the plate; with the Measure tool two clicks give two points (unprojected from the
+  depth), drawn joined, and `measure {a, b}` gives the distance, also for agents.
 - **3.4 Arrange** and **3.5 Duplicate.** `arrange {ids?, gap?, bed?}` lays footprints out in rows (a shelf packer, deepest first),
   centred on the plate, and says whether they fit; `duplicate {id, count?, arrange?}` adds copies sharing the mesh and lays the
   plate out. Arrange and Duplicate buttons in the window.
@@ -143,10 +147,6 @@ from the centre, run as `scale` on release. Test: the same drag-and-assert tests
 **3.2 Move several objects (P1).** How: the gizmo stands at the middle of the selection's bounds, and on release one
 transaction moves each object.
 
-**3.3 Lay flat on a face (P1).** How: make `Picture` keep a triangle index per pixel beside the object id. A "lay flat" click then
-gives a face, whose world normal `n` is turned to point down (axis `n x (0,0,-1)`, angle `acos(-n.z)`). Add a core command
-`lay_flat {id, face}` that rotates and drops the object to the plate.
-
 **3.7 Absolute position and size fields (P1).** How: in the plate panel, show the object's position and size and let them be typed.
 On enter, run `move` by the difference, or `scale` with `by` set to the ratio. Add a lock for keeping proportions.
 
@@ -166,9 +166,6 @@ the AI's skills what is not possible.
 an object. It is a list of the commands that made it (primitives, transforms, booleans, extrudes) with their parameters. Add
 `build {recipe}`, which runs them and keeps the recipe, and `edit {id, step, params}`, which changes one step and rebuilds. Store the
 recipe in the project file. The modelling skill teaches the AI to edit recipes rather than redo work.
-
-**3.13 Measure (P1).** How: keep the depth buffer in `Picture`, so a click gives a world point (unproject with `Camera::ray`). Measure
-between two clicked points in the window, and add a core `measure {a, b}` for agents.
 
 ## 4. Slicer
 

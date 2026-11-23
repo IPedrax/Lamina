@@ -60,6 +60,13 @@ pub static ALL: &[Command] = &[
         true,
         Files::None,
     ),
+    cmd(
+        "lay_flat",
+        "{id, face} turns an object so its triangle number `face` (as the window's pick or the mesh gives it) lies flat on the plate, facing down, then sets it on the plate. Returns {turned} in degrees",
+        lay_flat,
+        true,
+        Files::None,
+    ),
     cmd("drop_to_bed", "{id} lowers or raises an object so its lowest point touches the plate", drop_to_bed, true, Files::None),
     cmd("delete", "{id} removes an object", delete, true, Files::None),
     cmd(
@@ -105,6 +112,13 @@ pub static ALL: &[Command] = &[
         Files::Read,
     ),
     cmd("new", "{} empties the plate and starts a new undo history; the print settings stay", new, false, Files::None),
+    cmd(
+        "measure",
+        "{a:[x,y,z], b:[x,y,z]} the distance between two points, mm, and along each axis. Returns {distance, dx, dy, dz}",
+        measure,
+        false,
+        Files::None,
+    ),
     cmd("undo", "{} takes back the last change", undo, false, Files::None),
     cmd("redo", "{} puts back what undo took back", redo, false, Files::None),
 ];
@@ -556,6 +570,53 @@ fn duplicate(s: &mut Session, p: &Value) -> Result<Value, String> {
         true
     };
     Ok(json!({"ids": ids, "fits": fits}))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Face {
+    id: u32,
+    face: usize,
+}
+
+fn lay_flat(s: &mut Session, p: &Value) -> Result<Value, String> {
+    let a: Face = parse(p)?;
+    let o = s.scene.get(a.id)?;
+    let t = o.mesh.tri(a.face).ok_or_else(|| format!("object {} has no triangle {}; it has {}", a.id, a.face, o.mesh.triangles.len()))?;
+    let w = t.map(|q| o.xf.apply(q));
+    let n = cross([w[1][0] - w[0][0], w[1][1] - w[0][1], w[1][2] - w[0][2]], [w[2][0] - w[0][0], w[2][1] - w[0][1], w[2][2] - w[0][2]]);
+    let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+    if len < 1e-12 {
+        return Err(format!("triangle {} has no area, so no side to lie on", a.face));
+    }
+    // The face's outward normal turned to point straight down: about the axis square to both, by the angle between them.
+    let n = n.map(|c| c / len);
+    let angle = (-n[2]).clamp(-1.0, 1.0).acos().to_degrees();
+    let axis = if angle > 179.999 { [1.0, 0.0, 0.0] } else { cross(n, [0.0, 0.0, -1.0]) };
+    if angle > 1e-9 {
+        about_centre(s.scene_mut().get_mut(a.id)?, &Transform::rotate_axis(axis, angle))?;
+    } else {
+        settle(s.scene_mut().get_mut(a.id)?)?;
+    }
+    Ok(json!({"turned": angle}))
+}
+
+fn cross(a: P3, b: P3) -> P3 {
+    [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Measure {
+    a: P3,
+    b: P3,
+}
+
+fn measure(_: &mut Session, p: &Value) -> Result<Value, String> {
+    let m: Measure = parse(p)?;
+    let (a, b) = (finite3("a", m.a)?, finite3("b", m.b)?);
+    let d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    Ok(json!({"distance": (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt(), "dx": d[0], "dy": d[1], "dz": d[2]}))
 }
 
 fn delete(s: &mut Session, p: &Value) -> Result<Value, String> {
@@ -1028,6 +1089,33 @@ mod tests {
         run(&mut s, "undo", json!({})).unwrap();
         assert_eq!(s.scene.objects.len(), 1, "one undo takes the copies back");
         assert!(run(&mut s, "duplicate", json!({"id": 1, "count": 0})).is_err());
+    }
+
+    #[test]
+    fn a_face_laid_flat_ends_up_on_the_plate_facing_down() {
+        let mut s = Session::new();
+        // A pyramid lying on its base; laying one of its slanted sides flat tips it over onto that side.
+        run(&mut s, "add_primitive", json!({"kind": "pyramid", "radius": 10, "height": 12, "sides": 4})).unwrap();
+        let side = (0..s.scene.get(1).unwrap().mesh.triangles.len())
+            .find(|&i| s.scene.get(1).unwrap().mesh.tri(i).is_some_and(|t| t.iter().any(|p| p[2] > 11.0)))
+            .unwrap();
+        let r = run(&mut s, "lay_flat", json!({"id": 1, "face": side})).unwrap();
+        assert!(r["turned"].as_f64().unwrap() > 90.0 && r["turned"].as_f64().unwrap() < 180.0);
+        let o = s.scene.get(1).unwrap();
+        let w = o.mesh.tri(side).unwrap().map(|q| o.xf.apply(q));
+        assert!(w.iter().all(|p| p[2].abs() < 1e-6), "the face is on the plate: {w:?}");
+        assert!(o.bounds().unwrap().0[2].abs() < 1e-6 && o.world().volume() > 0.0);
+        // The base, already down, stays; a face that does not exist is refused.
+        assert!(run(&mut s, "lay_flat", json!({"id": 1, "face": 9999})).is_err());
+    }
+
+    #[test]
+    fn measure_gives_the_distance_between_two_points() {
+        let mut s = Session::new();
+        let r = run(&mut s, "measure", json!({"a": [0, 0, 0], "b": [3, 4, 12]})).unwrap();
+        assert_eq!((r["distance"].as_f64(), r["dz"].as_f64()), (Some(13.0), Some(12.0)));
+        assert!(run(&mut s, "measure", json!({"a": [0, 0, 0], "b": [1, 2]})).is_err());
+        assert!(!s.can_undo(), "measuring changes nothing");
     }
 
     #[test]

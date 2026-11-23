@@ -89,16 +89,40 @@ impl Camera {
     }
 }
 
-/// A picture of the plate, and the object drawn at each pixel (0 for none).
+/// A picture of the plate, and at each pixel the object drawn there (0 for none), its triangle, and one over its depth.
 pub struct Picture {
     pub image: ColorImage,
     ids: Vec<u32>,
+    tris: Vec<u32>,
+    depth: Vec<f32>,
 }
 
 impl Picture {
     pub fn id_at(&self, x: usize, y: usize) -> Option<u32> {
         let [w, h] = self.image.size;
         (x < w && y < h).then(|| self.ids[y * w + x]).filter(|&id| id != 0)
+    }
+
+    /// The object and its triangle at a pixel: what a "lay flat" click lands on.
+    pub fn face_at(&self, x: usize, y: usize) -> Option<(u32, usize)> {
+        let w = self.image.size[0];
+        self.id_at(x, y).map(|id| (id, self.tris[y * w + x] as usize))
+    }
+
+    /// The point of the model (or the plate) seen at a pixel, from its depth: where a measuring click lands.
+    pub fn point_at(&self, camera: &Camera, x: usize, y: usize) -> Option<P3> {
+        let [w, h] = self.image.size;
+        if x >= w || y >= h {
+            return None;
+        }
+        let inv = f64::from(self.depth[y * w + x]);
+        if inv <= 0.0 {
+            return None;
+        }
+        let (eye, dir) = camera.ray(x as f64 + 0.5, y as f64 + 0.5, w as f64, h as f64);
+        let forward = camera.frame().3;
+        let t = (1.0 / inv) / dot(dir, forward);
+        Some(add(eye, scale(dir, t)))
     }
 }
 
@@ -108,6 +132,9 @@ struct Raster {
     pix: Vec<Color32>,
     depth: Vec<f32>,
     ids: Vec<u32>,
+    tris: Vec<u32>,
+    /// The triangle being filled, for `tris`.
+    tri: u32,
     light: P3,
 }
 
@@ -117,7 +144,8 @@ pub fn draw(scene: &Scene, selected: &[u32], camera: &Camera, bed: [f64; 2], siz
     let (_, _, _, forward) = camera.frame();
     // A light from over the viewer's shoulder, so faces turned to the eye are bright and the top reads from the sides.
     let light = normalize(add(scale(forward, -1.0), [0.25, 0.15, 0.7]));
-    let mut r = Raster { w, h, pix: vec![BACKGROUND; w * h], depth: vec![0.0; w * h], ids: vec![0; w * h], light };
+    let mut r =
+        Raster { w, h, pix: vec![BACKGROUND; w * h], depth: vec![0.0; w * h], ids: vec![0; w * h], tris: vec![0; w * h], tri: 0, light };
     let (hx, hy) = (bed[0] / 2.0, bed[1] / 2.0);
     let c = [[-hx, -hy, 0.0], [hx, -hy, 0.0], [hx, hy, 0.0], [-hx, hy, 0.0]];
     r.fill(camera, [c[0], c[1], c[2]], PLATE, 0);
@@ -138,11 +166,12 @@ pub fn draw(scene: &Scene, selected: &[u32], camera: &Camera, bed: [f64; 2], siz
         let world = o.world();
         for i in 0..world.triangles.len() {
             if let Some(t) = world.tri(i) {
+                r.tri = i as u32;
                 r.shaded(camera, t, base, o.id);
             }
         }
     }
-    Picture { image: ColorImage::new([w, h], r.pix), ids: r.ids }
+    Picture { image: ColorImage::new([w, h], r.pix), ids: r.ids, tris: r.tris, depth: r.depth }
 }
 
 impl Raster {
@@ -183,7 +212,7 @@ impl Raster {
                 let inv = (l0 * a[2] + l1 * b[2] + l2 * c[2]) as f32;
                 let k = y * self.w + x;
                 if inv > self.depth[k] {
-                    (self.depth[k], self.pix[k], self.ids[k]) = (inv, color, id);
+                    (self.depth[k], self.pix[k], self.ids[k], self.tris[k]) = (inv, color, id, self.tri);
                 }
             }
         }
@@ -229,6 +258,15 @@ struct Drawn {
 pub enum Pick {
     Nothing,
     Object(u32),
+}
+
+/// What a click in the view does: pick an object (and move it with the gizmo), lay the face clicked flat, or measure.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Tool {
+    #[default]
+    Move,
+    LayFlat,
+    Measure,
 }
 
 /// A part of the move gizmo: an axis arrow, or the square that slides the object on the plate.
@@ -356,11 +394,14 @@ struct Moving {
     by: P3,
 }
 
-/// What a frame of the view did: a click's pick, and a gizmo drag that ended, as the object and how far it went.
+/// What a frame of the view did: a click's pick, a gizmo drag that ended (the object and how far it went), and with the other
+/// tools, the face or the point a click landed on.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Shown {
     pub pick: Option<Pick>,
     pub moved: Option<(u32, P3)>,
+    pub face: Option<(u32, usize)>,
+    pub point: Option<P3>,
 }
 
 #[derive(Default)]
@@ -372,6 +413,11 @@ pub struct View {
     moving: Option<Moving>,
     /// The gizmo as last drawn, for a test to find its handles.
     pub gizmo: Option<Gizmo>,
+    pub tool: Tool,
+    /// Points measured, drawn joined over the picture.
+    pub marks: Vec<P3>,
+    /// Where the view was last drawn in the window.
+    pub rect: Option<Rect>,
 }
 
 impl View {
@@ -379,11 +425,12 @@ impl View {
     /// far a gizmo drag moved its object.
     pub fn show(&mut self, ui: &mut Ui, scene: &Arc<Scene>, selected: &[u32], bed: [f64; 2]) -> Shown {
         let rect = ui.available_rect_before_wrap();
+        self.rect = Some(rect);
         let response = ui.allocate_rect(rect, Sense::click_and_drag());
         let mut shown = Shown::default();
-        // The gizmo stands at the middle of the one object picked.
+        // The gizmo stands at the middle of the one object picked, while the move tool is in hand.
         let one = match selected {
-            &[id] => scene
+            &[id] if self.tool == Tool::Move => scene
                 .get(id)
                 .ok()
                 .and_then(|o| o.bounds())
@@ -457,12 +504,29 @@ impl View {
                 painter.text(p + vec2(16.0, -16.0), egui::Align2::LEFT_BOTTOM, text, FontId::proportional(13.0), Color32::WHITE);
             }
         }
+        let marks: Vec<Pos2> = self
+            .marks
+            .iter()
+            .filter_map(|&m| self.camera.project(m, f64::from(rect.width()), f64::from(rect.height())))
+            .map(|q| pos2(rect.min.x + q[0] as f32, rect.min.y + q[1] as f32))
+            .collect();
+        for m in &marks {
+            painter.circle_filled(*m, 4.0, Color32::from_rgb(255, 230, 90));
+        }
+        if let [a, b] = marks[..] {
+            painter.line_segment([a, b], Stroke::new(2.0, Color32::from_rgb(255, 230, 90)));
+        }
         if response.clicked()
             && let Some(p) = response.interact_pointer_pos()
             && self.gizmo.and_then(|g| g.handle_at(p)).is_none()
         {
             let (x, y) = (((p.x - rect.min.x) * ppp).max(0.0) as usize, ((p.y - rect.min.y) * ppp).max(0.0) as usize);
-            shown.pick = Some(self.picture.as_ref().and_then(|pic| pic.id_at(x, y)).map_or(Pick::Nothing, Pick::Object));
+            let pic = self.picture.as_ref();
+            match self.tool {
+                Tool::Move => shown.pick = Some(pic.and_then(|pic| pic.id_at(x, y)).map_or(Pick::Nothing, Pick::Object)),
+                Tool::LayFlat => shown.face = pic.and_then(|pic| pic.face_at(x, y)),
+                Tool::Measure => shown.point = pic.and_then(|pic| pic.point_at(&self.camera, x, y)),
+            }
         }
         shown
     }
@@ -585,6 +649,20 @@ mod tests {
         let b = cam.on_level(f64::from(end.x - 100.0), f64::from(end.y - 50.0), 800.0, 600.0, 10.0).unwrap();
         let slid = drag_offset(&cam, rect(), at, Handle::Plate, start, end, true);
         assert!((slid[0] - (b[0] - a[0])).abs() < 1e-6 && (slid[1] - (b[1] - a[1])).abs() < 1e-6 && slid[2] == 0.0);
+    }
+
+    #[test]
+    fn a_click_gives_the_face_and_the_point_under_it() {
+        let s = scene_with_box();
+        // Looking straight down at the 40 mm box: the middle pixel is its top face, 40 mm up, at the middle of the plate.
+        let cam = Camera { target: [0.0, 0.0, 20.0], azimuth: 0.0, elevation: 89.0, distance: 300.0 };
+        let pic = draw(&s, &[], &cam, [220.0, 220.0], [201, 201]);
+        let (id, face) = pic.face_at(100, 100).unwrap();
+        let t = s.get(id).unwrap().world().tri(face).unwrap();
+        assert!(t.iter().all(|p| (p[2] - 40.0).abs() < 1e-6), "the top face: {t:?}");
+        let p = pic.point_at(&cam, 100, 100).unwrap();
+        assert!((p[2] - 40.0).abs() < 0.05 && p[0].abs() < 1.0 && p[1].abs() < 1.0, "{p:?}");
+        assert_eq!(pic.point_at(&cam, 0, 0).map(|p| p[2].abs() < 0.05), Some(true), "a corner sees the plate");
     }
 
     #[test]

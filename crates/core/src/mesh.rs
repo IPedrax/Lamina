@@ -346,6 +346,24 @@ impl Transform {
         Transform { m, t: [0.0; 3] }
     }
 
+    /// A turn of `degrees` about the unit vector `axis` through the origin, counter-clockwise looking down the axis toward the origin
+    /// (Rodrigues' formula). A zero axis is no turn.
+    pub fn rotate_axis(axis: P3, degrees: f64) -> Transform {
+        let len = (axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]).sqrt();
+        if len.is_nan() || len <= 1e-12 {
+            return Transform::IDENTITY;
+        }
+        let [x, y, z] = axis.map(|c| c / len);
+        let (s, c) = degrees.to_radians().sin_cos();
+        let t = 1.0 - c;
+        let m = [
+            [t * x * x + c, t * x * y - s * z, t * x * z + s * y],
+            [t * x * y + s * z, t * y * y + c, t * y * z - s * x],
+            [t * x * z - s * y, t * y * z + s * x, t * z * z + c],
+        ];
+        Transform { m, t: [0.0; 3] }
+    }
+
     /// `self` first, then `next`.
     pub fn then(&self, next: &Transform) -> Transform {
         let mut m = [[0.0; 3]; 3];
@@ -462,6 +480,20 @@ mod tests {
             assert!((m.volume() - shape.volume()).abs() < 1e-3 && m.volume() > 0.0, "{} {}", m.volume(), shape.volume());
         }
         assert!(Transform::scale([-1.0, 1.0, 1.0]).det() < 0.0 && Transform::rotate(2, 30.0).det() > 0.0);
+    }
+
+    #[test]
+    fn a_turn_about_any_axis_matches_the_turns_about_x_y_and_z() {
+        for (k, axis) in [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 2.0]].iter().enumerate() {
+            let (a, b) = (Transform::rotate_axis(*axis, 37.0), Transform::rotate(k, 37.0));
+            for (p, q) in a.m.iter().flatten().zip(b.m.iter().flatten()) {
+                assert!((p - q).abs() < 1e-12);
+            }
+        }
+        // A quarter turn about (1, 1, 0) takes z to a horizontal direction square to the axis.
+        let r = Transform::rotate_axis([1.0, 1.0, 0.0], 90.0).apply([0.0, 0.0, 1.0]);
+        assert!(r[2].abs() < 1e-12 && (r[0] + r[1]).abs() < 1e-12 && (r[0].hypot(r[1]) - 1.0).abs() < 1e-12, "{r:?}");
+        assert_eq!(Transform::rotate_axis([0.0; 3], 45.0), Transform::IDENTITY);
     }
 
     #[test]

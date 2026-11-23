@@ -91,6 +91,8 @@ only through `Session::execute`, so the assistant, a button and a script do the 
   constant size on screen. A drag that starts on one moves the object along that line on screen (or across the level plane under the
   pointer), drawn where it would go and snapped to half a millimetre unless Shift is held; on release the window runs one `move`, so
   the whole drag is one undo step. A drag that starts anywhere else still orbits.
+- **Tools.** Move (the gizmo), Lay flat and Measure, chosen in the toolbar. The picture keeps each pixel's object, triangle and
+  depth, so a click gives the object, the face (which `lay_flat` turns down) or the point (unprojected from the depth; two measure).
 - **Objects and settings.** Add a box, cylinder or sphere (placed beside what is on the plate, in one undo step, through
   `add_primitive {at}`), import an STL, move, rotate, scale, drop, delete, and with several picked, join, subtract or intersect.
   The print settings edit the profile the slice uses.
