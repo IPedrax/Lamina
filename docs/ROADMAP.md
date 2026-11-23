@@ -68,6 +68,10 @@ Priorities:
   inside another (a void). `import_mesh` repairs on the way in and says what it did; `repair {id}` mends an object, as one undo step.
 - **2.3 Report problems clearly.** `info` gives `open_edges`, `nonmanifold_edges` and `flipped_faces` for each object; the plate
   panel shows a warning sign with the problems on hover, and a Repair button for the picked object.
+- **3.1 Rotate and scale handles.** The gizmo has a ring per axis (a circle about the middle, square to the axis) and a corner
+  square. A drag on a ring turns by the angle the pointer sweeps round the middle on screen, the way the axis is seen, snapped to 5
+  degrees; a drag on the square scales by how much farther the pointer is from the middle, snapped to 0.05. The picked objects are
+  drawn changing, and on release one transaction runs `rotate` or `scale` on each.
 - **3.2 Move several objects.** The gizmo stands at the middle of the picked objects' bounds, draws them all moving, and on
   release one transaction moves each, so one undo takes the drag back.
 - **3.7 Absolute position and size fields.** The picked object's footprint middle and bottom, and its size, as fields; a value
@@ -150,11 +154,6 @@ public algorithm) in `crates/core/src/simplify.rs`, behind a `simplify {id, tria
 FFI, so this would be our own implementation.
 
 ## 3. Modelling
-
-**3.1 Rotate and scale handles (P1).** How: in `apps/lamina/src/view3d.rs`, next to the move gizmo. Draw a ring per axis, projected as a
-polyline of points around the object's centre. A drag on a ring turns by the change in angle of the pointer around the projected
-centre, snapped to 5 degrees, and on release runs `rotate`. Add a corner handle for uniform scale: the ratio of the pointer's distances
-from the centre, run as `scale` on release. Test: the same drag-and-assert tests as the move gizmo.
 
 **3.10 Text (P2).** How: read glyph outlines from a font with `ttf-parser` (BIMCraft uses it, with IBM Plex under the OFL, which may be
 bundled with its licence). Flatten the curves to polylines and extrude with 3.9. Engrave or emboss with a boolean.

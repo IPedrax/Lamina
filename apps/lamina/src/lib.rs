@@ -957,16 +957,18 @@ impl App {
     fn prepare(&mut self, ui: &mut Ui) {
         let scene = Arc::clone(&self.session.scene);
         let shown = self.view.show(ui, &scene, &self.selected, self.profile.bed);
-        match shown.moved.as_ref().map(|(ids, by)| (ids.as_slice(), by)) {
-            Some((&[id], by)) => {
-                self.run("move", json!({ "id": id, "by": by }));
-            }
-            // Several picked: one transaction, so one undo takes the whole drag back.
-            Some((ids, by)) => {
-                let moves = ids.iter().map(|&id| ("move", json!({ "id": id, "by": by }))).collect();
-                self.run_all("move", moves);
-            }
-            None => {}
+        if let Some((ids, change)) = &shown.moved {
+            use crate::view3d::Change;
+            // One command for each picked object, in one transaction, so one undo takes the whole drag back.
+            let (label, commands): (&str, Vec<(&str, Value)>) = match *change {
+                Change::Move(by) => ("move", ids.iter().map(|&id| ("move", json!({ "id": id, "by": by }))).collect()),
+                Change::Turn(axis, degrees) => {
+                    let axis = ["x", "y", "z"][axis.min(2)];
+                    ("rotate", ids.iter().map(|&id| ("rotate", json!({ "id": id, "axis": axis, "degrees": degrees }))).collect())
+                }
+                Change::Scale(f) => ("scale", ids.iter().map(|&id| ("scale", json!({ "id": id, "factor": f }))).collect()),
+            };
+            self.run_all(label, commands);
         }
         if let Some((id, face)) = shown.face
             && self.run("lay_flat", json!({ "id": id, "face": face })).is_some()
@@ -1202,6 +1204,31 @@ mod tests {
         assert_eq!(middle(h.state(), 2), b, "the one not picked stayed");
         press(&mut h, "Undo");
         assert_eq!((middle(h.state(), 1), middle(h.state(), 3)), (a, c), "one undo takes the whole drag back");
+    }
+
+    #[test]
+    fn a_ring_drag_turns_the_object_and_the_corner_square_scales_it_each_in_one_undo_step() {
+        use crate::view3d::Handle;
+        let mut h = window();
+        press(&mut h, "Add box");
+        h.state_mut().run("scale", json!({"id": 1, "by": [2, 1, 1]})); // 40 x 20 x 20, so a quarter turn about z shows
+        h.run();
+        let g = h.state().view.gizmo.unwrap();
+        // Sweep the pointer a quarter turn round the middle, starting on the z ring.
+        let start = g.grip(Handle::Ring(2));
+        let r = start - g.origin;
+        let end = g.origin + egui::vec2(-r.y, r.x) * if g.facing[2] { -1.0 } else { 1.0 };
+        drag(&mut h, start, end);
+        let (lo, hi) = h.state().session.scene.get(1).unwrap().bounds().unwrap();
+        assert!((hi[0] - lo[0] - 20.0).abs() < 0.5 && (hi[1] - lo[1] - 40.0).abs() < 0.5, "turned a quarter: {lo:?} {hi:?}");
+        press(&mut h, "Undo");
+        let (lo, hi) = h.state().session.scene.get(1).unwrap().bounds().unwrap();
+        assert!((hi[0] - lo[0] - 40.0).abs() < 1e-6, "one undo takes the turn back");
+        let g = h.state().view.gizmo.unwrap();
+        let s = g.grip(Handle::Scale);
+        drag(&mut h, s, g.origin + (s - g.origin) * 1.5);
+        let (lo, hi) = h.state().session.scene.get(1).unwrap().bounds().unwrap();
+        assert!((hi[2] - lo[2] - 30.0).abs() < 1.5 && lo[2].abs() < 1e-9, "scaled by half again, still on the plate: {lo:?} {hi:?}");
     }
 
     #[test]

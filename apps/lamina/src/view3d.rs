@@ -1,8 +1,9 @@
 //! The 3D view: the plate and the objects on it, drawn on the processor into a picture egui shows. The picture is redrawn only when
 //! the scene, the selection, the camera or the size changes, and each pixel keeps the id of the object drawn there, which is the pick.
-//! A primary drag orbits, a secondary or middle drag pans, the wheel zooms, a click picks. One picked object carries a move gizmo: an
-//! arrow for each axis and a square to slide it on the plate; a drag that starts on one moves the object (seen as it goes, snapped to
-//! half a millimetre unless Shift is held) and, on release, says how far, which the window runs as one `move` command.
+//! A primary drag orbits, a secondary or middle drag pans, the wheel zooms, a click picks. The picked objects carry a gizmo: an arrow
+//! for each axis and a square to slide them on the plate, a ring for each axis to turn them, and a corner square to scale them; a drag
+//! that starts on one changes them (seen as it goes, snapped unless Shift is held) and, on release, says how, which the window runs as
+//! one transaction of `move`, `rotate` or `scale` commands.
 //!
 //! shortcut: a software rasterizer, enough for scenes of tens of thousands of triangles; a GPU pass like BIMCraft's
 //! (`crates/ui-egui/src/gpu.rs`) is the upgrade for large imported meshes.
@@ -250,7 +251,7 @@ struct Drawn {
     selected: Vec<u32>,
     bed: [f64; 2],
     size: [usize; 2],
-    moving: Option<(Vec<u32>, P3)>,
+    moving: Option<(Vec<u32>, Change)>,
 }
 
 /// What a click in the view landed on.
@@ -269,14 +270,52 @@ pub enum Tool {
     Measure,
 }
 
-/// A part of the move gizmo: an axis arrow, or the square that slides the object on the plate.
+/// A part of the gizmo: an axis arrow, the square that slides the object on the plate, a ring that turns it about an axis, or the
+/// corner square that scales it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Handle {
     X,
     Y,
     Z,
     Plate,
+    /// A turn about axis 0, 1 or 2.
+    Ring(usize),
+    Scale,
 }
+
+/// What a drag on the gizmo does to the picked objects: moves them by mm, turns each about its own middle by degrees about an axis, or
+/// scales each about its own middle.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Change {
+    Move(P3),
+    Turn(usize, f64),
+    Scale(f64),
+}
+
+impl Change {
+    fn is_nothing(&self) -> bool {
+        match *self {
+            Change::Move(by) => by.iter().all(|c| *c == 0.0),
+            Change::Turn(_, d) => d == 0.0,
+            Change::Scale(f) => f == 1.0,
+        }
+    }
+
+    /// The transform that makes this change to an object whose middle is `c`.
+    fn about(&self, c: P3) -> lamina_core::Transform {
+        use lamina_core::Transform;
+        let around = |t: Transform| Transform::translate(c.map(|v| -v)).then(&t).then(&Transform::translate(c));
+        match *self {
+            Change::Move(by) => Transform::translate(by),
+            Change::Turn(axis, degrees) => around(Transform::rotate(axis, degrees)),
+            Change::Scale(f) => around(Transform::scale([f; 3])),
+        }
+    }
+}
+
+/// Turns snap to this many degrees, and scales to this step.
+const TURN_STEP: f64 = 5.0;
+const SCALE_STEP: f64 = 0.05;
 
 /// How long the arrows are on screen, points, however far the camera is; how near the pointer must be to one; the snap, mm.
 const ARROW: f64 = 70.0;
@@ -290,7 +329,15 @@ pub struct Gizmo {
     pub tips: [Pos2; 3],
     pub plate: [Pos2; 4],
     pub length: f64,
+    /// Each ring's points on screen, a circle about the middle square to its axis; and the scale square's corners.
+    pub rings: [[Pos2; RING]; 3],
+    pub scale: [Pos2; 4],
+    /// Whether each axis points toward the eye, which says which way a turn on screen goes.
+    pub facing: [bool; 3],
 }
+
+/// The points of a ring.
+pub const RING: usize = 48;
 
 impl Gizmo {
     /// The gizmo at `at`, seen through `camera` in `rect`; none when it is behind the eye.
@@ -308,39 +355,99 @@ impl Gizmo {
         };
         let s = length * 0.35;
         let corner = |dx: f64, dy: f64| camera.project([at[0] + dx, at[1] + dy, at[2]], w, h).map(to);
+        let ring = |axis: usize| -> Option<[Pos2; RING]> {
+            let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
+            let mut out = [Pos2::ZERO; RING];
+            for (i, slot) in out.iter_mut().enumerate() {
+                let a = std::f64::consts::TAU * i as f64 / RING as f64;
+                let mut p = at;
+                p[u] += length * 0.8 * a.cos();
+                p[v] += length * 0.8 * a.sin();
+                *slot = camera.project(p, w, h).map(to)?;
+            }
+            Some(out)
+        };
+        let origin = to(o);
+        // The scale square sits below and to the right of the middle on screen, the same size however far the camera is.
+        let k = (ARROW * 0.62) as f32;
+        let q = 7.0;
+        let scale = [origin + vec2(k - q, k - q), origin + vec2(k + q, k - q), origin + vec2(k + q, k + q), origin + vec2(k - q, k + q)];
+        let forward = camera.frame().3;
         Some(Gizmo {
-            origin: to(o),
+            origin,
             tips: [tip(0)?, tip(1)?, tip(2)?],
             plate: [corner(0.0, 0.0)?, corner(s, 0.0)?, corner(s, s)?, corner(0.0, s)?],
             length,
+            rings: [ring(0)?, ring(1)?, ring(2)?],
+            scale,
+            facing: [forward[0] < 0.0, forward[1] < 0.0, forward[2] < 0.0],
         })
     }
 
-    /// The handle under `p`: the plate square first, then the nearest arrow within reach.
+    /// The handle under `p`: the scale square, the plate square, then the nearest arrow or ring within reach.
     pub fn handle_at(&self, p: Pos2) -> Option<Handle> {
+        if inside(&self.scale, p) {
+            return Some(Handle::Scale);
+        }
         if inside(&self.plate, p) {
             return Some(Handle::Plate);
         }
-        [Handle::X, Handle::Y, Handle::Z]
-            .into_iter()
-            .zip(self.tips)
-            .map(|(h, tip)| (h, distance_to_segment(p, self.origin, tip)))
-            .filter(|&(_, d)| d <= NEAR_ARROW)
-            .min_by(|a, b| a.1.total_cmp(&b.1))
-            .map(|(h, _)| h)
+        let arrows =
+            [Handle::X, Handle::Y, Handle::Z].into_iter().zip(self.tips).map(|(h, tip)| (h, distance_to_segment(p, self.origin, tip)));
+        let rings = (0..3).map(|k| {
+            let r = &self.rings[k];
+            (Handle::Ring(k), (0..RING).map(|i| distance_to_segment(p, r[i], r[(i + 1) % RING])).fold(f32::MAX, f32::min))
+        });
+        arrows.chain(rings).filter(|&(_, d)| d <= NEAR_ARROW).min_by(|a, b| a.1.total_cmp(&b.1)).map(|(h, _)| h)
     }
 
-    /// Where on screen a test grabs `handle`: an arrow's tip, or the middle of the plate square.
+    /// Where on screen a test grabs `handle`: an arrow's tip, the middle of a square, or the ring's point farthest from the middle
+    /// on screen (where no arrow is near).
     pub fn grip(&self, handle: Handle) -> Pos2 {
+        let middle = |q: &[Pos2; 4]| (q.iter().fold(Vec2::ZERO, |s, p| s + p.to_vec2()) / 4.0).to_pos2();
         match handle {
             Handle::X => self.tips[0],
             Handle::Y => self.tips[1],
             Handle::Z => self.tips[2],
-            Handle::Plate => {
-                let sum = self.plate.iter().fold(Vec2::ZERO, |s, p| s + p.to_vec2());
-                (sum / 4.0).to_pos2()
+            Handle::Plate => middle(&self.plate),
+            Handle::Scale => middle(&self.scale),
+            Handle::Ring(k) => {
+                let r = &self.rings[k.min(2)];
+                let square = middle(&self.scale);
+                let clear = |p: &Pos2| {
+                    self.tips.iter().all(|t| distance_to_segment(*p, self.origin, *t) > 2.0 * NEAR_ARROW)
+                        && (*p - square).length() > 3.0 * NEAR_ARROW
+                        && !inside(&self.plate, *p)
+                };
+                r.iter()
+                    .copied()
+                    .filter(clear)
+                    .max_by(|a, b| (*a - self.origin).length().total_cmp(&(*b - self.origin).length()))
+                    .unwrap_or(r[0])
             }
         }
+    }
+}
+
+/// What a drag on `handle` from `start` to `now` does: an arrow or the plate square moves ([`drag_offset`]); a ring turns by the angle
+/// the pointer swept round the middle on screen, the way the axis is seen; the scale square scales by how much farther from the middle
+/// the pointer is. Snapped (to [`STEP`] mm, [`TURN_STEP`] degrees or [`SCALE_STEP`]) unless `free`.
+pub fn drag_change(camera: &Camera, rect: Rect, at: P3, handle: Handle, start: Pos2, now: Pos2, free: bool) -> Change {
+    let Some(g) = Gizmo::at(camera, rect, at) else { return Change::Move([0.0; 3]) };
+    let angle = |p: Pos2| f64::from(-(p.y - g.origin.y)).atan2(f64::from(p.x - g.origin.x));
+    match handle {
+        Handle::Ring(axis) => {
+            let mut swept = (angle(now) - angle(start)).to_degrees();
+            swept = (swept + 540.0).rem_euclid(360.0) - 180.0;
+            let degrees = if g.facing[axis.min(2)] { swept } else { -swept };
+            Change::Turn(axis, if free { degrees } else { (degrees / TURN_STEP).round() * TURN_STEP })
+        }
+        Handle::Scale => {
+            let (a, b) = ((start - g.origin).length(), (now - g.origin).length());
+            let f = if a > 1.0 { f64::from(b / a).clamp(0.05, 20.0) } else { 1.0 };
+            Change::Scale(if free { f } else { ((f / SCALE_STEP).round() * SCALE_STEP).max(SCALE_STEP) })
+        }
+        _ => Change::Move(drag_offset(camera, rect, at, handle, start, now, free)),
     }
 }
 
@@ -353,6 +460,7 @@ pub fn drag_offset(camera: &Camera, rect: Rect, at: P3, handle: Handle, start: P
         Handle::X => 0,
         Handle::Y => 1,
         Handle::Z => 2,
+        Handle::Ring(_) | Handle::Scale => return [0.0; 3],
         Handle::Plate => {
             let (w, h) = (f64::from(rect.width()), f64::from(rect.height()));
             let hit = |p: Pos2| camera.on_level(f64::from(p.x - rect.min.x), f64::from(p.y - rect.min.y), w, h, at[2]);
@@ -392,7 +500,7 @@ struct Moving {
     handle: Handle,
     start: Pos2,
     at: P3,
-    by: P3,
+    change: Change,
 }
 
 /// What a frame of the view did: a click's pick, a gizmo drag that ended (the object and how far it went), and with the other
@@ -400,7 +508,7 @@ struct Moving {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Shown {
     pub pick: Option<Pick>,
-    pub moved: Option<(Vec<u32>, P3)>,
+    pub moved: Option<(Vec<u32>, Change)>,
     pub face: Option<(u32, usize)>,
     pub point: Option<P3>,
 }
@@ -442,16 +550,16 @@ impl View {
             && let (Some(at), Some(start)) = (one, press)
             && let Some(handle) = Gizmo::at(&self.camera, rect, at).and_then(|g| g.handle_at(start))
         {
-            self.moving = Some(Moving { ids: selected.to_vec(), handle, start, at, by: [0.0; 3] });
+            self.moving = Some(Moving { ids: selected.to_vec(), handle, start, at, change: Change::Move([0.0; 3]) });
         }
         let d = response.drag_delta();
         if let Some(m) = &mut self.moving {
             if let Some(now) = response.interact_pointer_pos() {
                 let free = ui.input(|i| i.modifiers.shift);
-                m.by = drag_offset(&self.camera, rect, m.at, m.handle, m.start, now, free);
+                m.change = drag_change(&self.camera, rect, m.at, m.handle, m.start, now, free);
             }
             if response.drag_stopped() || !response.dragged() {
-                shown.moved = Some((m.ids.clone(), m.by)).filter(|(_, by)| by.iter().any(|c| *c != 0.0));
+                shown.moved = Some((m.ids.clone(), m.change)).filter(|(_, c)| !c.is_nothing());
                 self.moving = None;
             }
         } else if response.dragged_by(PointerButton::Primary) {
@@ -470,7 +578,7 @@ impl View {
             }
         }
         // While a drag is under way the object is drawn where it would go; the scene itself changes only when the window runs the move.
-        let moving = self.moving.as_ref().map(|m| (m.ids.clone(), m.by));
+        let moving = self.moving.as_ref().map(|m| (m.ids.clone(), m.change));
         let ppp = ui.ctx().pixels_per_point();
         let size = [(rect.width() * ppp).round().max(1.0) as usize, (rect.height() * ppp).round().max(1.0) as usize];
         let now = Drawn {
@@ -483,11 +591,14 @@ impl View {
         };
         if self.drawn.as_ref() != Some(&now) {
             let picture = match &moving {
-                Some((ids, by)) => {
+                Some((ids, change)) => {
                     let mut seen = Scene::clone(scene);
                     for &id in ids {
-                        if let Ok(o) = seen.get_mut(id) {
-                            o.xf = o.xf.then(&lamina_core::Transform::translate(*by));
+                        if let Ok(o) = seen.get_mut(id)
+                            && let Some((lo, hi)) = o.bounds()
+                        {
+                            let c = [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, (lo[2] + hi[2]) / 2.0];
+                            o.xf = o.xf.then(&change.about(c));
                         }
                     }
                     draw(&seen, selected, &self.camera, bed, size)
@@ -504,12 +615,20 @@ impl View {
         if let Some(t) = &self.texture {
             painter.image(t.id(), rect, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
         }
-        self.gizmo = one.and_then(|at| Gizmo::at(&self.camera, rect, add(at, moving.as_ref().map_or([0.0; 3], |(_, by)| *by))));
+        let shift = match moving.as_ref().map(|(_, c)| *c) {
+            Some(Change::Move(by)) => by,
+            _ => [0.0; 3],
+        };
+        self.gizmo = one.and_then(|at| Gizmo::at(&self.camera, rect, add(at, shift)));
         if let Some(g) = self.gizmo {
             let active = self.moving.as_ref().map(|m| m.handle).or_else(|| response.hover_pos().and_then(|p| g.handle_at(p)));
             paint_gizmo(&painter, &g, active);
             if let (Some(m), Some(p)) = (self.moving.as_ref(), response.interact_pointer_pos()) {
-                let text = format!("{:+.1}, {:+.1}, {:+.1} mm", m.by[0], m.by[1], m.by[2]);
+                let text = match m.change {
+                    Change::Move(by) => format!("{:+.1}, {:+.1}, {:+.1} mm", by[0], by[1], by[2]),
+                    Change::Turn(axis, d) => format!("{d:+.0} deg about {}", ["x", "y", "z"][axis.min(2)]),
+                    Change::Scale(f) => format!("x {f:.2}"),
+                };
                 painter.text(p + vec2(16.0, -16.0), egui::Align2::LEFT_BOTTOM, text, FontId::proportional(13.0), Color32::WHITE);
             }
         }
@@ -543,6 +662,15 @@ impl View {
 
 fn paint_gizmo(painter: &egui::Painter, g: &Gizmo, active: Option<Handle>) {
     let lit = |h: Handle, c: Color32| if active == Some(h) { Color32::from_rgb(255, 230, 90) } else { c };
+    let colours = [Color32::from_rgb(230, 85, 80), Color32::from_rgb(95, 200, 95), Color32::from_rgb(90, 145, 245)];
+    for (k, c) in colours.iter().enumerate() {
+        let c = lit(Handle::Ring(k), c.gamma_multiply(0.75));
+        let mut ring = g.rings[k].to_vec();
+        ring.push(g.rings[k][0]);
+        painter.add(Shape::line(ring, Stroke::new(if active == Some(Handle::Ring(k)) { 3.0 } else { 1.5 }, c)));
+    }
+    let scale = lit(Handle::Scale, Color32::from_rgb(240, 240, 240));
+    painter.add(Shape::convex_polygon(g.scale.to_vec(), scale.gamma_multiply(0.5), Stroke::new(1.5, scale)));
     // White, so it shows on a picked object, which is drawn in the highlight orange.
     let plate = if active == Some(Handle::Plate) {
         Color32::from_rgba_unmultiplied(255, 230, 90, 150)
@@ -550,7 +678,6 @@ fn paint_gizmo(painter: &egui::Painter, g: &Gizmo, active: Option<Handle>) {
         Color32::from_rgba_unmultiplied(255, 255, 255, 70)
     };
     painter.add(Shape::convex_polygon(g.plate.to_vec(), plate, Stroke::new(1.5, Color32::from_rgb(240, 240, 240))));
-    let colours = [Color32::from_rgb(230, 85, 80), Color32::from_rgb(95, 200, 95), Color32::from_rgb(90, 145, 245)];
     for ((h, tip), c) in [Handle::X, Handle::Y, Handle::Z].into_iter().zip(g.tips).zip(colours) {
         let c = lit(h, c);
         let v = tip - g.origin;
@@ -672,6 +799,27 @@ mod tests {
         let p = pic.point_at(&cam, 100, 100).unwrap();
         assert!((p[2] - 40.0).abs() < 0.05 && p[0].abs() < 1.0 && p[1].abs() < 1.0, "{p:?}");
         assert_eq!(pic.point_at(&cam, 0, 0).map(|p| p[2].abs() < 0.05), Some(true), "a corner sees the plate");
+    }
+
+    #[test]
+    fn a_ring_turns_by_the_angle_swept_and_the_corner_square_scales() {
+        let cam = Camera { target: [0.0, 0.0, 10.0], azimuth: -60.0, elevation: 35.0, distance: 380.0 };
+        let at = [0.0, 0.0, 10.0];
+        let g = Gizmo::at(&cam, rect(), at).unwrap();
+        for k in 0..3 {
+            assert_eq!(g.handle_at(g.grip(Handle::Ring(k))), Some(Handle::Ring(k)), "ring {k}");
+        }
+        assert_eq!(g.handle_at(g.grip(Handle::Scale)), Some(Handle::Scale));
+        // A quarter turn of the pointer round the middle is a quarter turn about z, seen from above (z faces the eye).
+        let r = 100.0;
+        let (start, quarter) = (g.origin + vec2(r, 0.0), g.origin + vec2(0.0, -r));
+        assert_eq!(drag_change(&cam, rect(), at, Handle::Ring(2), start, quarter, false), Change::Turn(2, 90.0));
+        let nudged = g.origin + vec2(r, -r * 0.035);
+        assert_eq!(drag_change(&cam, rect(), at, Handle::Ring(2), start, nudged, false), Change::Turn(2, 0.0), "snapped to 5 degrees");
+        // Twice as far from the middle is twice the size.
+        let s = g.grip(Handle::Scale);
+        let twice = g.origin + (s - g.origin) * 2.0;
+        assert_eq!(drag_change(&cam, rect(), at, Handle::Scale, s, twice, false), Change::Scale(2.0));
     }
 
     #[test]
