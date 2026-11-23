@@ -127,4 +127,15 @@ mod tests {
         let layers = parse(";LAYER:0\nG1 Xé Y\u{2603} E1\nG1 X1e40 Y2\nM104 S200\n");
         assert_eq!(layers.len(), 1);
     }
+
+    #[test]
+    fn hostile_gcode_never_panics() {
+        use lamina_core::fuzz::Rng;
+        let good =
+            b";LAYER:0\nG1 Z0.200 F1200\nG0 X10.000 Y10.000 F9000\nG1 X20.000 Y10.000 E0.5 F1200\n;LAYER:1\nG1 Z0.400\nG1 X10 Y20 E1\n";
+        let mut r = Rng::new(0x6c0);
+        for _ in 0..3000 {
+            let _ = parse(&String::from_utf8_lossy(&r.input(&[good])));
+        }
+    }
 }

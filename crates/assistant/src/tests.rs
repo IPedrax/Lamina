@@ -1119,3 +1119,35 @@ fn more_file_bytes_than_a_conversation_may_carry_are_refused() {
     assert!(!chat.busy() && matches!(chat.log.last(), Some(Line::Note(n)) if n.contains("more than can be sent")));
     assert_eq!(chat.attached.len(), 1, "what was picked is still there to send after a new chat");
 }
+
+// ---------- fuzz ----------
+
+#[test]
+fn provider_replies_and_sealed_keys_never_panic() {
+    use lamina_core::fuzz::Rng;
+    let replies = [
+        anthropic_reply(
+            json!([{"type": "text", "text": "hi"}, {"type": "tool_use", "id": "t", "name": "execute", "input": {"command": "info"}}]),
+            "tool_use",
+        ),
+        openai_reply(json!([{"type": "message", "content": [{"type": "output_text", "text": "hi"}]}]), "completed"),
+        gemini_reply(json!([{"text": "hi"}, {"functionCall": {"name": "execute", "args": {"command": "info"}}}]), "STOP"),
+    ];
+    let good: Vec<&[u8]> = replies.iter().map(|r| r.as_bytes()).collect();
+    let mut r = Rng::new(0xa551);
+    for _ in 0..3000 {
+        let body = String::from_utf8_lossy(&r.input(&good)).into_owned();
+        let status = [200, 400, 401, 429, 500][r.below(5)];
+        let _ = crate::anthropic::parse(status, &body);
+        let _ = crate::openai::parse(status, &body);
+        let _ = crate::gemini::parse(status, &body);
+    }
+    // Sealed keys: the cheap format only (a passphrase key costs 600,000 rounds of PBKDF2 to open).
+    let sealed = crate::seal::seal("sk-test-0123456789abcdef").unwrap();
+    for _ in 0..3000 {
+        let text = String::from_utf8_lossy(&r.input(&[sealed.as_bytes()])).into_owned();
+        if crate::seal::well_formed(&text) && !crate::seal::needs_passphrase(&text) {
+            let _ = crate::seal::open(&text);
+        }
+    }
+}

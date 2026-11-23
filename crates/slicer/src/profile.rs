@@ -264,6 +264,34 @@ mod tests {
     }
 
     #[test]
+    fn hostile_profiles_never_panic_and_a_slice_of_any_valid_one_finishes() {
+        use lamina_core::fuzz::{Rng, json as random};
+        let keys: Vec<String> = serde_json::to_value(Profile::default()).unwrap().as_object().unwrap().keys().cloned().collect();
+        let keys: Vec<&str> = keys.iter().map(String::as_str).collect();
+        let cube = vec![(1, lamina_core::Mesh::cuboid([4.0, 4.0, 1.0]))];
+        let mut r = Rng::new(0x9f0);
+        let mut sliced = 0;
+        for _ in 0..3000 {
+            let mut v = random(&mut r, &keys, 2);
+            if !v.is_object() {
+                v = json!({});
+            }
+            if let Ok(p) = Profile::from_json(&v) {
+                // A thin layer on a valid profile is slow, not wrong: keep the slices few and small.
+                if sliced < 40 && p.layer_height >= 0.1 && p.first_layer_height >= 0.1 {
+                    sliced += 1;
+                    let _ = crate::print::gcode(&cube, &p);
+                }
+            }
+        }
+        // Text in the G-code fields: any `[` or `]` is a placeholder or an error, never a panic.
+        for _ in 0..3000 {
+            let text = String::from_utf8_lossy(&r.input(&[b"M104 S[nozzle_temp]\nG28 [bed_x]"])).into_owned();
+            let _ = Profile::default().expand(&text);
+        }
+    }
+
+    #[test]
     fn placeholders_are_filled() {
         let p = Profile::default();
         assert!(p.expand(&p.start_gcode).unwrap().contains("M104 S215"));

@@ -34,6 +34,10 @@ Priorities:
 - **0.5 Tilted cylinders in booleans.** `lamina_csg::boolean_placed` takes each object's local mesh and transform, merges flat
   patches in the local frame and moves corners to world space in f64; the commands and the child process pass both. Measured with
   the same random shapes: tilted pairs 180 of 200 before, 198 now; curved pairs 144 of 160 before, 159 now.
+- **0.6 Fuzz the parsers.** `lamina_core::fuzz` (a seeded xorshift and mutations: flipped bits, odd bytes, cuts, repeats,
+  splices) feeds thousands of hostile inputs to STL, projects, ZIP and 3MF, base64, every core command's parameters (no panic inside,
+  the scene still valid), slicer profiles and G-code placeholders, the three providers' replies, sealed keys, the G-code preview
+  and the settings file. None panicked.
 - **1.1 Project files.** `crates/core/src/project.rs`: `.lamina` JSON with `format: 1`, each object's id, name, transform and local
   mesh (base64 little-endian arrays), and the print settings and preset labels (`Session::print`, which the slicer lays under what a
   slice is given). `save`, `open` and `new` commands; `open` and `new` start a new history, are in `bridge::REPLACES` (refused to a
@@ -98,10 +102,6 @@ After those, the P1 items below, roughly top to bottom within each area.
 **0.2 Real test prints (P0).** How: export a 20 mm calibration cube, a 0.4 mm single-wall box and a bridge test with `lamina-cli slice`.
 Print each on one Marlin and one Klipper printer. Measure with calipers. Write the results, with photos, in `docs/PRINT-TESTS.md`. Fix
 what is wrong before adding features.
-
-**0.6 Fuzz the parsers (P1).** How: for each parser (STL, settings file, sealed key, G-code preview, command parameters), add a test
-that feeds a few thousand random and mutated inputs from a seeded generator and asserts it never panics. No new dependency: the csg
-crate's tests already have a small RNG to reuse.
 
 ## 1. Files and projects
 

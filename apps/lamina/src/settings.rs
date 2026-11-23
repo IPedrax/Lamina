@@ -206,4 +206,24 @@ mod tests {
         assert_eq!(Settings::read(&path).0, Settings::default());
         assert_eq!(Settings::read(&dir.path().join("none.json")), (Settings::default(), vec![]));
     }
+
+    #[test]
+    fn hostile_settings_files_never_panic() {
+        use lamina_core::fuzz::Rng;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let good = Settings {
+            profile: Some(Profile::default()),
+            printer: Some("Generic 300 mm, Klipper".into()),
+            recent: vec!["/a/b.lamina".into()],
+            keys: [("anthropic".to_string(), seal::seal("sk-ant-test-0123456789").unwrap())].into_iter().collect(),
+            ..Settings::default()
+        };
+        let text = serde_json::to_string(&good).unwrap();
+        let mut r = Rng::new(0x5e7);
+        for _ in 0..1000 {
+            std::fs::write(&path, r.input(&[text.as_bytes()])).unwrap();
+            let _ = Settings::read(&path);
+        }
+    }
 }

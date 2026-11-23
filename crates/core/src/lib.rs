@@ -5,6 +5,7 @@ pub mod base64;
 pub mod bridge;
 pub mod commands;
 pub mod engine;
+pub mod fuzz;
 pub mod mesh;
 pub mod project;
 pub mod repair;
