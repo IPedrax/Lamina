@@ -30,6 +30,15 @@ pub static COMMANDS: &[Command] = &[
         files: Files::None,
     },
     Command {
+        id: "set_object_settings",
+        params: "{id, profile} gives one object slicer settings of its own, laid over the plate's for it alone: perimeters, top_layers, \
+                 bottom_layers, infill_density, infill_pattern, seam, perimeter_speed, infill_speed and the support fields. `profile: {}` or \
+                 null clears them. The printer, the filament and the layer heights are the plate's. `info` shows each object's settings",
+        run: set_object_settings,
+        undoable: true,
+        files: Files::None,
+    },
+    Command {
         id: "slicer_presets",
         params: "{} the built-in printer and filament presets: {printers:[{name, about, fields}], filaments:[...]}. Pass a name as `printer` or \
                  `filament` to `slice` or `slice_check`; a printer sets the machine's fields, a filament its temperatures and fan",
@@ -105,11 +114,63 @@ fn run(s: &Session, ids: Option<&[u32]>, settings: Settings) -> Result<print::Ou
         Some(_) => return Err("`profile` is an object".into()),
     }
     let profile = Profile::from_json(&merged)?;
-    let objects: Vec<(u32, Mesh)> = match ids {
-        Some(ids) => ids.iter().map(|&id| s.scene.get(id).map(|o| (id, o.world()))).collect::<Result<_, _>>()?,
-        None => s.scene.objects.iter().map(|o| (o.id, o.world())).collect(),
+    let chosen: Vec<&lamina_core::Object> = match ids {
+        Some(ids) => ids.iter().map(|&id| s.scene.get(id)).collect::<Result<_, _>>()?,
+        None => s.scene.objects.iter().collect(),
     };
-    print::gcode(&objects, &profile)
+    let objects: Vec<(u32, Mesh)> = chosen.iter().map(|o| (o.id, o.world())).collect();
+    print::gcode_each(&objects, &own(&chosen, &profile)?, &profile)
+}
+
+/// The fields an object may set for itself: what it is made of and how, never the machine, the filament or the layer heights.
+pub const PER_OBJECT_FIELDS: &[&str] = &[
+    "perimeters",
+    "top_layers",
+    "bottom_layers",
+    "infill_density",
+    "infill_pattern",
+    "seam",
+    "perimeter_speed",
+    "infill_speed",
+    "support",
+    "support_angle",
+    "support_density",
+    "support_z_gap",
+    "support_xy_gap",
+    "support_interface_layers",
+];
+
+/// Each object's own profile, its settings laid over the plate's, or none where it has none.
+pub fn own(objects: &[&lamina_core::Object], plate: &Profile) -> Result<Vec<Option<Profile>>, String> {
+    objects
+        .iter()
+        .map(|o| match o.settings.as_deref() {
+            Some(Value::Object(fields)) => {
+                presets::apply(plate, fields).map(Some).map_err(|e| format!("object {}'s own settings: {e}", o.id))
+            }
+            _ => Ok(None),
+        })
+        .collect()
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ObjectSettings {
+    id: u32,
+    profile: Option<serde_json::Map<String, Value>>,
+}
+
+fn set_object_settings(s: &mut Session, p: &Value) -> Result<Value, String> {
+    let a = ObjectSettings::deserialize(p).map_err(|e| format!("bad parameters: {e}"))?;
+    s.scene.get(a.id)?;
+    let fields = a.profile.unwrap_or_default();
+    if let Some(k) = fields.keys().find(|k| !PER_OBJECT_FIELDS.contains(&k.as_str())) {
+        return Err(format!("`{k}` is the plate's, not an object's; an object may set {}", PER_OBJECT_FIELDS.join(", ")));
+    }
+    presets::apply(&Profile::default(), &fields)?;
+    let o = s.scene_mut().get_mut(a.id)?;
+    o.settings = if fields.is_empty() { None } else { Some(std::sync::Arc::new(Value::Object(fields))) };
+    Ok(json!({}))
 }
 
 /// 3725 seconds as "1h 02m".
@@ -225,6 +286,34 @@ mod tests {
         assert_eq!(r["layers"], 30);
         s.print = json!({"profile": {"nozzle": -1}});
         assert!(s.execute("slice_check", &json!({})).is_err(), "bad project settings are an error, not a silent default");
+    }
+
+    #[test]
+    fn an_object_may_print_with_settings_of_its_own() {
+        let mut s = session();
+        s.execute("add_primitive", &json!({"kind": "box", "size": [15, 15, 6], "at": [-20, 0]})).unwrap();
+        s.execute("add_primitive", &json!({"kind": "box", "size": [15, 15, 6], "at": [20, 0]})).unwrap();
+        let plain = s.execute("slice_check", &json!({})).unwrap()["filament_mm"].as_f64().unwrap();
+        s.execute("set_object_settings", &json!({"id": 2, "profile": {"infill_density": 1.0, "perimeters": 4}})).unwrap();
+        let info = s.execute("info", &json!({})).unwrap();
+        assert_eq!(info["objects"][1]["settings"]["perimeters"], 4);
+        let back = lamina_core::project::read(&lamina_core::project::write(&s.scene, &Value::Null)).unwrap();
+        assert_eq!(back.scene.get(2).unwrap().settings, s.scene.get(2).unwrap().settings, "a project keeps them");
+        let denser = s.execute("slice_check", &json!({})).unwrap()["filament_mm"].as_f64().unwrap();
+        assert!(denser > plain * 1.2, "one solid object: {denser} against {plain}");
+        // Only that object: sliced alone, the first is as it was.
+        let alone = s.execute("slice_check", &json!({"ids": [1]})).unwrap()["filament_mm"].as_f64().unwrap();
+        assert!((alone * 2.0 - plain).abs() < 1.0, "{alone} {plain}");
+        for bad in [
+            json!({"id": 1, "profile": {"nozzle": 0.6}}),
+            json!({"id": 1, "profile": {"layer_height": 0.1}}),
+            json!({"id": 1, "profile": {"infill_density": 7}}),
+            json!({"id": 9, "profile": {}}),
+        ] {
+            assert!(s.execute("set_object_settings", &bad).is_err(), "{bad}");
+        }
+        s.execute("set_object_settings", &json!({"id": 2, "profile": null})).unwrap();
+        assert!((s.execute("slice_check", &json!({})).unwrap()["filament_mm"].as_f64().unwrap() - plain).abs() < 1e-6);
     }
 
     #[test]

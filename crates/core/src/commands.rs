@@ -802,6 +802,7 @@ fn info(s: &mut Session, p: &Value) -> Result<Value, String> {
                 "volume_mm3": world.volume(), "watertight": world.is_watertight(),
                 "open_edges": problems.open_edges, "nonmanifold_edges": problems.nonmanifold_edges, "flipped_faces": problems.flipped_faces,
                 "recipe": o.recipe.as_deref().cloned().unwrap_or(Value::Null),
+                "settings": o.settings.as_deref().cloned().unwrap_or(Value::Null),
             })
         })
         .collect();

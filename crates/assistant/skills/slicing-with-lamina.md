@@ -55,6 +55,12 @@ presets live in the app's settings panel, not in these commands.
   and `support_interface_layers` (2 denser layers under the model). Turn them on for a model with overhangs past 45 degrees or
   flat parts over air: `slice_check {profile: {support: "everywhere"}}`. Better still, turn the part so it needs none.
 
+## One object unlike the others
+
+`set_object_settings {id, profile: {infill_density: 0.5, perimeters: 4}}` gives one object settings of its own (walls, top and
+bottom layers, infill, seam, speeds, supports); the printer, the filament and the layer heights stay the plate's. `profile: {}`
+clears them; `inspect_scene` shows them.
+
 ## Reading the result
 
 - `features` splits the filament by kind (walls, infill, support, brim, raft): if support is a large share, the part may print

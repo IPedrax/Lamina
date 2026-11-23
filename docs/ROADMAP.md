@@ -139,6 +139,10 @@ Priorities:
 - **4.13 Feature types in the G-code.** Every stroke has a kind, written as `;TYPE:outer-wall` (inner-wall, solid-infill,
   sparse-infill, skirt, brim, support, support-interface, raft) before it, again after each layer change. `slice_check` returns
   the filament of each kind (`features`), so the assistant can count them.
+- **4.14 Per-object settings.** An object's optional `settings` (kept in projects, shown by `info`), set by
+  `set_object_settings {id, profile}` with the fields an object may change (walls, skins, infill and its pattern, seam, speeds,
+  supports); `print::gcode_each` slices each object with its settings over the plate's. Layer heights stay plate-wide, as objects
+  share layers. A small "This object's settings" panel in the window. Modifier meshes are P2.
 - **6.1 Send to Moonraker** and **6.2 Send to OctoPrint.** `crates/printer`: one multipart upload to the address the user typed
   (`/server/files/upload` with `root` and `print`, or `/api/files/local` with `select` and `print` and the key in `X-Api-Key`),
   no redirects, the reply read up to 1 MB, the address checked (http or https, no credentials, query or fragment). The
@@ -199,10 +203,6 @@ the AI's skills what is not possible.
 a quarter line, is printed as single lines along its centre. Find the centreline with a straight skeleton or a Voronoi diagram:
 `boostvoronoi` is BSL-1.0 and permissive, BIMCraft has a straight skeleton (`skeleton.rs`). Vary the flow by width. Full
 variable-width walls (as in the public Arachne paper) are P2.
-
-**4.14 Per-object settings (P1).** How: an optional map of profile fields on each object, set by `set_object_settings {id, profile}`.
-The slicer lays it over the plate's profile for that object only: infill, walls, layers. Modifier meshes (settings for a region inside
-a part) are P2.
 
 **4.15 Adaptive layer height (P2).** How: choose each layer's height from the steepest surface it crosses, thin where faces are close to
 flat. `slice::layers` takes a function from z to height instead of one number.

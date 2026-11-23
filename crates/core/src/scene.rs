@@ -16,6 +16,8 @@ pub struct Object {
     pub xf: Transform,
     /// The commands that made it (`build`), which `edit` changes and runs again; none for an object made any other way.
     pub recipe: Option<Arc<serde_json::Value>>,
+    /// Slicer settings of its own (`set_object_settings`): profile fields laid over the plate's for this object alone.
+    pub settings: Option<Arc<serde_json::Value>>,
 }
 
 impl Object {
@@ -52,7 +54,7 @@ impl Scene {
         let (lo, hi) = mesh.bounds().ok_or("the mesh is empty")?;
         let xf = Transform::translate([-(lo[0] + hi[0]) / 2.0, -(lo[1] + hi[1]) / 2.0, -lo[2]]);
         self.next_id += 1;
-        self.objects.push(Object { id: self.next_id, name: name.to_string(), mesh: Arc::new(mesh), xf, recipe: None });
+        self.objects.push(Object { id: self.next_id, name: name.to_string(), mesh: Arc::new(mesh), xf, recipe: None, settings: None });
         Ok(self.next_id)
     }
 
@@ -65,7 +67,14 @@ impl Scene {
             return Err("the mesh is empty".into());
         }
         self.next_id += 1;
-        self.objects.push(Object { id: self.next_id, name: name.to_string(), mesh: Arc::new(mesh), xf: Transform::IDENTITY, recipe: None });
+        self.objects.push(Object {
+            id: self.next_id,
+            name: name.to_string(),
+            mesh: Arc::new(mesh),
+            xf: Transform::IDENTITY,
+            recipe: None,
+            settings: None,
+        });
         Ok(self.next_id)
     }
 
@@ -83,7 +92,7 @@ impl Scene {
             return Err("the mesh is empty".into());
         }
         self.next_id += 1;
-        self.objects.push(Object { id: self.next_id, name: name.to_string(), mesh, xf, recipe: None });
+        self.objects.push(Object { id: self.next_id, name: name.to_string(), mesh, xf, recipe: None, settings: None });
         Ok(self.next_id)
     }
 

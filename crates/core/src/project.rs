@@ -60,6 +60,9 @@ fn object_json(o: &Object) -> Value {
     if let Some(r) = &o.recipe {
         v["recipe"] = (**r).clone();
     }
+    if let Some(p) = &o.settings {
+        v["settings"] = (**p).clone();
+    }
     v
 }
 
@@ -110,7 +113,7 @@ pub fn read(text: &str) -> Result<Loaded, String> {
 
 fn read_object(k: usize, o: &Map<String, Value>, ignored: &mut Vec<String>) -> Result<Object, String> {
     for key in o.keys() {
-        if !matches!(key.as_str(), "id" | "name" | "transform" | "vertices" | "triangles" | "recipe") {
+        if !matches!(key.as_str(), "id" | "name" | "transform" | "vertices" | "triangles" | "recipe" | "settings") {
             ignored.push(format!("objects[{k}].{key}"));
         }
     }
@@ -143,7 +146,16 @@ fn read_object(k: usize, o: &Map<String, Value>, ignored: &mut Vec<String>) -> R
             None
         }
     };
-    Ok(Object { id, name, mesh: Arc::new(mesh), xf, recipe })
+    // Settings are checked by the slicer when it slices; a key the slicer does not know is its error then.
+    let settings = match o.get("settings") {
+        Some(p @ Value::Object(_)) => Some(Arc::new(p.clone())),
+        None | Some(Value::Null) => None,
+        Some(_) => {
+            ignored.push(format!("objects[{k}].settings"));
+            None
+        }
+    };
+    Ok(Object { id, name, mesh: Arc::new(mesh), xf, recipe, settings })
 }
 
 fn transform(v: &Value) -> Result<Transform, String> {

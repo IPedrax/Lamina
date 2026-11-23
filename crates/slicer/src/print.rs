@@ -103,6 +103,18 @@ impl Feature {
 
 /// G-code for `objects` (each an id and its mesh where it stands on the plate, z = 0 the plate, the origin its middle).
 pub fn gcode(objects: &[(u32, Mesh)], p: &Profile) -> Result<Output, String> {
+    gcode_each(objects, &[], p)
+}
+
+/// The same, each object with its own profile where `own` has one (the plate's `p` otherwise). The plate's settings that every
+/// object shares (the printer, the filament, the layer heights, the skirt) are `p`'s.
+pub fn gcode_each(objects: &[(u32, Mesh)], own: &[Option<Profile>], p: &Profile) -> Result<Output, String> {
+    for o in own.iter().flatten() {
+        o.check()?;
+        if (o.layer_height, o.first_layer_height) != (p.layer_height, p.first_layer_height) {
+            return Err("an object's own settings may not change the layer heights: every object prints on the plate's layers".into());
+        }
+    }
     p.check()?;
     if objects.is_empty() {
         return Err("nothing to slice: the plate is empty".into());
@@ -132,7 +144,11 @@ pub fn gcode(objects: &[(u32, Mesh)], p: &Profile) -> Result<Output, String> {
     }
     let w = p.line_width();
     // The plan of each object: its first layer's region, then its layers and the strokes of each.
-    let mut plans: Vec<ObjectPlan> = objects.iter().map(|(_, m)| plan(m, p, w)).collect::<Result<_, _>>()?;
+    let mut plans: Vec<ObjectPlan> = objects
+        .iter()
+        .enumerate()
+        .map(|(i, (_, m))| plan(m, own.get(i).and_then(Option::as_ref).unwrap_or(p), w))
+        .collect::<Result<_, _>>()?;
     let count = plans.iter().map(|(_, l)| l.len()).max().unwrap_or(0);
 
     let mut g = Writer {

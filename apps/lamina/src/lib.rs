@@ -444,7 +444,10 @@ impl App {
     /// Slices the plate with the settings shown and opens the preview.
     pub fn slice(&mut self) {
         let objects: Vec<(u32, Mesh)> = self.session.scene.objects.iter().map(|o| (o.id, o.world())).collect();
-        match lamina_slicer::print::gcode(&objects, &self.profile) {
+        let all: Vec<&lamina_core::Object> = self.session.scene.objects.iter().collect();
+        let sliced = lamina_slicer::commands::own(&all, &self.profile)
+            .and_then(|own| lamina_slicer::print::gcode_each(&objects, &own, &self.profile));
+        match sliced {
             Ok(out) => {
                 let layers = preview::parse(&out.gcode);
                 let minutes = (out.seconds / 60.0).round() as u64;
@@ -739,6 +742,7 @@ impl App {
             });
         }
         self.position_fields(ui, id);
+        self.object_settings(ui, id);
         ui.label("Move by, mm");
         ui.horizontal(|ui| {
             for (k, axis) in ["x", "y", "z"].into_iter().enumerate() {
@@ -835,6 +839,48 @@ impl App {
         if let Some(k) = sized {
             self.set_size(id, k, f.size[k], hi[k] - lo[k]);
         }
+    }
+
+    /// The picked object's own infill and walls, over the plate's.
+    fn object_settings(&mut self, ui: &mut Ui, id: u32) {
+        let Ok(o) = self.session.scene.get(id) else { return };
+        let mine = o.settings.as_deref().and_then(Value::as_object).cloned().unwrap_or_default();
+        let mut changed = None;
+        egui::CollapsingHeader::new("This object's settings").show(ui, |ui| {
+            let mut infill = mine.get("infill_density").and_then(Value::as_f64);
+            let mut walls = mine.get("perimeters").and_then(Value::as_u64).map(|w| w as u32);
+            let mut own_infill = infill.is_some();
+            let mut own_walls = walls.is_some();
+            ui.horizontal(|ui| {
+                ui.checkbox(&mut own_infill, "Infill");
+                let mut percent = infill.unwrap_or(self.profile.infill_density) * 100.0;
+                if ui.add_enabled(own_infill, egui::DragValue::new(&mut percent).range(0.0..=100.0).suffix(" %")).changed()
+                    || own_infill != infill.is_some()
+                {
+                    infill = own_infill.then_some(percent / 100.0);
+                    changed = Some(());
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.checkbox(&mut own_walls, "Walls");
+                let mut w = walls.unwrap_or(self.profile.perimeters);
+                if ui.add_enabled(own_walls, egui::DragValue::new(&mut w).range(0..=10)).changed() || own_walls != walls.is_some() {
+                    walls = own_walls.then_some(w);
+                    changed = Some(());
+                }
+            });
+            if changed.is_some() {
+                let mut fields = mine.clone();
+                for (k, v) in [("infill_density", infill.map(Value::from)), ("perimeters", walls.map(Value::from))] {
+                    match v {
+                        Some(v) => fields.insert(k.into(), v),
+                        None => fields.remove(k),
+                    };
+                }
+                changed = None;
+                self.run("set_object_settings", json!({ "id": id, "profile": fields }));
+            }
+        });
     }
 
     /// Moves object `id` so its footprint's middle and bottom are `at` (they are `now`).
