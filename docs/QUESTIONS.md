@@ -82,8 +82,6 @@ to `main` as they were. Nothing is left to do here.
 
 Every P0 and P1 item is done except 0.2 (below). Of P2, these were left for a decision or a machine this session did not have:
 
-- 9.6 Streaming replies: each provider's server-sent events would be written from memory of their formats and tested only against
-  recordings made the same way. A wrong guess would break a chat that works today. Worth doing against the real APIs.
 - 7.9 Updater: it downloads and replaces the installed program. It needs decisions first: where releases are signed, and how a
   failed update rolls back. BIMCraft's `crates/update` is the model when it is wanted.
 - 7.4 GPU viewport: it cannot be run or tested without a graphics adapter, which this session lacks (the same reason the window's

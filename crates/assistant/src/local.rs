@@ -98,22 +98,104 @@ pub fn request(url: &str, model: &str, key: &str, history: &[Msg]) -> Request {
         .into_iter()
         .map(|t| json!({"type": "function", "function": {"name": t.name, "description": t.about, "parameters": t.schema}}))
         .collect();
-    let body = json!({"model": model, "messages": messages, "tools": tools, "stream": false});
+    let body = json!({"model": model, "messages": messages, "tools": tools, "stream": true, "stream_options": {"include_usage": true}});
     let headers = if key.is_empty() { Vec::new() } else { vec![("Authorization".into(), format!("Bearer {key}"))] };
     Request { url: url.into(), headers, body: body.to_string() }
 }
 
+const WHO: &str = "The local model's server";
+
+/// A whole reply (a chat completion), or an error's: also what a server that does not stream sends.
 pub fn parse(status: u16, body: &str) -> Result<Reply, String> {
-    const WHO: &str = "The local model's server";
     if !(200..300).contains(&status) {
         return Err(api_error(WHO, status, body));
     }
-    let v = json_body(WHO, body)?;
+    read(&json_body(WHO, body)?)
+}
+
+/// The stream: `chat.completion.chunk`s whose first choice's `delta` carries the next text, reasoning and pieces of tool calls (each
+/// call by its `index`: the id and name once, the arguments as JSON text in pieces), then a `finish_reason`, a chunk with the counts
+/// (`stream_options.include_usage`) and `data: [DONE]`. Put back together, it is the chat completion `parse` reads.
+#[derive(Default)]
+pub struct Stream {
+    text: String,
+    thinking: String,
+    calls: Vec<Value>,
+    finish: Option<Value>,
+    usage: Value,
+    done: bool,
+}
+
+impl crate::Stream for Stream {
+    const WHO: &'static str = WHO;
+
+    fn event(&mut self, _name: &str, data: &str) -> Result<String, String> {
+        if data.trim() == "[DONE]" {
+            self.done = true;
+            return Ok(String::new());
+        }
+        let chunk = json_body(WHO, data)?;
+        if let Some(e) = chunk.get("error") {
+            let said = e["message"].as_str().or_else(|| e.as_str()).unwrap_or("no reason given");
+            return Err(format!("{WHO} failed while answering: {}", clip(said, 300)));
+        }
+        if chunk["usage"].is_object() {
+            self.usage = chunk["usage"].clone();
+        }
+        let Some(choice) = chunk["choices"].as_array().and_then(|c| c.first()) else { return Ok(String::new()) };
+        let delta = &choice["delta"];
+        for piece in delta["tool_calls"].as_array().into_iter().flatten() {
+            // A server that numbers no call sends each whole: it is the next one.
+            let at = piece["index"].as_u64().unwrap_or(self.calls.len() as u64);
+            if at == self.calls.len() as u64 {
+                self.calls.push(json!({"type": "function", "function": {"arguments": ""}}));
+            }
+            let Some(call) = usize::try_from(at).ok().and_then(|i| self.calls.get_mut(i)) else {
+                return Err(format!("{WHO} sent a tool call out of order"));
+            };
+            if let Some(id) = piece["id"].as_str().filter(|s| !s.is_empty()) {
+                call["id"] = json!(id);
+            }
+            if let Some(name) = piece["function"]["name"].as_str().filter(|s| !s.is_empty()) {
+                call["function"]["name"] = json!(name);
+            }
+            let arguments = match &piece["function"]["arguments"] {
+                Value::String(s) => s.clone(),
+                Value::Object(_) => piece["function"]["arguments"].to_string(),
+                _ => String::new(),
+            };
+            if let Value::String(grown) = &mut call["function"]["arguments"] {
+                grown.push_str(&arguments);
+            }
+        }
+        self.thinking.push_str(delta["reasoning_content"].as_str().or_else(|| delta["reasoning"].as_str()).unwrap_or_default());
+        if choice["finish_reason"].is_string() {
+            self.finish = Some(choice["finish_reason"].clone());
+        }
+        let text = delta["content"].as_str().unwrap_or_default();
+        self.text.push_str(text);
+        Ok(text.to_string())
+    }
+
+    fn finish(self) -> Result<Reply, String> {
+        if !self.done && self.finish.is_none() {
+            return Err(format!("{WHO}'s reply stopped before its end: ask again"));
+        }
+        let mut message = json!({"role": "assistant", "content": self.text, "reasoning_content": self.thinking});
+        if !self.calls.is_empty() {
+            message["tool_calls"] = json!(self.calls);
+        }
+        read(&json!({"choices": [{"message": message, "finish_reason": self.finish}], "usage": self.usage}))
+    }
+}
+
+/// A whole chat completion, as `parse` and [`Stream`] have it.
+fn read(v: &Value) -> Result<Reply, String> {
     let choice =
-        v["choices"].as_array().and_then(|c| c.first()).ok_or_else(|| format!("{WHO} sent no choices ({})", clip(body.trim(), 80)))?;
+        v["choices"].as_array().and_then(|c| c.first()).ok_or_else(|| format!("{WHO} sent no choices ({})", clip(&v.to_string(), 80)))?;
     let message = &choice["message"];
     if !message.is_object() {
-        return Err(format!("{WHO} sent a choice with no message ({})", clip(body.trim(), 80)));
+        return Err(format!("{WHO} sent a choice with no message ({})", clip(&v.to_string(), 80)));
     }
     let text = message["content"].as_str().unwrap_or_default().to_string();
     // Servers that pass a reasoning model's thinking on name it one of these.

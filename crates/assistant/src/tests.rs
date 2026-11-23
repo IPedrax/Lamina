@@ -64,6 +64,7 @@ fn anthropic_reads_one_tool_call_and_sends_its_answer_back_by_id() {
     assert_eq!(body["messages"][2]["content"][0]["type"], "tool_result");
     assert_eq!(body["messages"][2]["content"][0]["tool_use_id"], "toolu_01");
     assert!(body.get("temperature").is_none(), "the current API version refuses sampling parameters");
+    assert_eq!(body["stream"], true);
     assert_eq!(sent.url, "https://api.anthropic.com/v1/messages");
     assert!(sent.headers.contains(&("x-api-key".into(), KEY.into())));
     assert!(!sent.body.contains(KEY) && !sent.url.contains(KEY), "the key is in a header and nowhere else");
@@ -130,6 +131,7 @@ fn openai_reads_a_tool_call_and_replays_only_what_can_be_replayed() {
     let body: Value = serde_json::from_str(&sent.body).unwrap();
     assert_eq!((&body["store"], &body["model"]), (&json!(false), &json!("gpt-6-astra")));
     assert_eq!(body["include"], json!(["reasoning.encrypted_content"]));
+    assert_eq!(body["stream"], true);
     assert_eq!(body["tools"][0]["type"], "function");
     assert_eq!(body["tools"][0]["strict"], false);
     let types: Vec<&str> = body["input"].as_array().unwrap().iter().map(|i| i["type"].as_str().unwrap_or("message")).collect();
@@ -195,7 +197,8 @@ fn gemini_reads_a_tool_call_and_sends_back_its_signature_and_an_answer_by_id() {
     assert_eq!(body["contents"][1]["parts"][0]["thoughtSignature"], "sig", "the signature goes back in the part it came in");
     assert_eq!(body["contents"][2]["parts"][0]["functionResponse"], json!({"name": "execute", "id": "c1", "response": {"result": "ok"}}));
     assert_eq!(body["contents"][3]["parts"][0]["functionResponse"], json!({"name": "inspect_scene", "response": {"error": "boom"}}));
-    assert_eq!(sent.url, "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent");
+    assert_eq!(sent.url, "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:streamGenerateContent?alt=sse");
+    assert!(allowed(&sent.url));
     assert!(sent.headers.contains(&("x-goog-api-key".into(), KEY.into())));
     assert!(!sent.body.contains(KEY) && !sent.url.contains(KEY), "the key is in a header, not the address");
     // The declarations are Gemini's subset: no free-form object, none with nothing to pass.
@@ -240,11 +243,11 @@ fn a_key_or_model_that_is_no_key_or_model_never_reaches_a_request() {
     let history = [Msg::user("hi")];
     for model in ["", "a b", "x/../y", "m?key=1", "m:generate"] {
         assert!(!model_ok(model), "{model:?}");
-        assert!(complete(Provider::Gemini, &net, "", model, KEY, &history).is_err());
+        assert!(complete(Provider::Gemini, &net, "", model, KEY, &history, &mut |_| true).is_err());
     }
     for key in ["", "short", "has space in it ok", "line\nbreak-in-it-0123", "ключ-0123456789"] {
         assert!(!key_ok(key), "{key:?}");
-        assert!(complete(Provider::OpenAi, &net, "", "gpt-6-astra", key, &history).is_err());
+        assert!(complete(Provider::OpenAi, &net, "", "gpt-6-astra", key, &history, &mut |_| true).is_err());
     }
     assert!(net.seen().is_empty());
 }
@@ -256,6 +259,448 @@ fn every_provider_lists_models_the_ids_of_which_pass() {
         assert_eq!(Provider::from_key(p.key()), Some(p));
     }
     assert_eq!(Provider::Anthropic.default_model(), "claude-sonnet-5-5");
+}
+
+// ---------- the clients, against recorded streams ----------
+
+/// Events as a server sends them: `event:` with the event's `type` when it has one, then its data.
+fn sse(events: &[Value]) -> String {
+    events
+        .iter()
+        .map(|e| match e["type"].as_str() {
+            Some(name) => format!("event: {name}\ndata: {e}\n\n"),
+            None => format!("data: {e}\n\n"),
+        })
+        .collect()
+}
+
+/// The Messages API stream that makes `content`: each block started empty, grown in two pieces (a tool's input as JSON text), and
+/// stopped, then the stop reason and the counts.
+fn anthropic_stream(content: &Value, stop: &str) -> String {
+    let start = json!({"id": "msg_01", "type": "message", "role": "assistant", "model": "claude-sonnet-5-5", "content": [],
+        "stop_reason": null, "usage": {"input_tokens": 10, "output_tokens": 1}});
+    let mut events = vec![json!({"type": "message_start", "message": start})];
+    for (i, block) in content.as_array().unwrap().iter().enumerate() {
+        let (empty, kind, key, whole) = match block["type"].as_str().unwrap() {
+            "text" => (json!({"type": "text", "text": ""}), "text_delta", "text", block["text"].as_str().unwrap().to_string()),
+            "thinking" => {
+                (json!({"type": "thinking", "thinking": ""}), "thinking_delta", "thinking", block["thinking"].as_str().unwrap().into())
+            }
+            _ => (
+                json!({"type": "tool_use", "id": block["id"], "name": block["name"], "input": {}}),
+                "input_json_delta",
+                "partial_json",
+                block["input"].to_string(),
+            ),
+        };
+        events.push(json!({"type": "content_block_start", "index": i, "content_block": empty}));
+        let half = whole.char_indices().nth(whole.chars().count() / 2).map_or(whole.len(), |(at, _)| at);
+        for piece in [&whole[..half], &whole[half..]] {
+            let mut delta = json!({"type": kind});
+            delta[key] = json!(piece);
+            events.push(json!({"type": "content_block_delta", "index": i, "delta": delta}));
+        }
+        if let Some(signature) = block["signature"].as_str() {
+            events.push(json!({"type": "content_block_delta", "index": i, "delta": {"type": "signature_delta", "signature": signature}}));
+        }
+        events.push(json!({"type": "content_block_stop", "index": i}));
+    }
+    events.push(json!({"type": "message_delta", "delta": {"stop_reason": stop, "stop_sequence": null}, "usage": {"output_tokens": 5}}));
+    events.push(json!({"type": "message_stop"}));
+    sse(&events)
+}
+
+/// A recorded reply as `complete` reads it off the network: the reply, and the pieces of text handed over as they came.
+fn streamed(provider: Provider, status: u16, body: &str) -> (Result<Reply, String>, Vec<String>) {
+    let net = Fake::default().reply(status, body);
+    let mut pieces = Vec::new();
+    let mut each = |text: &str| {
+        if !text.is_empty() {
+            pieces.push(text.to_string());
+        }
+        true
+    };
+    let reply = complete(provider, &net, crate::local::DEFAULT_URL, provider.default_model(), KEY, &[Msg::user("hi")], &mut each);
+    (reply, pieces)
+}
+
+/// The basic stream of Anthropic's streaming guide, as it prints it.
+const ANTHROPIC_HELLO: &str = r#"event: message_start
+data: {"type": "message_start", "message": {"id": "msg_1nZdL29xx5MUA1yADyHTEsnR8uuvGzszyY", "type": "message", "role": "assistant", "content": [], "model": "claude-opus-5-5", "stop_reason": null, "stop_sequence": null, "usage": {"input_tokens": 25, "output_tokens": 1}}}
+
+event: content_block_start
+data: {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}
+
+event: ping
+data: {"type": "ping"}
+
+event: content_block_delta
+data: {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Hello"}}
+
+event: content_block_delta
+data: {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "!"}}
+
+event: content_block_stop
+data: {"type": "content_block_stop", "index": 0}
+
+event: message_delta
+data: {"type": "message_delta", "delta": {"stop_reason": "end_turn", "stop_sequence":null}, "usage": {"output_tokens": 15}}
+
+event: message_stop
+data: {"type": "message_stop"}
+
+"#;
+
+#[test]
+fn anthropic_streams_text_and_puts_the_message_back_together() {
+    let (r, pieces) = streamed(Provider::Anthropic, 200, ANTHROPIC_HELLO);
+    let r = r.unwrap();
+    assert_eq!(pieces, ["Hello", "!"], "the text as it came");
+    assert_eq!((r.text.as_str(), r.usage), ("Hello!", Usage { input: 25, output: 15 }), "the counts of message_delta are the whole");
+    assert_eq!(r.raw, json!([{"type": "text", "text": "Hello!"}]));
+    // The same stream with Windows line ends, a comment and an event of a kind added later reads the same.
+    let odd = ANTHROPIC_HELLO.replace('\n', "\r\n").replacen(
+        "event: ping",
+        ": a comment\r\nevent: future_kind\r\ndata: {\"type\": \"future_kind\"}\r\n\r\nevent: ping",
+        1,
+    );
+    assert_eq!(streamed(Provider::Anthropic, 200, &odd).0.unwrap(), r);
+    // Thinking is put together whole, its signature with it, and goes back as it came.
+    let content = json!([{"type": "thinking", "thinking": "A box first.", "signature": "EqQB"}, {"type": "text", "text": "Hello there"}]);
+    let (r, pieces) = streamed(Provider::Anthropic, 200, &anthropic_stream(&content, "end_turn"));
+    let r = r.unwrap();
+    assert_eq!(pieces.concat(), "Hello there", "thinking is not part of the answer's text");
+    assert_eq!((r.thinking.as_str(), &r.raw), ("A box first.", &content));
+    let sent: Value = serde_json::from_str(&anthropic::request("claude-sonnet-5-5", KEY, &[Msg::Assistant(r)]).body).unwrap();
+    assert_eq!(sent["messages"][0]["content"], content);
+}
+
+#[test]
+fn anthropic_streams_one_and_two_tool_calls_with_their_input_whole() {
+    let one = json!([{"type": "text", "text": "Adding."}, {"type": "tool_use", "id": "toolu_01", "name": "execute", "input": serde_json::from_str::<Value>(BOX).unwrap()}]);
+    let r = streamed(Provider::Anthropic, 200, &anthropic_stream(&one, "tool_use")).0.unwrap();
+    assert_eq!(r.calls, vec![Call { id: "toolu_01".into(), name: "execute".into(), args: serde_json::from_str(BOX).unwrap() }]);
+    assert_eq!(r.raw, one, "the input goes back as the object it is");
+    // A call with nothing to pass has no input deltas at all, or an empty one.
+    let two = json!([
+        {"type": "tool_use", "id": "toolu_a", "name": "inspect_scene", "input": {}},
+        {"type": "tool_use", "id": "toolu_b", "name": "list_commands", "input": {"filter": "move"}},
+    ]);
+    let r = streamed(Provider::Anthropic, 200, &anthropic_stream(&two, "tool_use")).0.unwrap();
+    assert_eq!(
+        r.calls.iter().map(|c| (c.id.as_str(), &c.args)).collect::<Vec<_>>(),
+        [("toolu_a", &json!({})), ("toolu_b", &json!({"filter": "move"}))]
+    );
+    let bare = sse(&[
+        json!({"type": "message_start", "message": {"content": [], "usage": {}}}),
+        json!({"type": "content_block_start", "index": 0, "content_block": {"type": "tool_use", "id": "t", "name": "inspect_scene", "input": {}}}),
+        json!({"type": "content_block_stop", "index": 0}),
+        json!({"type": "message_delta", "delta": {"stop_reason": "tool_use"}, "usage": {"output_tokens": 3}}),
+        json!({"type": "message_stop"}),
+    ]);
+    assert_eq!(streamed(Provider::Anthropic, 200, &bare).0.unwrap().calls[0].args, json!({}));
+}
+
+#[test]
+fn anthropic_streams_that_are_cut_off_malformed_refused_or_failed_are_errors() {
+    let words = json!([{"type": "text", "text": "Hello there"}]);
+    let whole = anthropic_stream(&words, "end_turn");
+    // Cut off before message_stop, or in the middle of an event.
+    let cut = &whole[..whole.find("event: message_stop").unwrap()];
+    assert!(streamed(Provider::Anthropic, 200, cut).0.unwrap_err().contains("stopped before its end"));
+    let mid = &whole[..whole.find("Hello").unwrap()];
+    assert!(streamed(Provider::Anthropic, 200, mid).0.is_err());
+    assert!(streamed(Provider::Anthropic, 200, "").0.is_err(), "nothing at all");
+    // Events that are not what the API documents.
+    for bad in [
+        json!({"type": "content_block_delta", "index": 7, "delta": {"type": "text_delta", "text": "x"}}),
+        json!({"type": "content_block_start", "index": 3, "content_block": {"type": "text", "text": ""}}),
+        json!({"type": "content_block_start", "index": 1, "content_block": "text"}),
+        json!({"type": "message_start", "message": "hi"}),
+    ] {
+        let stream = whole.replacen("event: message_delta", &format!("{}event: message_delta", sse(std::slice::from_ref(&bad))), 1);
+        assert!(streamed(Provider::Anthropic, 200, &stream).0.is_err(), "{bad}");
+    }
+    let not_json = whole.replacen(r#""text":"Hello"#, r#""text":"Hello"}}}"#, 1);
+    assert!(streamed(Provider::Anthropic, 200, &not_json).0.is_err());
+    let bad_input = sse(&[
+        json!({"type": "message_start", "message": {"content": [], "usage": {}}}),
+        json!({"type": "content_block_start", "index": 0, "content_block": {"type": "tool_use", "id": "t", "name": "execute", "input": {}}}),
+        json!({"type": "content_block_delta", "index": 0, "delta": {"type": "input_json_delta", "partial_json": "{\"command\": \"add_"}}),
+        json!({"type": "content_block_stop", "index": 0}),
+        json!({"type": "message_delta", "delta": {"stop_reason": "tool_use"}, "usage": {"output_tokens": 3}}),
+        json!({"type": "message_stop"}),
+    ]);
+    assert!(streamed(Provider::Anthropic, 200, &bad_input).0.unwrap_err().contains("not JSON"));
+    // An error in the stream, as the guide shows one, after some text was shown.
+    let overloaded = format!(
+        "{}event: error\ndata: {{\"type\": \"error\", \"error\": {{\"type\": \"overloaded_error\", \"message\": \"Overloaded\"}}}}\n\n",
+        &whole[..whole.find("event: content_block_stop").unwrap()]
+    );
+    let (r, pieces) = streamed(Provider::Anthropic, 200, &overloaded);
+    assert!(r.unwrap_err().contains("Overloaded") && !pieces.is_empty());
+    // A refusal is a stop reason, with its category, in message_delta; an error status is read whole.
+    let refused =
+        whole.replacen(r#""stop_reason":"end_turn""#, r#""stop_reason":"refusal","stop_details":{"type":"refusal","category":"cyber"}"#, 1);
+    let e = streamed(Provider::Anthropic, 200, &refused).0.unwrap_err();
+    assert!(e.contains("declined") && e.contains("cyber"), "{e}");
+    let e = streamed(Provider::Anthropic, 401, r#"{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}"#)
+        .0
+        .unwrap_err();
+    assert!(e.contains("401") && e.contains("invalid x-api-key"), "{e}");
+    let tool_cut =
+        anthropic_stream(&json!([{"type": "tool_use", "id": "t", "name": "execute", "input": {"command": "add"}}]), "max_tokens");
+    assert!(streamed(Provider::Anthropic, 200, &tool_cut).0.unwrap_err().contains("cut off"));
+}
+
+/// A Responses API stream: the events around a reasoning item and a message saying `text` in two pieces, or around `calls`, then
+/// `response.completed` with the whole response.
+fn openai_stream(text: &str, calls: &[(&str, &str, &str)], status: &str) -> String {
+    let reasoning =
+        json!({"id": "rs_1", "type": "reasoning", "summary": [{"type": "summary_text", "text": "Look."}], "encrypted_content": "blob"});
+    let mut events = vec![
+        json!({"type": "response.created", "sequence_number": 0, "response": {"id": "resp_1", "object": "response", "status": "in_progress", "output": []}}),
+        json!({"type": "response.output_item.added", "output_index": 0, "item": {"id": "rs_1", "type": "reasoning", "summary": []}}),
+        json!({"type": "response.reasoning_summary_text.delta", "item_id": "rs_1", "output_index": 0, "summary_index": 0, "delta": "Look."}),
+        json!({"type": "response.output_item.done", "output_index": 0, "item": reasoning}),
+    ];
+    let mut output = vec![reasoning];
+    if !text.is_empty() {
+        let message = json!({"id": "msg_1", "type": "message", "role": "assistant", "status": "completed",
+            "content": [{"type": "output_text", "text": text, "annotations": []}]});
+        events.push(json!({"type": "response.output_item.added", "output_index": 1, "item": {"id": "msg_1", "type": "message", "role": "assistant", "content": []}}));
+        let half = text.len() / 2;
+        for piece in [&text[..half], &text[half..]] {
+            events.push(json!({"type": "response.output_text.delta", "item_id": "msg_1", "output_index": 1, "content_index": 0, "delta": piece, "logprobs": []}));
+        }
+        events.push(json!({"type": "response.output_text.done", "item_id": "msg_1", "output_index": 1, "content_index": 0, "text": text}));
+        events.push(json!({"type": "response.output_item.done", "output_index": 1, "item": message}));
+        output.push(message);
+    }
+    for (i, (id, name, arguments)) in calls.iter().enumerate() {
+        let call = json!({"id": format!("fc_{i}"), "type": "function_call", "call_id": id, "name": name, "arguments": arguments, "status": "completed"});
+        events.push(json!({"type": "response.function_call_arguments.delta", "item_id": format!("fc_{i}"), "output_index": i + 1, "delta": arguments}));
+        events.push(json!({"type": "response.function_call_arguments.done", "item_id": format!("fc_{i}"), "output_index": i + 1, "arguments": arguments}));
+        events.push(json!({"type": "response.output_item.done", "output_index": i + 1, "item": call}));
+        output.push(call);
+    }
+    let response = json!({"id": "resp_1", "object": "response", "status": status, "output": output,
+        "incomplete_details": if status == "incomplete" { json!({"reason": "max_output_tokens"}) } else { Value::Null },
+        "usage": {"input_tokens": 40, "output_tokens": 9}});
+    events.push(json!({"type": format!("response.{status}"), "sequence_number": 9, "response": response}));
+    sse(&events)
+}
+
+#[test]
+fn openai_streams_text_and_takes_the_whole_response_from_its_last_event() {
+    let (r, pieces) = streamed(Provider::OpenAi, 200, &openai_stream("Hello there", &[], "completed"));
+    let r = r.unwrap();
+    assert_eq!(pieces, ["Hello", " there"]);
+    assert_eq!((r.text.as_str(), r.thinking.as_str(), r.usage), ("Hello there", "Look.", Usage { input: 40, output: 9 }));
+    assert_eq!(r.raw[0]["encrypted_content"], "blob", "the reasoning goes back with its encrypted content");
+    let sent: Value = serde_json::from_str(&openai::request("gpt-6-astra", KEY, &[Msg::user("hi"), Msg::Assistant(r)]).body).unwrap();
+    assert_eq!(
+        sent["input"].as_array().unwrap().iter().map(|i| i["type"].as_str().unwrap_or("message")).collect::<Vec<_>>(),
+        ["message", "reasoning", "message"]
+    );
+}
+
+#[test]
+fn openai_streams_one_and_two_tool_calls() {
+    let r = streamed(Provider::OpenAi, 200, &openai_stream("", &[("call_1", "execute", BOX)], "completed")).0.unwrap();
+    assert_eq!(r.calls, vec![Call { id: "call_1".into(), name: "execute".into(), args: serde_json::from_str(BOX).unwrap() }]);
+    let two = openai_stream("", &[("call_a", "inspect_scene", "{}"), ("call_b", "list_commands", r#"{"filter":"move"}"#)], "completed");
+    let r = streamed(Provider::OpenAi, 200, &two).0.unwrap();
+    assert_eq!(r.calls.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(), ["call_a", "call_b"]);
+    assert_eq!(r.calls[1].args["filter"], "move");
+}
+
+#[test]
+fn openai_streams_that_are_cut_off_failed_refused_or_errors_are_errors() {
+    let whole = openai_stream("Hello there", &[], "completed");
+    let cut = &whole[..whole.find("event: response.completed").unwrap()];
+    let (r, pieces) = streamed(Provider::OpenAi, 200, cut);
+    assert!(r.unwrap_err().contains("stopped before its end") && pieces.concat() == "Hello there");
+    assert!(streamed(Provider::OpenAi, 200, &whole.replacen("\"Hello\"", "\"Hel", 1)).0.is_err(), "an event that is not JSON");
+    // The error event, as the reference prints it.
+    let error = format!(
+        "{cut}event: error\ndata: {{\"type\": \"error\", \"code\": \"ERR_SOMETHING\", \"message\": \"Something went wrong\", \"param\": null, \"sequence_number\": 1}}\n\n"
+    );
+    assert!(streamed(Provider::OpenAi, 200, &error).0.unwrap_err().contains("Something went wrong"));
+    let failed = openai_stream("", &[], "failed").replacen(
+        "\"status\":\"failed\"",
+        "\"status\":\"failed\",\"error\":{\"message\":\"the server had an error\"}",
+        1,
+    );
+    assert!(streamed(Provider::OpenAi, 200, &failed).0.unwrap_err().contains("the server had an error"));
+    let refusal = whole.replacen(
+        r#"{"annotations":[],"text":"Hello there","type":"output_text"}"#,
+        r#"{"refusal":"I can't help with that.","type":"refusal"}"#,
+        2,
+    );
+    let e = streamed(Provider::OpenAi, 200, &refusal).0.unwrap_err();
+    assert!(e.contains("declined") && e.contains("can't help"), "{e}");
+    let cut_call = openai_stream("", &[("c", "execute", "{")], "incomplete");
+    assert!(streamed(Provider::OpenAi, 200, &cut_call).0.unwrap_err().contains("cut off"));
+    let e = streamed(Provider::OpenAi, 429, r#"{"error":{"message":"You exceeded your current quota"}}"#).0.unwrap_err();
+    assert!(e.contains("429") && e.contains("quota"), "{e}");
+}
+
+/// A `streamGenerateContent?alt=sse` stream: each chunk the next parts, the last with the finish reason and the counts.
+fn gemini_stream(chunks: &[Value], finish: &str) -> String {
+    let last = chunks.len() - 1;
+    let events: Vec<Value> = chunks
+        .iter()
+        .enumerate()
+        .map(|(i, parts)| {
+            let mut candidate = json!({"content": {"role": "model", "parts": parts}, "index": 0});
+            let mut chunk = json!({"modelVersion": "gemini-3.8-flash"});
+            if i == last {
+                candidate["finishReason"] = json!(finish);
+                chunk["usageMetadata"] = json!({"promptTokenCount": 30, "candidatesTokenCount": 4, "thoughtsTokenCount": 6});
+            }
+            chunk["candidates"] = json!([candidate]);
+            chunk
+        })
+        .collect();
+    sse(&events)
+}
+
+#[test]
+fn gemini_streams_text_and_keeps_every_part_as_it_came() {
+    let chunks = [
+        json!([{"text": "Checking.", "thought": true}]),
+        json!([{"text": "Hello"}]),
+        json!([{"text": " there"}]),
+        json!([{"text": "", "thoughtSignature": "sig"}]),
+    ];
+    let (r, pieces) = streamed(Provider::Gemini, 200, &gemini_stream(&chunks, "STOP"));
+    let r = r.unwrap();
+    assert_eq!(pieces, ["Hello", " there"]);
+    assert_eq!((r.text.as_str(), r.thinking.as_str(), r.usage), ("Hello there", "Checking.", Usage { input: 30, output: 10 }));
+    // The signature, which came in a part of its own with no text, goes back in that part.
+    assert_eq!(r.raw, json!({"role": "model", "parts": chunks.iter().flat_map(|c| c.as_array().unwrap().clone()).collect::<Vec<_>>()}));
+}
+
+#[test]
+fn gemini_streams_one_and_two_tool_calls() {
+    let one = [
+        json!([{"functionCall": {"name": "execute", "args": serde_json::from_str::<Value>(BOX).unwrap(), "id": "c1"}, "thoughtSignature": "sig"}]),
+    ];
+    let r = streamed(Provider::Gemini, 200, &gemini_stream(&one, "STOP")).0.unwrap();
+    assert_eq!(r.calls, vec![Call { id: "c1".into(), name: "execute".into(), args: serde_json::from_str(BOX).unwrap() }]);
+    assert_eq!(r.raw["parts"][0]["thoughtSignature"], "sig");
+    let two = [
+        json!([{"text": "Looking."}]),
+        json!([{"functionCall": {"name": "inspect_scene", "args": {}}, "thoughtSignature": "sig"}, {"functionCall": {"name": "list_commands", "args": {"filter": "move"}}}]),
+    ];
+    let (r, pieces) = streamed(Provider::Gemini, 200, &gemini_stream(&two, "STOP"));
+    let r = r.unwrap();
+    assert_eq!((r.calls.len(), r.calls[1].args["filter"].as_str()), (2, Some("move")));
+    assert_eq!(pieces, ["Looking."], "a call is not text");
+}
+
+#[test]
+fn gemini_streams_that_are_cut_off_blocked_refused_or_failed_are_errors() {
+    let words = [json!([{"text": "Hello"}]), json!([{"text": " there"}])];
+    let whole = gemini_stream(&words, "STOP");
+    let cut = &whole[..whole.rfind("data:").unwrap()];
+    assert!(streamed(Provider::Gemini, 200, cut).0.unwrap_err().contains("stopped before its end"));
+    assert!(streamed(Provider::Gemini, 200, &whole[..whole.len() - 20]).0.is_err(), "cut in the middle of a chunk");
+    let blocked = "data: {\"promptFeedback\": {\"blockReason\": \"SAFETY\"}}\n\n";
+    assert!(streamed(Provider::Gemini, 200, blocked).0.unwrap_err().contains("SAFETY"));
+    let refused = gemini_stream(&words, "SAFETY");
+    assert!(streamed(Provider::Gemini, 200, &refused).0.unwrap_err().contains("declined"));
+    let malformed = gemini_stream(&words, "MALFORMED_FUNCTION_CALL");
+    assert!(streamed(Provider::Gemini, 200, &malformed).0.unwrap_err().contains("tool call"));
+    let failed =
+        format!("{cut}data: {{\"error\": {{\"code\": 503, \"message\": \"The model is overloaded.\", \"status\": \"UNAVAILABLE\"}}}}\n\n");
+    assert!(streamed(Provider::Gemini, 200, &failed).0.unwrap_err().contains("overloaded"));
+    let e = streamed(Provider::Gemini, 400, r#"{"error":{"code":400,"message":"API key not valid.","status":"INVALID_ARGUMENT"}}"#)
+        .0
+        .unwrap_err();
+    assert!(e.contains("400") && e.contains("API key not valid"), "{e}");
+}
+
+/// A Chat Completions stream: `chunks` (each a choice's delta, or a whole chunk when it has `choices`), the counts and `[DONE]`.
+fn local_stream(deltas: &[Value], finish: &str) -> String {
+    let mut events: Vec<Value> = deltas
+        .iter()
+        .map(|d| json!({"id": "chatcmpl-1", "object": "chat.completion.chunk", "choices": [{"index": 0, "delta": d, "finish_reason": null}]}))
+        .collect();
+    events.push(
+        json!({"id": "chatcmpl-1", "object": "chat.completion.chunk", "choices": [{"index": 0, "delta": {}, "finish_reason": finish}]}),
+    );
+    events.push(json!({"id": "chatcmpl-1", "object": "chat.completion.chunk", "choices": [], "usage": {"prompt_tokens": 900, "completion_tokens": 40}}));
+    format!("{}data: [DONE]\n\n", sse(&events))
+}
+
+#[test]
+fn the_local_server_streams_text_and_tool_calls_in_pieces() {
+    let deltas = [
+        json!({"role": "assistant", "content": ""}),
+        json!({"reasoning_content": "a box"}),
+        json!({"content": "Hel"}),
+        json!({"content": "lo"}),
+    ];
+    let (r, pieces) = streamed(Provider::Local, 200, &local_stream(&deltas, "stop"));
+    let r = r.unwrap();
+    assert_eq!(pieces, ["Hel", "lo"]);
+    assert_eq!((r.text.as_str(), r.thinking.as_str(), r.usage), ("Hello", "a box", Usage { input: 900, output: 40 }));
+    assert_eq!(r.raw, json!({"role": "assistant", "content": "Hello"}));
+    // Two calls, each by its index: the id and name once, the arguments in pieces.
+    let deltas = [
+        json!({"tool_calls": [{"index": 0, "id": "call_a", "type": "function", "function": {"name": "execute", "arguments": ""}}]}),
+        json!({"tool_calls": [{"index": 0, "function": {"arguments": &BOX[..10]}}]}),
+        json!({"tool_calls": [{"index": 0, "function": {"arguments": &BOX[10..]}}]}),
+        json!({"tool_calls": [{"index": 1, "id": "call_b", "type": "function", "function": {"name": "inspect_scene", "arguments": "{}"}}]}),
+    ];
+    let r = streamed(Provider::Local, 200, &local_stream(&deltas, "tool_calls")).0.unwrap();
+    assert_eq!(r.calls[0], Call { id: "call_a".into(), name: "execute".into(), args: serde_json::from_str(BOX).unwrap() });
+    assert_eq!((r.calls[1].id.as_str(), &r.calls[1].args), ("call_b", &json!({})));
+    assert_eq!(r.raw["tool_calls"][0]["function"]["arguments"], serde_json::from_str::<Value>(BOX).unwrap().to_string());
+    // A server that sends each call whole, unnumbered, with no id: one call each, given an id.
+    let whole_calls = [json!({"tool_calls": [{"function": {"name": "inspect_scene", "arguments": {}}}]})];
+    let r = streamed(Provider::Local, 200, &local_stream(&whole_calls, "tool_calls")).0.unwrap();
+    assert_eq!((r.calls.len(), r.calls[0].id.as_str()), (1, "call_0"));
+    // A server that does not stream answers whole, and that is read too.
+    let answer = json!({"choices": [{"message": {"role": "assistant", "content": "Whole."}, "finish_reason": "stop"}]});
+    assert_eq!(streamed(Provider::Local, 200, &answer.to_string()).0.unwrap().text, "Whole.");
+}
+
+#[test]
+fn local_streams_that_are_cut_off_out_of_order_or_failed_are_errors() {
+    let whole = local_stream(&[json!({"content": "Hello"})], "stop");
+    let cut = &whole[..whole.find("\"finish_reason\":\"stop\"").unwrap()];
+    assert!(streamed(Provider::Local, 200, cut).0.is_err(), "cut in the middle of a chunk");
+    let no_end = &whole[..whole.find("data: {\"choices\":[{\"delta\":{},").unwrap()];
+    assert!(streamed(Provider::Local, 200, no_end).0.unwrap_err().contains("stopped before its end"), "{no_end}");
+    let jump =
+        local_stream(&[json!({"tool_calls": [{"index": 5, "id": "c", "function": {"name": "x", "arguments": "{}"}}]})], "tool_calls");
+    assert!(streamed(Provider::Local, 200, &jump).0.unwrap_err().contains("out of order"));
+    let failed = "data: {\"error\": {\"message\": \"model not found\"}}\n\n";
+    assert!(streamed(Provider::Local, 200, failed).0.unwrap_err().contains("model not found"));
+    let empty = local_stream(&[json!({"content": ""})], "length");
+    assert!(streamed(Provider::Local, 200, &empty).0.unwrap_err().contains("ran out of room"));
+    assert!(streamed(Provider::Local, 500, r#"{"error":{"message":"model not found"}}"#).0.unwrap_err().contains("500"));
+}
+
+#[test]
+fn the_cap_holds_over_the_whole_stream_and_a_stopped_reader_stops() {
+    let ping = "event: ping\ndata: {\"type\": \"ping\"}\n\n";
+    let endless = ping.repeat(crate::MAX_REPLY as usize / ping.len() + 2);
+    let e = streamed(Provider::Anthropic, 200, &endless).0.unwrap_err();
+    assert!(e.contains("larger than"), "{e}");
+    // A line with no end is capped the same.
+    assert!(streamed(Provider::Anthropic, 200, &"a".repeat(crate::MAX_REPLY as usize + 10)).0.unwrap_err().contains("larger than"));
+    // The reader asks after each event whether it is still wanted.
+    let net = Fake::default().reply(200, ANTHROPIC_HELLO);
+    let mut events = 0;
+    let r = complete(Provider::Anthropic, &net, "", "claude-sonnet-5-5", KEY, &[Msg::user("hi")], &mut |_| {
+        events += 1;
+        events < 3
+    });
+    assert!(r.unwrap_err().contains("stopped") && events == 3);
 }
 
 // ---------- the network ----------
@@ -328,17 +773,25 @@ fn a_reply_is_read_with_its_status_and_capped_and_a_redirect_goes_nowhere() {
     ]);
     let net = Ureq::loopback(&base);
     let ask = |path: &str| {
-        net.post(&Request { url: format!("{base}/{path}"), headers: vec![("x-api-key".into(), KEY.into())], body: "{\"q\":1}".into() })
+        let (status, mut body) = net
+            .stream(&Request { url: format!("{base}/{path}"), headers: vec![("x-api-key".into(), KEY.into())], body: "{\"q\":1}".into() })
+            .unwrap();
+        let mut text = String::new();
+        body.read_to_string(&mut text).unwrap();
+        (status, text)
     };
-    assert_eq!(ask("a").unwrap(), (200, r#"{"ok":1}"#.to_string()));
-    assert_eq!(ask("b").unwrap(), (401, r#"{"error":{"message":"bad key"}}"#.to_string()), "an error status is a reply to read");
-    assert!(ask("c").is_err(), "a reply past the cap is not read");
-    assert_eq!(ask("d").unwrap().0, 302, "a redirect is handed back, not followed");
+    assert_eq!(ask("a"), (200, r#"{"ok":1}"#.to_string()));
+    assert_eq!(ask("b"), (401, r#"{"error":{"message":"bad key"}}"#.to_string()), "an error status is a reply to read");
+    // The cap is the reader's, over the whole body, whatever the network: here the window's own, to a server on this computer.
+    let e = complete(Provider::Local, &net, &base, "qwen3", "", &[Msg::user("x")], &mut |_| true).unwrap_err();
+    assert!(e.contains("larger than"), "a reply past the cap is not read: {e}");
+    assert_eq!(ask("d").0, 302, "a redirect is handed back, not followed");
     let said = server.join().unwrap();
     assert!(said[0].starts_with("POST /a "), "{}", said[0]);
     assert!(said[0].to_ascii_lowercase().contains("x-api-key: sk-test"), "the key went in a header");
     assert!(said[0].ends_with("{\"q\":1}"));
-    let e = net.post(&Request { url: "https://api.openai.com/v1/responses".into(), headers: vec![], body: String::new() }).unwrap_err();
+    assert!(said[2].starts_with("POST /v1/chat/completions "), "{}", said[2]);
+    let e = net.stream(&Request { url: "https://api.openai.com/v1/responses".into(), headers: vec![], body: String::new() }).err().unwrap();
     assert!(e.contains("won't send") && !e.contains("/v1/responses"), "{e}");
 }
 
@@ -479,11 +932,11 @@ fn tool_reply(calls: &[(&str, &str, &str)]) -> String {
             |(id, name, input)| json!({"type": "tool_use", "id": id, "name": name, "input": serde_json::from_str::<Value>(input).unwrap()}),
         )
         .collect();
-    anthropic_reply(Value::Array(blocks), "tool_use")
+    anthropic_stream(&Value::Array(blocks), "tool_use")
 }
 
 fn text_reply(text: &str) -> String {
-    anthropic_reply(json!([{"type": "text", "text": text}]), "end_turn")
+    anthropic_stream(&json!([{"type": "text", "text": text}]), "end_turn")
 }
 
 /// Polls until the turn is over, the way frames do.
@@ -656,6 +1109,77 @@ fn stopping_ends_the_turn_and_keeps_what_was_done() {
     assert!(!chat.busy());
     assert!(!chat.poll(&mut s, Access::Edit));
     assert_eq!(objects(&mut s), 1);
+}
+
+/// Polls, as frames do, until `seen` says yes.
+fn poll_until(chat: &mut Chat, s: &mut Session, seen: impl Fn(&Chat) -> bool) {
+    let until = Instant::now() + Duration::from_secs(20);
+    while !seen(chat) {
+        assert!(Instant::now() < until, "not seen: {:?}", chat.log);
+        chat.poll(s, Access::Edit);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
+
+#[test]
+fn the_answer_grows_in_the_log_as_it_streams_and_the_whole_reply_takes_its_place() {
+    let (fake, body) = Fake::default().live(200);
+    let net = Arc::new(fake);
+    let (mut chat, mut s) = (chat_on(&net), Session::new());
+    let stream = anthropic_stream(
+        &json!([{"type": "thinking", "thinking": "Short.", "signature": "s"}, {"type": "text", "text": "Hello there"}]),
+        "end_turn",
+    );
+    let at = stream.find("event: content_block_stop\ndata: {\"index\":1").unwrap();
+    chat.send("hi", KEY);
+    body.send(stream[..at].to_string()).unwrap();
+    poll_until(&mut chat, &mut s, |c| c.log.last() == Some(&Line::Says("Hello there".into())));
+    assert!(chat.busy(), "the turn is still on: the reply has not ended");
+    assert_eq!(chat.log.len(), 2, "one line grows: {:?}", chat.log);
+    body.send(stream[at..].to_string()).unwrap();
+    drop(body);
+    drive(&mut chat, &mut s);
+    assert_eq!(chat.log, [Line::You("hi".into()), Line::Thinks("Short.".into()), Line::Says("Hello there".into())]);
+    assert_eq!(chat.history.len(), 2);
+}
+
+#[test]
+fn a_reply_refused_in_the_middle_takes_back_what_it_showed() {
+    let refused = text_reply("Here is how").replacen(
+        r#""stop_reason":"end_turn""#,
+        r#""stop_reason":"refusal","stop_details":{"type":"refusal","category":"cyber"}"#,
+        1,
+    );
+    let net = Arc::new(Fake::default().reply(200, refused));
+    let (mut chat, mut s) = (chat_on(&net), Session::new());
+    chat.send("hi", KEY);
+    drive(&mut chat, &mut s);
+    assert!(matches!(&chat.log[..], [Line::You(_), Line::Note(n)] if n.contains("declined")), "{:?}", chat.log);
+}
+
+#[test]
+fn stopping_a_stream_closes_it_and_keeps_what_was_shown() {
+    let (fake, body) = Fake::default().live(200);
+    let net = Arc::new(fake);
+    let (mut chat, mut s) = (chat_on(&net), Session::new());
+    let stream = text_reply("Half an answer");
+    chat.send("hi", KEY);
+    body.send(stream[..stream.find("event: content_block_stop").unwrap()].to_string()).unwrap();
+    poll_until(&mut chat, &mut s, |c| matches!(c.log.last(), Some(Line::Says(t)) if t == "Half an answer"));
+    chat.stop();
+    assert!(!chat.busy());
+    assert!(
+        matches!(&chat.log[..], [Line::You(_), Line::Says(t), Line::Note(n)] if t == "Half an answer" && n == "Stopped."),
+        "{:?}",
+        chat.log
+    );
+    // The thread stops reading at the next event, which drops the body: the server's next send finds no one.
+    let until = Instant::now() + Duration::from_secs(20);
+    while body.send("event: ping\ndata: {\"type\": \"ping\"}\n\n".into()).is_ok() {
+        assert!(Instant::now() < until, "the stream is still read after Stop");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(!chat.poll(&mut s, Access::Edit) && chat.history.len() == 1);
 }
 
 #[test]
@@ -1012,8 +1536,8 @@ fn the_checklist_is_kept_for_the_palette_not_logged_as_a_call_and_cleared_by_the
 
 #[test]
 fn thinking_comes_before_the_answer_in_the_log_and_the_tokens_are_handed_over_once() {
-    let first = anthropic_reply(
-        json!([{"type": "thinking", "thinking": "Look first.", "signature": "s"}, {"type": "tool_use", "id": "t1", "name": "inspect_scene", "input": {}}]),
+    let first = anthropic_stream(
+        &json!([{"type": "thinking", "thinking": "Look first.", "signature": "s"}, {"type": "tool_use", "id": "t1", "name": "inspect_scene", "input": {}}]),
         "tool_use",
     );
     let net = Arc::new(Fake::default().reply(200, first).reply(200, text_reply("One box.")));
@@ -1272,7 +1796,8 @@ fn the_local_provider_writes_chat_completions_and_reads_tool_calls() {
     let sent = crate::local::request(&url, "llama3.2:3b", "", &[Msg::user("a box")]);
     assert!(sent.headers.is_empty());
     let body: Value = serde_json::from_str(&sent.body).unwrap();
-    assert_eq!((body["model"].as_str(), body["stream"].as_bool()), (Some("llama3.2:3b"), Some(false)));
+    assert_eq!((body["model"].as_str(), body["stream"].as_bool()), (Some("llama3.2:3b"), Some(true)));
+    assert_eq!(body["stream_options"]["include_usage"], true, "the counts come in a last chunk");
     assert_eq!(body["messages"][0]["role"], "system");
     assert_eq!(body["messages"][1], json!({"role": "user", "content": "a box"}));
     assert_eq!(body["tools"][0]["function"]["name"], "execute");

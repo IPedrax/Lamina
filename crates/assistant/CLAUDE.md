@@ -9,8 +9,10 @@ assistant crate (same author, MIT OR Apache-2.0); the safety rules below came wi
 
 What comes from the network is hostile, and what goes out is the user's:
 
-- A reply is read up to `MAX_REPLY` and parsed leniently; one that is not what the provider documents is an `Err` for the chat to show,
-  never a panic. A tool call's arguments are checked before anything runs (`tools::run`).
+- A reply is read up to `MAX_REPLY` over the whole stream (`receive`, whatever the `Net`) and parsed leniently; one that is not what
+  the provider documents, or a stream cut off before its end, is an `Err` for the chat to show, never a panic. A tool call's
+  arguments are checked before anything runs (`tools::run`). `net::Ureq` gives up on a reply silent for `SILENCE` or longer than
+  `WAIT` in all, so a stream that never ends cannot keep its thread.
 - Requests go only to the three hosts (`net::allowed`), over HTTPS, or to a local model's server over plain HTTP at 127.0.0.1 or
   ::1 (`net::loopback`: by address, never a name, any port, no credentials), with no redirect followed; the key travels in a header
   and is in no address, no message and no `Debug` (`Request`'s prints no headers). A key or model id with odd characters never
@@ -32,15 +34,24 @@ What comes from the network is hostile, and what goes out is the user's:
   build; the two bind different associated data, so neither is taken for the other. A change to a format keeps `well_formed` strict (the
   file is hostile) and its known-answer test, whose expected text is made with Python's `hashlib.pbkdf2_hmac` and `cryptography`'s
   `AESGCM`, never with this code.
-- A provider is a pure pair: `request(model, key, history) -> net::Request` and `parse(status, body) -> Result<Reply, String>`. A new
-  provider or a changed request shape is a test on a recorded reply first (`tests.rs`: text, one call, two calls, malformed, refusal).
-  The conversation (`Msg`) is in no provider's form; the model's own turn goes back whole as `Reply::raw`, because thinking blocks,
-  reasoning items and thought signatures are valid only in the conversation that made them. So a chat that holds a model turn is not
-  continued on another provider (`Chat::send` says so; the user clears it).
-- The turn runs in `Chat::poll`, once a frame: the request is on a thread, its reply is taken in the frame, and the tools run on the
-  session there. A whole turn is one undo step: each reply's calls run in `Session::transaction` under a label unique to the turn, and
-  `merge_steps` joins the turn's steps after each reply (a step the user makes in between keeps them apart). The network stays behind
-  `Net` (`testing::Fake`), so no test reaches a provider.
+- A provider is pure: `request(model, key, history) -> net::Request`, which asks for a stream of server-sent events (Anthropic and
+  OpenAI `stream: true`, Gemini `streamGenerateContent?alt=sse`, a local server `stream: true` with `include_usage`); a `Stream`
+  (`crate::Stream`) that takes the events one by one, gives the text each adds, and at the end puts the whole reply back together in
+  the provider's own form; and `parse(status, body)`, which reads a whole reply (what the `Stream` made, an error status's body, or
+  a local server that does not stream). Each event format is the provider's documented one, read from its docs, never guessed. A new
+  provider or a changed request shape is a test on a recorded stream first (`tests.rs`: text, one call, two calls, cut off or
+  malformed, refusal or error event). The conversation (`Msg`) is in no provider's form; the model's own turn goes back whole as
+  `Reply::raw`, because thinking blocks, reasoning items and thought signatures are valid only in the conversation that made them
+  (Gemini's parts are kept as they came, a signature in its own part with empty text included). So a chat that holds a model turn is
+  not continued on another provider (`Chat::send` says so; the user clears it).
+- The turn runs in `Chat::poll`, once a frame: the request is on a thread, the answer's text grows one `Line::Says` as it comes (the
+  thread wakes the window for each piece), the whole reply is taken in the frame it ends (its own `Says` takes the growing one's
+  place, after its `Thinks`; a reply that fails takes it away, as a refusal in the middle of an answer is not one), and only then
+  do its tools run on the session. Stop keeps what was shown and drops the request (`Flight`): its thread stops reading at the next
+  event, which closes the connection. A whole turn is one undo step: each reply's calls run in
+  `Session::transaction` under a label unique to the turn, and `merge_steps` joins the turn's steps after each reply (a step the
+  user makes in between keeps them apart). The network stays behind `Net` (`testing::Fake`, whose `live` body comes as a test sends
+  it), so no test reaches a provider.
 - `attach.rs`: the files sent with a message (a part's photo, a text note). A picked file is copied into a `TempDir` that is the chat's
   (gone on `clear`, `reset` and drop), read back as text (UTF-8, `MAX_FILE_TEXT`) or a picture (`MAX_FILE_IMAGE`, base64 by
   `attach::base64`), and goes out through `user_parts`, which each provider writes in its own form. A file's name is cleaned (`clean`)

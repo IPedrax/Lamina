@@ -1,5 +1,5 @@
-//! Google's Gemini API (`POST /v1beta/models/{model}:generateContent`) with function calling: the conversation goes in as
-//! `contents` of `user` and `model` turns, the tools as `functionDeclarations`, a `functionCall` part comes back, and the answer is
+//! Google's Gemini API (`POST /v1beta/models/{model}:streamGenerateContent?alt=sse`, read by [`Stream`]) with function calling:
+//! the conversation goes in as `contents` of `user` and `model` turns, the tools as `functionDeclarations`, a `functionCall` part comes back, and the answer is
 //! a `functionResponse` part in a user turn, with the call's `id` when it had one. The model's own turn goes back whole (its
 //! `thoughtSignature` must come back in the part it came in). Declarations take a subset of OpenAPI, which has no free-form
 //! object: [`schema`] writes one as text that is a JSON object, and the tools read it back (`tools::run`).
@@ -62,7 +62,7 @@ pub fn request(model: &str, key: &str, history: &[Msg]) -> Request {
         "generationConfig": {"thinkingConfig": {"includeThoughts": true}},
     });
     Request {
-        url: format!("https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"),
+        url: format!("https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse"),
         headers: vec![("x-goog-api-key".into(), key.into())],
         body: body.to_string(),
     }
@@ -81,12 +81,73 @@ fn schema(v: &Value) -> Value {
     map.iter().filter(|(k, _)| *k != "additionalProperties").map(|(k, v)| (k.clone(), schema(v))).collect::<serde_json::Map<_, _>>().into()
 }
 
+const WHO: &str = "Gemini";
+
+/// A whole reply (a `GenerateContentResponse`), or an error's.
 pub fn parse(status: u16, body: &str) -> Result<Reply, String> {
-    const WHO: &str = "Gemini";
     if !(200..300).contains(&status) {
         return Err(api_error(WHO, status, body));
     }
-    let v = json_body(WHO, body)?;
+    read(&json_body(WHO, body)?)
+}
+
+/// The stream: each event is a `GenerateContentResponse` with the next parts of the candidate. Every part is kept as it came, in
+/// order (a thought signature must go back in the part it came in, and may come in a part with empty text), the last
+/// `finishReason`, `usageMetadata` and `promptFeedback` win, and the model's turn is the parts together. A stream with a candidate
+/// but no `finishReason` was cut off.
+#[derive(Default)]
+pub struct Stream {
+    parts: Vec<Value>,
+    candidate: bool,
+    finish: Option<Value>,
+    usage: Value,
+    feedback: Value,
+}
+
+impl crate::Stream for Stream {
+    const WHO: &'static str = WHO;
+
+    fn event(&mut self, _name: &str, data: &str) -> Result<String, String> {
+        let chunk = json_body(WHO, data)?;
+        if let Some(e) = chunk.get("error") {
+            let said = e["message"].as_str().or_else(|| e.as_str()).unwrap_or("no reason given");
+            return Err(format!("{WHO} failed while answering: {}", clip(said, 300)));
+        }
+        if chunk["usageMetadata"].is_object() {
+            self.usage = chunk["usageMetadata"].clone();
+        }
+        if chunk["promptFeedback"].is_object() {
+            self.feedback = chunk["promptFeedback"].clone();
+        }
+        let mut text = String::new();
+        if let Some(candidate) = chunk["candidates"].as_array().and_then(|c| c.first()) {
+            self.candidate = true;
+            for part in candidate["content"]["parts"].as_array().into_iter().flatten() {
+                if part["thought"] != true && part.get("functionCall").is_none() {
+                    text.push_str(part["text"].as_str().unwrap_or_default());
+                }
+                self.parts.push(part.clone());
+            }
+            if candidate["finishReason"].is_string() {
+                self.finish = Some(candidate["finishReason"].clone());
+            }
+        }
+        Ok(text)
+    }
+
+    fn finish(self) -> Result<Reply, String> {
+        let candidates = match self.finish {
+            Some(finish) => json!([{"content": {"role": "model", "parts": self.parts}, "finishReason": finish}]),
+            None if self.candidate => return Err(format!("{WHO}'s reply stopped before its end: ask again")),
+            // No answer at all: a blocked prompt says why in its feedback.
+            None => json!([]),
+        };
+        read(&json!({"candidates": candidates, "usageMetadata": self.usage, "promptFeedback": self.feedback}))
+    }
+}
+
+/// A whole `GenerateContentResponse`, as `parse` and [`Stream`] have it.
+fn read(v: &Value) -> Result<Reply, String> {
     let Some(candidate) = v["candidates"].as_array().and_then(|c| c.first()) else {
         let why = v["promptFeedback"]["blockReason"].as_str().map(|r| format!(" ({r})")).unwrap_or_default();
         return Err(format!("{WHO} blocked the request or sent no answer{why}"));

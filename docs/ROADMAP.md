@@ -274,6 +274,14 @@ Priorities:
   checklist, never the key or a picture) in `chats/` beside the settings, named for a hash of the project's path. The window
   writes it when a turn ends and brings it back when the project opens; a new plate starts a new chat. A file is read whole or
   not at all, within a live chat's caps.
+- **9.6 Streaming replies.** Every provider is asked for server-sent events (Anthropic and OpenAI `stream: true`, Gemini
+  `streamGenerateContent?alt=sse`, a local server `stream: true`), each format as its provider's docs give it. `Net::stream` hands
+  the body over as it arrives; `receive` reads it event by event, `MAX_REPLY` over the whole stream, and each provider's `Stream`
+  gives the text as it comes and puts the whole turn back together in the provider's own form, so tool calls, thinking, counts and
+  `Reply::raw` are as before. The answer grows in one line of the panel; the tools run once the reply has ended. Stop closes the
+  stream at its next event, and a stream silent for two minutes, or running past ten, is given up. A local server that answers
+  whole is still read. Tested on recorded streams (text, one and two calls, cut off, malformed, refusals and error events) and in
+  the window with a fake network; not yet tried against the real APIs.
 
 ## Order of work
 
@@ -332,9 +340,6 @@ DMG, each checked against the SHA-256 digest GitHub gives the asset. The release
 ## 8. Quality and infrastructure
 
 ## 9. The assistant
-
-**9.6 Streaming replies (P2).** How: read each provider's server-sent events, so text appears as it is written. It is a change to
-`net.rs` and the three provider parsers.
 
 ## Known limits today
 

@@ -1992,6 +1992,48 @@ mod tests {
     }
 
     #[test]
+    fn the_assistants_answer_shows_as_it_is_written() {
+        let (fake, body) = lamina_assistant::testing::Fake::default().live(200);
+        let mut app = App::new(session(), Arc::new(fake));
+        app.chat.chat.provider = lamina_assistant::Provider::Anthropic;
+        let mut h = Harness::builder().with_size([1400.0, 860.0]).build_ui_state(|ui, app: &mut App| app.show(ui), app);
+        h.state_mut().chat.chat.send("hi", "sk-test-0123456789abcdef");
+        // Anthropic's events, as its streaming guide shows them.
+        let event = |kind: &str, data: &str| format!("event: {kind}\ndata: {{\"type\": \"{kind}\"{data}}}\n\n");
+        let text =
+            |piece: &str| event("content_block_delta", &format!(r#", "index": 0, "delta": {{"type": "text_delta", "text": "{piece}"}}"#));
+        let first = [
+            event("message_start", r#", "message": {"content": [], "usage": {"input_tokens": 9, "output_tokens": 1}}"#),
+            event("content_block_start", r#", "index": 0, "content_block": {"type": "text", "text": ""}"#),
+            text("A cube,"),
+        ];
+        body.send(first.concat()).unwrap();
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while h.query_by_label("A cube,").is_none() {
+            assert!(std::time::Instant::now() < until, "{:?}", h.state().chat.chat.log);
+            h.step();
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(h.state().chat.chat.busy(), "the words show before the turn ends");
+        let rest = [
+            text(" 20 mm."),
+            event("content_block_stop", r#", "index": 0"#),
+            event("message_delta", r#", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 4}"#),
+            event("message_stop", ""),
+        ];
+        body.send(rest.concat()).unwrap();
+        drop(body);
+        while h.state().chat.chat.busy() {
+            assert!(std::time::Instant::now() < until, "{:?}", h.state().chat.chat.log);
+            h.step();
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        h.run();
+        h.get_by_label("A cube, 20 mm.");
+        assert!(h.query_by_label("A cube,").is_none(), "the whole answer took the place of the growing one");
+    }
+
+    #[test]
     fn a_projects_chat_is_kept_and_comes_back_with_it() {
         let dir = tempfile::tempdir().unwrap();
         let net = Arc::new(

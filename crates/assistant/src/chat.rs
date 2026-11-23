@@ -1,7 +1,8 @@
 //! The chat: a conversation with a model that works on a [`Session`]. The window calls [`Chat::poll`] once a frame. A request to
-//! the provider runs on a thread of its own (never the window's), and its reply is taken in the frame, where the tool calls in it
-//! run on the window's session, as a command from a button does. A whole turn, over all its replies, is one undo step: each reply's
-//! calls run in a [`Session::transaction`] named for the turn, and the steps of the turn are merged as they come.
+//! the provider runs on a thread of its own (never the window's). The answer's text streams in and grows in the log frame by frame;
+//! the whole reply is taken in the frame it ends, where the tool calls in it run on the window's session, as a command from a button
+//! does. A whole turn, over all its replies, is one undo step: each reply's calls run in a [`Session::transaction`] named for the
+//! turn, and the steps of the turn are merged as they come.
 
 use std::fs;
 use std::path::Path;
@@ -41,6 +42,19 @@ pub enum Line {
     Note(String),
 }
 
+/// What the request's thread sends the window: the answer's text as it comes, then the whole reply.
+enum Got {
+    Text(String),
+    Reply(Result<Reply, String>),
+}
+
+/// A request in flight. Dropping it (Stop, a new plate, the window closing) tells its thread to stop reading, which closes the
+/// connection at the next event.
+struct Flight {
+    got: Receiver<Got>,
+    _wanted: Arc<()>,
+}
+
 /// A message of the user's that is being worked on.
 struct Turn {
     key: String,
@@ -61,9 +75,11 @@ pub struct Chat {
     pub log: Vec<Line>,
     pub(crate) history: Vec<Msg>,
     net: Arc<dyn Net>,
-    /// What wakes the window when a reply has come: the window sets it before it sends.
+    /// What wakes the window when a reply has come, or more of its text: the window sets it before it sends.
     pub wake: Arc<dyn Fn() + Send + Sync>,
-    flight: Option<Receiver<Result<Reply, String>>>,
+    flight: Option<Flight>,
+    /// The line of the log the answer being written grows in, while it streams.
+    live: Option<usize>,
     turn: Option<Turn>,
     /// The model's checklist, as it last wrote it: the palette shows it while the turn runs.
     pub todos: Vec<Todo>,
@@ -91,6 +107,7 @@ impl Chat {
             net,
             wake: Arc::new(|| {}),
             flight: None,
+            live: None,
             turn: None,
             todos: Vec::new(),
             attached: Vec::new(),
@@ -163,6 +180,19 @@ impl Chat {
         self.log.push(Line::Note(text.into()));
         if self.log.len() > MAX_LOG {
             self.log.remove(0);
+            self.live = self.live.and_then(|i| i.checked_sub(1));
+        }
+    }
+
+    /// The answer's text so far grows by `text`: in its own line of the log, begun with the first words.
+    fn grow(&mut self, text: &str) {
+        match self.live.and_then(|i| self.log.get_mut(i)) {
+            Some(Line::Says(said)) => said.push_str(text),
+            _ if text.trim().is_empty() => {}
+            _ => {
+                self.log.push(Line::Says(text.trim_start().into()));
+                self.live = Some(self.log.len() - 1);
+            }
         }
     }
 
@@ -250,27 +280,48 @@ impl Chat {
         }
         let (provider, model, key, local) = (turn.provider, turn.model.clone(), turn.key.clone(), turn.local.clone());
         let (net, history, wake) = (Arc::clone(&self.net), self.history.clone(), Arc::clone(&self.wake));
-        let (tx, rx) = channel();
+        let (tx, got) = channel();
+        let wanted = Arc::new(());
+        let still = Arc::downgrade(&wanted);
         std::thread::Builder::new()
             .name("assistant".into())
             .spawn(move || {
-                let _ = tx.send(complete(provider, net.as_ref(), &local, &model, &key, &history));
+                let mut each = |text: &str| {
+                    if !text.is_empty() && tx.send(Got::Text(text.into())).is_ok() {
+                        wake();
+                    }
+                    still.strong_count() > 0
+                };
+                let reply = complete(provider, net.as_ref(), &local, &model, &key, &history, &mut each);
+                let _ = tx.send(Got::Reply(reply));
                 wake();
             })
             .map_err(|e| format!("could not start the request: {e}"))?;
-        self.flight = Some(rx);
+        self.flight = Some(Flight { got, _wanted: wanted });
         Ok(())
     }
 
-    /// Once a frame: takes the reply if it has come, runs the tools it asks for on `session`, and asks again, or ends the turn.
-    /// Whether anything changed (the window repaints then).
+    /// Once a frame: grows the answer by the text that came, takes the reply if it has ended, runs the tools it asks for on
+    /// `session`, and asks again, or ends the turn. Whether anything changed (the window repaints then).
     pub fn poll(&mut self, session: &mut Session, access: Access) -> bool {
-        let got = match self.flight.as_ref().map(Receiver::try_recv) {
-            None | Some(Err(TryRecvError::Empty)) => return false,
-            Some(Ok(reply)) => reply,
-            Some(Err(TryRecvError::Disconnected)) => Err("the request stopped without an answer".into()),
+        let mut grew = false;
+        let got = loop {
+            match self.flight.as_ref().map(|f| f.got.try_recv()) {
+                None | Some(Err(TryRecvError::Empty)) => return grew,
+                Some(Ok(Got::Text(text))) => {
+                    self.grow(&text);
+                    grew = true;
+                }
+                Some(Ok(Got::Reply(reply))) => break reply,
+                Some(Err(TryRecvError::Disconnected)) => break Err("the request stopped without an answer".into()),
+            }
         };
         self.flight = None;
+        // What was shown as it came goes: the whole reply takes its place, after its thinking, and a reply that failed (refused, cut
+        // off) was not an answer, as the providers say of a refusal that comes in the middle of one.
+        if let Some(i) = self.live.take().filter(|i| matches!(self.log.get(*i), Some(Line::Says(_)))) {
+            self.log.remove(i);
+        }
         let reply = match got {
             Ok(reply) => reply,
             Err(e) => {
@@ -321,7 +372,7 @@ impl Chat {
 
     /// Gives up on the request in flight; what the turn already did stays.
     pub fn stop(&mut self) {
-        self.flight = None;
+        (self.flight, self.live) = (None, None);
         if self.busy() {
             self.note("Stopped.");
             self.turn = None;
@@ -331,7 +382,7 @@ impl Chat {
     /// Forgets the conversation and whatever is in flight, for a window whose scene was replaced: the reply to a request made about
     /// the old one must not run its tools on the new one. The provider, the model and the network stay.
     pub fn reset(&mut self) {
-        (self.flight, self.turn) = (None, None);
+        (self.flight, self.turn, self.live) = (None, None, None);
         self.log.clear();
         self.history.clear();
         self.todos.clear();

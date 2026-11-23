@@ -1,5 +1,6 @@
-//! OpenAI's Responses API (`POST /v1/responses`) with function tools. Not Chat Completions: OpenAI's current models (GPT-6 and
-//! later) take tool calls only through the Responses API. The request is stateless (`store: false`, nothing is kept on OpenAI's
+//! OpenAI's Responses API (`POST /v1/responses`, streamed and read by [`Stream`]) with function tools. Not Chat Completions:
+//! OpenAI's current models (GPT-6 and later) take tool calls only through the Responses API. The request is stateless
+//! (`store: false`, nothing is kept on OpenAI's
 //! side for a later call): the conversation goes in as `input` items, the model's `output` items go back as they came (a reasoning
 //! item is replayable only with its encrypted content, which is asked for), and a tool's answer is a `function_call_output`
 //! item naming the `function_call`'s `call_id`.
@@ -55,18 +56,54 @@ pub fn request(model: &str, key: &str, history: &[Msg]) -> Request {
         .collect();
     let body = json!({
         "model": model, "store": false, "instructions": SYSTEM, "input": input, "tools": tools,
-        "include": ["reasoning.encrypted_content"], "reasoning": {"summary": "auto"},
+        "include": ["reasoning.encrypted_content"], "reasoning": {"summary": "auto"}, "stream": true,
     });
     Request { url: URL.into(), headers: vec![("Authorization".into(), format!("Bearer {key}"))], body: body.to_string() }
 }
 
+const WHO: &str = "OpenAI";
+
+/// A whole reply (a `Response`), or an error's.
 pub fn parse(status: u16, body: &str) -> Result<Reply, String> {
-    const WHO: &str = "OpenAI";
     if !(200..300).contains(&status) {
         return Err(api_error(WHO, status, body));
     }
-    let v = json_body(WHO, body)?;
-    let items = v["output"].as_array().ok_or_else(|| format!("{WHO} sent a reply with no output ({})", clip(body.trim(), 80)))?;
+    read(&json_body(WHO, body)?)
+}
+
+/// The stream's events: `response.output_text.delta` is the answer's text as it comes, and the last of `response.completed`,
+/// `response.incomplete` and `response.failed` carries the whole `Response`, its output items (reasoning with its encrypted content,
+/// calls with their arguments) and its counts, which is what is read. An `error` event ends it. Other events are passed by.
+#[derive(Default)]
+pub struct Stream {
+    response: Option<Value>,
+}
+
+impl crate::Stream for Stream {
+    const WHO: &'static str = WHO;
+
+    fn event(&mut self, _name: &str, data: &str) -> Result<String, String> {
+        let e = json_body(WHO, data)?;
+        match e["type"].as_str() {
+            Some("response.output_text.delta") => return Ok(e["delta"].as_str().unwrap_or_default().to_string()),
+            Some("response.completed" | "response.incomplete" | "response.failed") => self.response = Some(e["response"].clone()),
+            Some("error") => {
+                let said = e["message"].as_str().or_else(|| e["error"]["message"].as_str()).unwrap_or("no reason given");
+                return Err(format!("{WHO} failed while answering: {}", clip(said, 300)));
+            }
+            _ => {}
+        }
+        Ok(String::new())
+    }
+
+    fn finish(self) -> Result<Reply, String> {
+        read(&self.response.ok_or_else(|| format!("{WHO}'s reply stopped before its end: ask again"))?)
+    }
+}
+
+/// A whole `Response`, as `parse` and [`Stream`] have it.
+fn read(v: &Value) -> Result<Reply, String> {
+    let items = v["output"].as_array().ok_or_else(|| format!("{WHO} sent a reply with no output ({})", clip(&v.to_string(), 80)))?;
     let (mut text, mut thinking, mut calls) = (String::new(), String::new(), Vec::new());
     for item in items {
         match item["type"].as_str() {

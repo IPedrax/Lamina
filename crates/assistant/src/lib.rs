@@ -8,9 +8,12 @@
 //! the provider documents is an error in the chat, never a panic), a tool call's arguments are checked before anything runs,
 //! and a call that would read or write a file is refused: the user does that, from the app. What
 //! goes out is capped too: each tool result ([`MAX_RESULT`]), the conversation ([`MAX_HISTORY`]) and the rounds of one message
-//! ([`MAX_ROUNDS`]). A provider's client is a pure function from the conversation to a [`net::Request`] and from a reply to a
-//! [`Reply`], so the tests need no network.
+//! ([`MAX_ROUNDS`]). A provider's client is pure: a function from the conversation to a [`net::Request`], and a reader that takes
+//! the reply's server-sent events as they come (the text of each, for the chat to show) and gives the whole [`Reply`] at the end,
+//! so the tests need no network.
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
+
+use std::io::{BufRead, BufReader, Read};
 
 use serde_json::Value;
 
@@ -316,8 +319,17 @@ pub(crate) fn json_body(who: &str, body: &str) -> Result<Value, String> {
 }
 
 /// One round trip: the conversation to `provider`'s model, and its reply. `local` is the address of the server on this computer,
-/// for [`Provider::Local`]. Runs on a thread of the caller's.
-pub fn complete(provider: Provider, net: &dyn net::Net, local: &str, model: &str, key: &str, history: &[Msg]) -> Result<Reply, String> {
+/// for [`Provider::Local`]. The reply streams in: `each` is handed the answer's text as it comes, piece by piece (empty for an event
+/// that adds none), and says `false` when it is no longer wanted (the user stopped). Runs on a thread of the caller's.
+pub fn complete(
+    provider: Provider,
+    net: &dyn net::Net,
+    local: &str,
+    model: &str,
+    key: &str,
+    history: &[Msg],
+    each: &mut dyn FnMut(&str) -> bool,
+) -> Result<Reply, String> {
     if !model_ok_for(provider, model) {
         return Err("the model id has characters a model id never has: letters, digits, . - _ only".into());
     }
@@ -330,11 +342,89 @@ pub fn complete(provider: Provider, net: &dyn net::Net, local: &str, model: &str
         Provider::Gemini => gemini::request(model, key, history),
         Provider::Local => local::request(&local::endpoint(local)?, model, key, history),
     };
-    let (status, body) = net.post(&request)?;
+    let (status, body) = net.stream(&request)?;
     match provider {
-        Provider::Anthropic => anthropic::parse(status, &body),
-        Provider::OpenAi => openai::parse(status, &body),
-        Provider::Gemini => gemini::parse(status, &body),
-        Provider::Local => local::parse(status, &body),
+        Provider::Anthropic => receive::<anthropic::Stream>(status, body, anthropic::parse, each),
+        Provider::OpenAi => receive::<openai::Stream>(status, body, openai::parse, each),
+        Provider::Gemini => receive::<gemini::Stream>(status, body, gemini::parse, each),
+        Provider::Local => receive::<local::Stream>(status, body, local::parse, each),
     }
+}
+
+/// A provider's reading of its stream of server-sent events: the text each event adds to the answer, and at the end the whole reply,
+/// put together in the provider's own form (what its `parse` reads), so that `Reply::raw` can go back in the next request.
+pub(crate) trait Stream: Default {
+    /// Who answers, for a message.
+    const WHO: &'static str;
+    /// One event: its `event:` name (empty when it has none) and its data. The text it adds to the answer (empty for none), or why
+    /// the stream is no good.
+    fn event(&mut self, name: &str, data: &str) -> Result<String, String>;
+    /// The reply, once the body has ended: an error when the stream stopped before its end.
+    fn finish(self) -> Result<Reply, String>;
+}
+
+/// Reads a reply as it comes, [`MAX_REPLY`] bytes at most over the whole of it. A stream of server-sent events goes event by event
+/// through `S`, each event's text to `each`; a body that is not one (an error status's, or a server's that does not stream) is read
+/// whole by `parse`.
+fn receive<S: Stream>(
+    status: u16,
+    body: net::Body,
+    parse: fn(u16, &str) -> Result<Reply, String>,
+    each: &mut dyn FnMut(&str) -> bool,
+) -> Result<Reply, String> {
+    let mut body = BufReader::new(body.take(MAX_REPLY + 1));
+    let (mut stream, mut name, mut data, mut raw) = (S::default(), String::new(), String::new(), Vec::new());
+    // An error's body is read whole; otherwise the first line that is not blank says whether this is a stream.
+    let mut whole: Option<String> = (!(200..300).contains(&status)).then(String::new);
+    let (mut sse, mut read) = (false, 0u64);
+    loop {
+        raw.clear();
+        let n = body.read_until(b'\n', &mut raw).map_err(|e| format!("{}'s reply broke off: {e}", S::WHO))?;
+        read += n as u64;
+        if read > MAX_REPLY {
+            return Err(format!("{} sent a reply larger than {} MB: not read", S::WHO, MAX_REPLY >> 20));
+        }
+        let line = String::from_utf8_lossy(&raw);
+        if whole.is_none() && !sse && !line.trim().is_empty() {
+            sse = matches!(line.split_once(':').map(|(field, _)| field), Some("data" | "event" | "id" | "retry" | ""));
+            if !sse {
+                whole = Some(String::new());
+            }
+        }
+        if let Some(whole) = &mut whole {
+            whole.push_str(&line);
+            if n == 0 {
+                break;
+            }
+            continue;
+        }
+        let line = line.trim_end_matches(['\n', '\r']);
+        // A blank line ends an event, and so does the end of the body (a last event a server left unended is still read).
+        if line.is_empty() {
+            if !data.is_empty() || !name.is_empty() {
+                let text = stream.event(&name, &data)?;
+                if !each(&text) {
+                    return Err("stopped".into());
+                }
+                (name, data) = (String::new(), String::new());
+            }
+            if n == 0 {
+                return stream.finish();
+            }
+            continue;
+        }
+        let (field, value) = line.split_once(':').unwrap_or((line, ""));
+        let value = value.strip_prefix(' ').unwrap_or(value);
+        match field {
+            "event" => name = value.to_string(),
+            "data" => {
+                if !data.is_empty() {
+                    data.push('\n');
+                }
+                data.push_str(value);
+            }
+            _ => {}
+        }
+    }
+    parse(status, whole.as_deref().unwrap_or_default())
 }

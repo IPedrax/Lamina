@@ -1,8 +1,8 @@
 //! The assistant's network: HTTPS POSTs to the three providers' API hosts, through ureq with rustls (Mozilla's root certificates
 //! built in), or plain HTTP to a model's server on this computer at 127.0.0.1 or ::1 (by address: no name is looked up), and
 //! nowhere else. A request goes only to an address [`allowed`] says yes to, a redirect is never followed (so no
-//! reply can send the key anywhere else), and a reply is read up to [`MAX_REPLY`]. The key travels in a header, never in an
-//! address, and no message made here has it in it.
+//! reply can send the key anywhere else), and the reply's body is handed over to be read as it comes (`crate::complete` reads it, up
+//! to [`crate::MAX_REPLY`]). The key travels in a header, never in an address, and no message made here has it in it.
 
 use std::fmt;
 use std::io::Read;
@@ -10,8 +10,6 @@ use std::time::Duration;
 
 use ureq::Agent;
 use ureq::http::Uri;
-
-use crate::MAX_REPLY;
 
 /// A request as the providers take it: where, with which headers (the key is one), and the JSON body.
 #[derive(Clone, PartialEq)]
@@ -28,10 +26,13 @@ impl fmt::Debug for Request {
     }
 }
 
-/// The network as the assistant needs it: one POST, answered with the status and the body whatever the status is. The desktop's
-/// is [`Ureq`]; the tests' is `testing::Fake`.
+/// A reply's body, read as it arrives.
+pub type Body = Box<dyn Read + Send>;
+
+/// The network as the assistant needs it: one POST, answered with the status and the body whatever the status is, the body to be
+/// read as it comes (a provider streams its answer). The desktop's is [`Ureq`]; the tests' is `testing::Fake`.
 pub trait Net: Send + Sync {
-    fn post(&self, request: &Request) -> Result<(u16, String), String>;
+    fn stream(&self, request: &Request) -> Result<(u16, Body), String>;
 }
 
 /// The hosts the assistant talks to, and no others.
@@ -62,8 +63,11 @@ fn host_of(url: &str) -> String {
     url.parse::<Uri>().ok().and_then(|u| u.host().map(str::to_string)).unwrap_or_else(|| "the address".into())
 }
 
-/// A reply to a message of a few kilobytes comes in seconds; one that thinks first can take minutes.
-const WAIT: Duration = Duration::from_secs(5 * 60);
+/// A reply to a message of a few kilobytes comes in seconds; one that thinks first can take minutes, and a long answer streams for
+/// minutes more. A stream that never ends is given up on here.
+const WAIT: Duration = Duration::from_secs(10 * 60);
+/// The longest wait for the next bytes of a reply: a model may think quietly before it answers, but a stream gone silent is dead.
+const SILENCE: Duration = Duration::from_secs(2 * 60);
 
 pub struct Ureq {
     agent: Agent,
@@ -79,8 +83,8 @@ impl Default for Ureq {
     }
 }
 
-/// An agent that follows no redirect, gives up on a stalled connection and hands a 4xx or 5xx back as a reply to be read: the
-/// provider's error says what is wrong with the key or the request.
+/// An agent that follows no redirect, gives up on a stalled connection or stream and hands a 4xx or 5xx back as a reply to be read:
+/// the provider's error says what is wrong with the key or the request.
 fn agent(https_only: bool) -> Agent {
     Agent::config_builder()
         .https_only(https_only)
@@ -88,6 +92,7 @@ fn agent(https_only: bool) -> Agent {
         .http_status_as_error(false)
         .timeout_connect(Some(Duration::from_secs(10)))
         .timeout_global(Some(WAIT))
+        .timeout_per_read(Some(SILENCE))
         .user_agent(format!("Lamina/{}", env!("CARGO_PKG_VERSION")))
         .build()
         .into()
@@ -110,7 +115,7 @@ impl Ureq {
 }
 
 impl Net for Ureq {
-    fn post(&self, request: &Request) -> Result<(u16, String), String> {
+    fn stream(&self, request: &Request) -> Result<(u16, Body), String> {
         if !self.allowed(&request.url) {
             return Err(format!("won't send to {}", host_of(&request.url)));
         }
@@ -121,13 +126,6 @@ impl Net for Ureq {
             call = call.header(name, value);
         }
         let response = call.send(request.body.as_bytes()).map_err(|e| format!("{host}: {e}"))?;
-        let status = response.status().as_u16();
-        // ureq's limit fails the read after the last byte it allows, so one more than the cap: the cap itself is checked below.
-        let mut body = Vec::new();
-        response.into_body().into_with_config().limit(MAX_REPLY + 1).reader().read_to_end(&mut body).map_err(|e| format!("{host}: {e}"))?;
-        if body.len() as u64 > MAX_REPLY {
-            return Err(format!("{host} sent a reply larger than {} MB: not read", MAX_REPLY >> 20));
-        }
-        Ok((status, String::from_utf8_lossy(&body).into_owned()))
+        Ok((response.status().as_u16(), Box::new(response.into_body().into_reader())))
     }
 }
