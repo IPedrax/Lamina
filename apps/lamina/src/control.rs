@@ -333,7 +333,7 @@ impl App {
             }
             ui.horizontal(|ui| {
                 ui.label(t("Port"));
-                let port = ui.add(egui::DragValue::new(&mut self.agents.port).range(0..=65535)).on_hover_text(t("0: any free port"));
+                let port = ui.add(crate::lang::number(&mut self.agents.port).range(0..=65535)).on_hover_text(t("0: any free port"));
                 if port.changed() && self.control.as_ref().is_some_and(|c| self.agents.port != 0 && c.entry.port != self.agents.port) {
                     self.open_control();
                 }

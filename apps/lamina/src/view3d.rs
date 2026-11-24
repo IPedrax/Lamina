@@ -445,9 +445,14 @@ impl View {
             paint_gizmo(&painter, &g, active);
             if let (Some(m), Some(p)) = (self.moving.as_ref(), response.interact_pointer_pos()) {
                 let text = match m.change {
-                    Change::Move(by) => format!("{:+.1}, {:+.1}, {:+.1} mm", by[0], by[1], by[2]),
+                    Change::Move(by) => {
+                        // With a decimal comma, the three are kept apart by semicolons, as Portuguese and Spanish write a list of them.
+                        let sep = if crate::lang::get().decimal_comma() { "; " } else { ", " };
+                        let n = by.map(|v| crate::lang::mark(format!("{v:+.1}")));
+                        format!("{}{sep}{}{sep}{} mm", n[0], n[1], n[2])
+                    }
                     Change::Turn(axis, d) => crate::lang::tf("{} deg about {}", &[&format!("{d:+.0}"), ["x", "y", "z"][axis.min(2)]]),
-                    Change::Scale(f) => format!("x {f:.2}"),
+                    Change::Scale(f) => format!("x {}", crate::lang::mark(format!("{f:.2}"))),
                 };
                 painter.text(p + vec2(16.0, -16.0), egui::Align2::LEFT_BOTTOM, text, FontId::proportional(13.0), Color32::WHITE);
             }

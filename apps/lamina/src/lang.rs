@@ -85,6 +85,52 @@ pub fn t(english: &str) -> &str {
     lamina_i18n::translated(CATALOGS, get().code(), "", english).unwrap_or(english)
 }
 
+impl Lang {
+    /// Whether numbers are written with a decimal comma: 0,2 mm in Portuguese and Spanish, 0.2 mm in English.
+    pub fn decimal_comma(self) -> bool {
+        matches!(self, Lang::Portuguese | Lang::Spanish)
+    }
+}
+
+/// `value` as a number field shows it in `language`, with `decimals` as egui chooses them: egui's own text, its point a comma
+/// where the language writes one.
+pub fn format_number(language: Lang, value: f64, decimals: std::ops::RangeInclusive<usize>) -> String {
+    let text = egui::emath::format_with_decimals_in_range(value, decimals);
+    if language.decimal_comma() { text.replace('.', ",") } else { text }
+}
+
+/// What the user typed in a number field, read in `language`. English reads as egui does; Portuguese and Spanish take a comma or a
+/// point as the decimal mark (a number pasted from elsewhere has a point), but not both, as Lamina writes no thousands separator and
+/// 1.234,5 is more likely a mistake than a number. Spaces are left out and U+2212 is a minus, as egui does; what is not a finite
+/// number is no number.
+pub fn parse_number(language: Lang, typed: &str) -> Option<f64> {
+    let text: String = typed.chars().filter(|c| !c.is_whitespace()).map(|c| if c == '\u{2212}' { '-' } else { c }).collect();
+    let text = if language.decimal_comma() {
+        if text.contains(',') && text.contains('.') {
+            return None;
+        }
+        text.replace(',', ".")
+    } else {
+        text
+    };
+    text.parse::<f64>().ok().filter(|v| v.is_finite())
+}
+
+/// A number written by Rust (`0.25`, `-1.50`, `+2.0`) with the window's decimal mark: a label or tooltip shows numbers as the
+/// fields do. Give it the number alone, never a sentence or a name, whose points are not decimal marks.
+pub fn mark(number: String) -> String {
+    if get().decimal_comma() { number.replace('.', ",") } else { number }
+}
+
+/// A number field for `value`, written and read in the window's language (a decimal comma in Portuguese and Spanish). Every number
+/// field in the window is made here rather than with `egui::DragValue::new`.
+pub fn number<N: egui::emath::Numeric>(value: &mut N) -> egui::DragValue<'_> {
+    let language = get();
+    egui::DragValue::new(value)
+        .custom_formatter(move |v, decimals| format_number(language, v, decimals))
+        .custom_parser(move |typed| parse_number(language, typed))
+}
+
 /// A collapsing section titled `english` in the window's language. Its id is the English, so which sections are open stays as it
 /// was when the language changes (egui keys a section by its title otherwise).
 pub fn section(english: &str) -> egui::CollapsingHeader {
@@ -158,5 +204,39 @@ mod tests {
         }
         assert_eq!(Lang::ALL.map(|l| Lang::from_code(l.code())), Lang::ALL.map(Some));
         assert_eq!(Lang::ALL.map(Lang::label), ["English", "Português (Brasil)", "Español"]);
+    }
+
+    #[test]
+    fn numbers_are_written_and_read_with_the_languages_decimal_mark() {
+        for (language, shown) in [(Lang::English, "0.25"), (Lang::Portuguese, "0,25"), (Lang::Spanish, "0,25")] {
+            assert_eq!(format_number(language, 0.25, 2..=2), shown);
+            assert_eq!(format_number(language, 12.0, 0..=0), "12", "a whole number has no mark");
+            assert_eq!(format_number(language, -1.5, 1..=3), shown.replace("0.25", "-1.5").replace("0,25", "-1,5"));
+        }
+        // English reads as egui does: a point, spaces left out, U+2212 a minus.
+        assert_eq!(parse_number(Lang::English, "0.25"), Some(0.25));
+        assert_eq!(parse_number(Lang::English, " \u{2212}1.5 "), Some(-1.5));
+        assert_eq!(parse_number(Lang::English, "1 000"), Some(1000.0));
+        assert_eq!(parse_number(Lang::English, "0,25"), None, "a comma is no decimal mark in English");
+        for language in [Lang::Portuguese, Lang::Spanish] {
+            assert_eq!(parse_number(language, "0,25"), Some(0.25));
+            assert_eq!(parse_number(language, "0.25"), Some(0.25), "a point pasted from elsewhere");
+            assert_eq!(parse_number(language, "\u{2212}1,5"), Some(-1.5));
+            assert_eq!(parse_number(language, "12"), Some(12.0));
+            assert_eq!(parse_number(language, "1.234,5"), None, "both marks: a mistake, not a number");
+            assert_eq!(parse_number(language, "0,2,5"), None);
+        }
+        set(Lang::Portuguese);
+        assert_eq!((mark(format!("{:.2}", 1.5)), mark(format!("{:+.1}", -0.25))), ("1,50".to_string(), "-0,2".to_string()));
+        set(Lang::English);
+        assert_eq!(mark(format!("{:.2}", 1.5)), "1.50");
+        for language in Lang::ALL {
+            for typed in ["", ",", "abc", "NaN", "inf", "-inf", "1e999"] {
+                assert_eq!(parse_number(language, typed), None, "{language:?}: {typed:?}");
+            }
+            for value in [0.0, 0.2, 1.25, -3.5, 210.0, 0.001] {
+                assert_eq!(parse_number(language, &format_number(language, value, 0..=3)), Some(value), "{language:?}: {value}");
+            }
+        }
     }
 }

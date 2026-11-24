@@ -31,7 +31,9 @@ all, set the environment variable `LAMINA_NO_UPDATE_CHECK=1`: the menu items and
 - **The language.** View, Language puts the window in English, Português (Brasil) or Español, each listed by its own name, and
   the choice is kept for the next start. The first start follows the system's language, or English when Lamina has no
   translation for it. Errors that come from a command, the assistant's notes and the G-code stay in English, as agents read them;
-  the names you give objects, files and presets are never translated.
+  the names you give objects, files and presets are never translated. In Portuguese and Spanish numbers have a decimal comma:
+  fields show 0,2 and take 0,25 (or 0.25, as a number pasted from elsewhere has). The G-code, the project file and what the
+  assistant reads keep the point.
 - **The toolbar.** Shapes to add, Import mesh, Undo and Redo, Frame all, Arrange, the three tools (Move, Lay flat, Measure),
   Prepare and Preview, Slice and Export G-code.
 - **The plate panel, on the left.** The objects on the plate, what can be done to the picked one, the presets, the print settings
