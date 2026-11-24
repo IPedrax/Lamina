@@ -443,7 +443,61 @@ and one Klipper printer, measure with calipers, fill in the tables, and fix what
 
 ## 3. Modelling
 
+**3.15 Threads (P1).** PrusaSlicer, OrcaSlicer and Cura print threads but make none; Lamina's assistant is asked for bolts, nuts and
+caps, and has no way to cut a thread. How: `add_primitive {kind: "thread", size: "M8" | diameter + pitch, length, internal?,
+clearance?, segments?}`, the ISO metric basic profile of ISO 68-1 (60 degree flanks, a crest flat of P/8 and a root flat of P/4,
+depth 5H/8 with H = 0.866 P; coarse pitches of ISO 261 for `size`). The mesh is a cylinder's grid whose radius at each angle and
+height follows the profile along the helix (a radius per point, so it is closed by construction), its ends chamfered so the
+thread starts cleanly. `internal: true` makes the tool to cut a tapped hole with `difference`, `clearance` wider (0.2 mm by default;
+0 for an external thread). Test: closed, the volume between the major and minor cylinders, a printed-like check of the profile by
+sections, and a nut cut with it that stays closed.
+
+**3.16 Pivot, orientation and clearing a transform (P2).** Blender turns and scales about the median point, the box's centre, each
+object's own origin or the 3D cursor (its Pivot Point menu), moves along the global or the object's own axes (Transform
+Orientations), and clears location, rotation or scale with Alt+G, R, S. Lamina turns each object about its own centre and moves
+along the plate's axes. How: a pivot choice in the view (median, each its own) for the gizmo's rings and square; local axes for the
+gizmo from the object's transform; `reset_transform {id, what}`.
+
 ## 4. Slicer
+
+**4.24 Support enforcers and blockers as modifier objects (P1).** PrusaSlicer adds supports where an enforcer intersects the model
+and none where a blocker does; Cura's per-model Mesh Type has support mesh and anti-overhang mesh. How: an object's `modifier`
+(`set_modifier {id, kind: "support_enforcer" | "support_blocker" | "none"}`, kept in projects, shown by `info`): it is not printed,
+and on each layer its slice is handed to the support planner. A blocker's region is taken out of every overhang before it is
+carried down; an enforcer's region adds the overhang under it even with `support` off, at its own `support_angle`. The window draws
+modifiers tinted and lists them with their kind. Test: a T with a blocker over one arm gets support under the other only; with
+supports off, an enforcer under one arm supports that arm alone; the modifiers print nothing.
+
+**4.25 A flow ratio (P1).** Every slicer has an extrusion multiplier (PrusaSlicer's and OrcaSlicer's flow ratio); Lamina's
+calibration skill makes do with `filament_diameter`. How: a filament field `flow_ratio` (1.0, from 0.5 to 1.5) multiplying the
+plastic of every extrusion. Test: 1.05 pushes 5 % more filament, the moves the same.
+
+**4.26 Maximum volumetric speed (P1).** OrcaSlicer calibrates and enforces the most plastic a hot end can melt (mm3/s); Lamina's
+speeds ignore it, which matters more with wide variable walls. How: a filament field `max_volumetric_speed` (0 for none) that slows
+any extrusion whose flow at its speed would pass it. Test: a cube at a high infill speed and a low cap takes longer, no extrusion
+over the cap, the moves the same.
+
+**4.27 Settings by height (P2).** PrusaSlicer's height range modifier gives a range of layers its own settings (its own layer
+height too). Lamina's per-object settings are whole-object. How: `set_height_range {id, from, to, profile}`, ranges kept on the
+object, the plan taking each layer's settings from the range it is in; the layer heights stay the plate's at first.
+
+**4.28 Calibration prints (P2).** OrcaSlicer's calibration menu makes a temperature tower (5 C steps), flow ratio blocks, pressure
+advance tower, line and pattern, a retraction tower, a tolerance test and a maximum volumetric speed test; Klipper documents a
+tuning tower for pressure advance and an accelerometer for input shaping. How: commands that build each part and its settings by
+height (4.27), with the calibration skill reading the result back into the presets. Input shaping stays the firmware's (Klipper's
+TEST_RESONANCES and SHAPER_CALIBRATE), with a ringing tower part for printers without an accelerometer.
+
+**4.29 Painted seams and supports (P2).** PrusaSlicer (since 2.3) and OrcaSlicer paint seams and supports on the model's faces. How:
+a per-triangle tag on the object (kept in projects), a brush in the 3D view over the picked faces, the seam choosing among painted
+points first and the support planner treating painted faces as enforcers or blockers (4.24).
+
+**4.30 Variable layer height by hand (P2).** PrusaSlicer's variable layer height takes adaptive layers as a start and lets the user
+add or remove detail by height and smooth it. Lamina has adaptive layers only. How: a layer-height curve kept with the plate, edited
+in a strip beside the 3D view, used as `slice::layers_at` tops.
+
+**4.31 Modifier meshes with settings (P2).** PrusaSlicer's modifier and Cura's infill and cutting meshes give part of an object its
+own infill, walls or speed. How: 4.24's `modifier` with `kind: "settings"` and a profile; the plan splits each layer's region by the
+modifier's slice and plans each part with its settings.
 
 ## 5. Profiles and settings
 
@@ -453,6 +507,21 @@ and one Klipper printer, measure with calipers, fill in the tables, and fix what
 which Bambu's 2025 authorization keeps to Bambu Connect or a printer in Developer Mode. Its own module in `crates/printer` if done.
 
 ## 7. Desktop
+
+**7.10 Blender's transform keys (P1).** Blender moves, turns and scales with G, R and S, then X, Y or Z to keep to one axis, numbers
+typed for an exact amount, Enter to apply and Escape or a right click to cancel; Ctrl while moving snaps to increments. Lamina's G
+picks the move tool and only the gizmo transforms. How: G, R and S over the 3D view start a transform of the picked objects that
+follows the pointer; X, Y and Z (and again to free it) keep it to an axis; digits, a point or comma, a minus and Backspace type the
+amount (mm, degrees, a factor); Enter or a click applies it as one undo step, Escape or a right click puts it back. Ctrl snaps a
+move to whole millimetres, a turn to 15 degrees, a scale to tenths. The status bar shows what is typed.
+
+**7.11 Blender's view keys (P1).** Numpad 1, 3 and 7 look from the front, the right and the top (with Ctrl, the back, the left and
+the bottom), Home frames everything and the numpad's point frames the picked objects. How: the camera's azimuth and elevation set
+by each key over the 3D view, framing kept. An orthographic view (numpad 5) needs the renderer's projection and is left for later.
+
+**7.12 Hide, show and box select (P2).** Blender hides the picked objects with H and shows them with Alt+H, and B drags a box to
+pick. How: a hidden flag in the window (not the scene), skipped by the picture and the slice preview but not the slice; a box
+drag that picks every object whose picture pixels it covers.
 
 ## 8. Quality and infrastructure
 
