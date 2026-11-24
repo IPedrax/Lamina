@@ -1582,6 +1582,7 @@ impl App {
                 ui.end_row();
             }
             field(ui, "Standby, C below", "standby_temp_delta", &mut p.standby_temp_delta, 1.0);
+            field(ui, "Heating, C/s", "heating_rate", &mut p.heating_rate, 0.1);
             field(ui, "Tower x, mm", "tower_x", &mut p.tower_x, 1.0);
             field(ui, "Tower y, mm", "tower_y", &mut p.tower_y, 1.0);
             field(ui, "Tower size, mm", "tower_size", &mut p.tower_size, 0.5);

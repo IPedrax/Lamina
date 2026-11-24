@@ -79,7 +79,8 @@ bottom layers, infill, seam, speeds, supports, its extruder); the printer, the f
 
 A part in two colours is two objects placed together, each with its `extruder` (from 1) on a printer with `extruders` (up to 8):
 `set_object_settings {id, profile: {extruder: 2}}`, then `slice_check {profile: {extruders: 2}}`. Each layer changes tool once
-per extruder. The idle tool cools by `standby_temp_delta` (30); `extruder_temps` gives the extruders after the first their own
+per extruder. The idle tool cools by `standby_temp_delta` (30), and `print_time` counts the wait to heat it again at
+`heating_rate` (2 C a second, a printer field); `extruder_temps` gives the extruders after the first their own
 temperature (`[235]`). Each change purges `purge_volume` mm3 (20) on a tower `tower_size` mm wide (20) at `tower_x`, `tower_y`
 (60, 60 from the plate's middle); a tower off the plate, in an object's or a support's way on a layer it rises through, or too
 small is refused (a notch, or the room under a part above the last tool change, will do). `features` counts `purge` and

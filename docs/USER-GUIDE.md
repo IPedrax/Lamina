@@ -283,6 +283,7 @@ The same text is the tooltip in the window. The names are the ones a profile fil
 | `extruder` | The extruder that prints, from 1: set it for one object to print that object in another filament. | 1 to 8 | 1 |
 | `extruder_temps` | The nozzle temperature of each extruder after the first, C, in order; one left out prints at the nozzle temperature. |  | none |
 | `standby_temp_delta` | How far an idle extruder cools below its own temperature while another prints, C; it heats again before it prints. | 0 to 300 | 30.0 |
+| `heating_rate` | How fast a nozzle heats near its printing temperature, C a second: the time estimate waits for each tool change's rise. | 0.1 to 50 | 2.0 |
 | `toolchange_gcode` | G-code run at each tool change, before the T: [previous_tool], [next_tool] and [layer_z] as well as the settings. |  | none |
 | `tower_x` | Where the purge tower's middle stands, mm east of the plate's middle. | -1000 to 1000 | 60.0 |
 | `tower_y` | Where the purge tower's middle stands, mm north of the plate's middle. | -1000 to 1000 | 60.0 |

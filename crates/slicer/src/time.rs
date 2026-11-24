@@ -19,11 +19,13 @@ pub struct Planner {
     accel: f64,
     deviation: f64,
     moves: Vec<Move>,
+    /// Time spent standing still (waiting for a nozzle to heat), seconds.
+    waits: f64,
 }
 
 impl Planner {
     pub fn new(accel: f64, deviation: f64) -> Planner {
-        Planner { accel: accel.max(1.0), deviation: deviation.max(0.0), moves: Vec::new() }
+        Planner { accel: accel.max(1.0), deviation: deviation.max(0.0), moves: Vec::new(), waits: 0.0 }
     }
 
     /// A move in the plane from `from` to `to` at `feed` mm/s.
@@ -39,6 +41,13 @@ impl Planner {
     pub fn other(&mut self, length: f64, feed: f64) {
         if length > 1e-9 && feed > 0.0 {
             self.moves.push(Move { length, feed, dir: None });
+        }
+    }
+
+    /// The head standing still for `seconds` (a nozzle heating); what comes after starts from rest, as a tool change's moves do.
+    pub fn wait(&mut self, seconds: f64) {
+        if seconds.is_finite() && seconds > 0.0 {
+            self.waits += seconds;
         }
     }
 
@@ -58,7 +67,7 @@ impl Planner {
     pub fn seconds(&self) -> f64 {
         let n = self.moves.len();
         if n == 0 {
-            return 0.0;
+            return self.waits;
         }
         let a = self.accel;
         // The speed at each boundary: 0 before the first and after the last, else what the corner allows.
@@ -73,7 +82,7 @@ impl Planner {
         for i in 0..n {
             v[i + 1] = v[i + 1].min((v[i] * v[i] + 2.0 * a * self.moves[i].length).sqrt());
         }
-        self.moves.iter().enumerate().map(|(i, m)| trapezoid(m.length, v[i], v[i + 1], m.feed, a)).sum()
+        self.waits + self.moves.iter().enumerate().map(|(i, m)| trapezoid(m.length, v[i], v[i + 1], m.feed, a)).sum::<f64>()
     }
 }
 
