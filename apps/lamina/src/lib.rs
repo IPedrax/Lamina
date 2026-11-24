@@ -2572,6 +2572,38 @@ mod tests {
     }
 
     #[test]
+    fn the_number_keys_look_from_the_front_the_right_and_the_top_and_home_frames_all() {
+        let mut h = window();
+        press(&mut h, "Add box");
+        let middle = h.state().view.rect.unwrap().center();
+        h.hover_at(middle);
+        h.run();
+        let look = |h: &Harness<App>| (h.state().view.camera.azimuth, h.state().view.camera.elevation);
+        for (key, modifiers, want) in [
+            (Key::Num1, egui::Modifiers::NONE, (-90.0, 0.0)),
+            (Key::Num3, egui::Modifiers::NONE, (0.0, 0.0)),
+            (Key::Num7, egui::Modifiers::NONE, (-90.0, 89.0)),
+            (Key::Num1, egui::Modifiers::COMMAND, (90.0, 0.0)),
+            (Key::Num3, egui::Modifiers::COMMAND, (180.0, 0.0)),
+            (Key::Num7, egui::Modifiers::COMMAND, (-90.0, -89.0)),
+        ] {
+            h.key_press_modifiers(modifiers, key);
+            h.run();
+            assert_eq!(look(&h), want, "{key:?} {modifiers:?}");
+        }
+        // From the front, the box is in the middle of the picture.
+        h.key_press(Key::Num1);
+        h.key_press(Key::Home);
+        h.run();
+        let target = h.state().view.camera.target;
+        assert!(target[0].abs() < 1e-6 && (target[2] - 10.0).abs() < 1e-6, "framed on the box: {target:?}");
+        h.state_mut().view.camera.distance = 2000.0;
+        h.key_press(Key::Period);
+        h.run();
+        assert!(h.state().view.camera.distance < 500.0, "framed on the picked box again");
+    }
+
+    #[test]
     fn prints_as_makes_the_picked_object_a_support_blocker_in_one_step() {
         let mut h = window();
         press(&mut h, "Add box");

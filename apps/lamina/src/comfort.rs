@@ -35,6 +35,8 @@ pub const SHORTCUTS: &[(&str, &str)] = &[
     ("G, R, S", ui_msg!("Over the 3D view: move, turn or scale the picked objects with the pointer, as Blender does")),
     ("X, Y, Z", ui_msg!("Then keep to one axis (again to free it); type an amount; Enter or a click applies, Escape puts back")),
     ("Ctrl", ui_msg!("While moving, turning or scaling: snap to steps")),
+    ("1, 3, 7", ui_msg!("Over the 3D view: look from the front, the right, the top; with Ctrl, the back, the left, the bottom")),
+    ("Home, .", ui_msg!("Frame everything, or the picked objects")),
     ("G", ui_msg!("Move tool: pick and drag, turn with the rings, scale with the square")),
     ("L", ui_msg!("Lay flat tool: click a face to turn it down")),
     ("M", ui_msg!("Measure tool: click two points")),
@@ -84,6 +86,34 @@ impl App {
                 self.view.tool = tool;
                 self.view.marks.clear();
             }
+        }
+        // Blender's view keys (on the number row too, as Blender's numpad emulation has them): front, right and top, and with Ctrl
+        // the other side; the camera keeps its target and distance.
+        if over.is_some() {
+            for (key, azimuth, elevation, opposite) in
+                [(Key::Num1, -90.0, 0.0, (90.0, 0.0)), (Key::Num3, 0.0, 0.0, (180.0, 0.0)), (Key::Num7, -90.0, 89.0, (-90.0, -89.0))]
+            {
+                let (plain_key, ctrl_key) = ctx.input(|i| {
+                    let down = i.key_pressed(key);
+                    (down && i.modifiers.is_none(), down && i.modifiers.command && !i.modifiers.shift && !i.modifiers.alt)
+                });
+                let set = if plain_key {
+                    Some((azimuth, elevation))
+                } else if ctrl_key {
+                    Some(opposite)
+                } else {
+                    None
+                };
+                if let Some((a, e)) = set {
+                    (self.view.camera.azimuth, self.view.camera.elevation) = (a, e);
+                }
+            }
+        }
+        if plain(Key::Home) {
+            self.frame_all();
+        }
+        if plain(Key::Period) {
+            self.frame_selected();
         }
         if plain(Key::R) {
             self.turn_selected(90.0);
