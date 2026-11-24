@@ -63,6 +63,9 @@ pub struct Profile {
     pub layer_height: f64,
     pub first_layer_height: f64,
     pub perimeters: u32,
+    /// How walls are made: `classic` loops a line wide, or `variable`, where a part too thin for its walls gets as many lines as
+    /// its width holds, sharing it (`walls.rs`).
+    pub wall_generator: crate::walls::WallGenerator,
     /// Vase mode: above the bottom layers, one wall climbing without a stop, no infill, an open top.
     pub vase: bool,
     /// Adaptive layers: each layer from `min_layer_height` to `layer_height`, thin where a surface is near flat (so its steps stay
@@ -233,6 +236,7 @@ impl Default for Profile {
             bottom_layers: 4,
             infill_density: 0.15,
             infill_pattern: crate::infill::Pattern::Lines,
+            wall_generator: crate::walls::WallGenerator::Classic,
             skirt_loops: 1,
             skirt_distance: 3.0,
             brim_width: 0.0,
@@ -407,6 +411,12 @@ pub const ABOUT: &[(&str, &str)] = &[
     ("bottom_layers", ui_msg!("Solid layers at the bottom of the part.")),
     ("infill_density", ui_msg!("How much of the inside is filled, from 0 to 1 (the window shows it in %).")),
     ("infill_pattern", ui_msg!("The pattern of the sparse infill: lines, grid, triangles, gyroid or honeycomb.")),
+    (
+        "wall_generator",
+        ui_msg!(
+            "Classic walls are loops a line wide; variable gives a part too thin for its walls as many lines as its width holds, sharing it."
+        ),
+    ),
     (
         "skirt_loops",
         ui_msg!(

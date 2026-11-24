@@ -131,6 +131,21 @@ pub fn inset(r: &Region, d: f64) -> Region {
         .collect()
 }
 
+/// What of `r` a disc of radius `d` can reach while it stays inside `r` (the region moved in by `d`, then out again with round
+/// corners): its parts narrower than `2 d` are gone. Moving out with sharp corners instead would reach far back along a narrow
+/// tip.
+pub fn open(r: &Region, d: f64) -> Region {
+    let inner = inset(r, d);
+    let style = OutlineStyle::new(d).line_join(LineJoin::Round(0.1));
+    inner
+        .iter()
+        .flat_map(|shape| shape.outline(&style))
+        .map(|shape: Vec<Vec<P2>>| shape.into_iter().map(clean).filter(|c| c.len() >= 3).collect::<Vec<_>>())
+        .filter(|shape: &Vec<Vec<P2>>| !shape.is_empty())
+        .collect::<Region>()
+        .overlay(&Region::new(), OverlayRule::Union, FillRule::NonZero)
+}
+
 /// The parts of `lines` that lie inside `r`.
 pub fn clip_lines(lines: &[Vec<P2>], r: &Region) -> Vec<Vec<P2>> {
     lines.to_vec().clip_by(r, FillRule::NonZero, ClipRule { invert: false, boundary_included: true })

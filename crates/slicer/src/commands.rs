@@ -138,6 +138,7 @@ fn run(s: &Session, ids: Option<&[u32]>, settings: Settings) -> Result<print::Ou
 /// The fields an object may set for itself: what it is made of and how, never the machine, the filament or the layer heights.
 pub const PER_OBJECT_FIELDS: &[&str] = &[
     "perimeters",
+    "wall_generator",
     "top_layers",
     "bottom_layers",
     "infill_density",

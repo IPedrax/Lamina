@@ -13,5 +13,6 @@ pub mod profile;
 pub mod slice;
 pub mod support;
 pub mod time;
+pub mod walls;
 
 pub use commands::COMMANDS;
