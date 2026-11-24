@@ -211,6 +211,11 @@ Priorities:
   `max_height`), travels to the next object's first point at that height and only then goes down, so the low moves stay inside
   the next object's own reach. The skirt and brim go round everything on the first object's first layer; the fan starts off again
   on each object's first layer. A One at a time group in the window.
+- **4.18 The skirt round the convex hull.** The skirt is an offset of the convex hull (`geom::hull`, Andrew's monotone chain) of
+  everything on the first layer (the outer walls, the brim or the raft, the purge tower), as PrusaSlicer and Cura draw theirs: one
+  closed loop for each of `skirt_loops`, round all the objects at once, never into a notch. Tested with an L and two cubes apart
+  (each loop convex, every wall inside it, `skirt_distance` from the outer wall); the golden bridge and two-object cases now have one
+  skirt loop round both parts.
 - **5.1 Process presets.** A third kind in `presets.rs`, setting only the layers and the strength (`PROCESS_FIELDS`): 0.12 mm Fine,
   0.20 mm Standard, 0.28 mm Draft and Strong. `slice` and `slice_check` take `process` (after the printer and the filament, before
   `profile`); `slicer_presets` lists them; the window has a Process picker and Save process, kept in the settings file and the
@@ -399,12 +404,6 @@ after, and keep a test that a chain which passed still passes with the same volu
 
 ## 4. Slicer
 
-**4.18 The skirt round the convex hull (P1).** The skirt is an outline of the first layer, so it goes into every notch and round
-each object apart. How: `geom::hull` (Andrew's monotone chain over the points of the first layer's outline, the brim's or the
-raft's, and the purge tower's square), and each skirt loop an offset of that hull by `skirt_distance` and a line per loop, one
-closed loop each, as PrusaSlicer and Cura document their skirt. Test: an L and two objects apart each get one convex loop per
-`skirt_loops`; the golden two-object case's skirt becomes one loop.
-
 **4.19 Supports planned across the plate (P1).** Each object's supports are planned alone, so one may stand inside another object.
 How: slice every object first; on each layer the other objects' regions (the plate's layers are shared) join the object's own as
 what support may not enter: an overhang carried down stops on them, the xy gap keeps clear of them, `from_plate` drops a column
@@ -459,7 +458,7 @@ which Bambu's 2025 authorization keeps to Bambu Connect or a printer in Develope
 - Walls are constant width; a thin feature gets one gap-fill line, not walls of varying width. Supports, columns or trees, are
   planned for each object alone, so one may stand in another object's way. A tree's interface covers the whole overhang, as the
   columns' does, and with `from_plate` a branch left out can leave a corner of it over air.
-- The skirt is an outline of the first layer, not a hull. The time estimate has not been checked against a real print.
+- The time estimate has not been checked against a real print.
 - A mesh whose holes are too big to fill without guessing stays open, and prints with parts missing, with a warning. STL, 3MF, OBJ and glTF in; STL and 3MF out.
 - Booleans refuse about 1 in 100 random pairs (the rest of a sphere-with-sphere union mostly). Booleans of earlier results are
   refused more often: 9 steps in 10 come through in `chain_score` (73 of 120 chains of 4 to 6 booleans clean), and what fails is

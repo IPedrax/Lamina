@@ -167,6 +167,31 @@ pub fn nearest(r: &Region, p: P2) -> Option<P2> {
         .min_by(|x, y| dist2(*x, p).total_cmp(&dist2(*y, p)))
 }
 
+/// The convex hull of `points`, counter-clockwise, with no three corners in a line (Andrew's monotone chain). Fewer than three
+/// corners when the points are fewer, or all in a line.
+pub fn hull(points: impl IntoIterator<Item = P2>) -> Loop {
+    let mut pts: Vec<P2> = points.into_iter().filter(|p| p[0].is_finite() && p[1].is_finite()).collect();
+    pts.sort_by(|a, b| a[0].total_cmp(&b[0]).then(a[1].total_cmp(&b[1])));
+    pts.dedup();
+    if pts.len() < 3 {
+        return pts;
+    }
+    let turn = |o: P2, a: P2, b: P2| (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    let mut out: Vec<P2> = Vec::with_capacity(2 * pts.len());
+    // The lower chain left to right, then the upper one back, each keeping only left turns.
+    for pass in [pts.as_slice(), &pts.iter().rev().copied().collect::<Vec<_>>()] {
+        let start = out.len();
+        for &p in pass {
+            while out.len() >= start + 2 && turn(out[out.len() - 2], out[out.len() - 1], p) <= 0.0 {
+                out.pop();
+            }
+            out.push(p);
+        }
+        out.pop(); // each chain's last point is the other's first
+    }
+    out
+}
+
 /// A region's area, mm²: outer contours minus holes.
 pub fn area(r: &Region) -> f64 {
     r.iter().flatten().map(|c| crate::slice::area(c)).sum()
@@ -214,6 +239,22 @@ mod tests {
         let near = |p: P2| nearest(&ring, p).unwrap();
         assert!(dist2(near([5.0, 4.0]), [5.0, 3.0]) < 1e-12 && dist2(near([12.0, 5.0]), [10.0, 5.0]) < 1e-12);
         assert!(nearest(&Region::new(), [0.0, 0.0]).is_none());
+    }
+
+    #[test]
+    fn the_hull_wraps_the_points_counter_clockwise_without_corners_in_a_line() {
+        // An L's corners and points along its edges: its hull is the triangle-cut square, five corners.
+        let l = [[0.0, 0.0], [5.0, 0.0], [10.0, 0.0], [10.0, 2.0], [2.0, 2.0], [2.0, 10.0], [0.0, 10.0], [0.0, 5.0], [1.0, 1.0]];
+        let h = hull(l);
+        assert_eq!(h, vec![[0.0, 0.0], [10.0, 0.0], [10.0, 2.0], [2.0, 10.0], [0.0, 10.0]]);
+        assert!(crate::slice::area(&h) > 0.0, "counter-clockwise");
+        let wrapped = region(&[h]);
+        assert!(l.iter().all(|&p| contains(&wrapped, p) || nearest(&wrapped, p).is_some_and(|q| dist2(p, q) < 1e-12)));
+        // Too few, in a line, repeated or not finite: no area to wrap.
+        assert_eq!(hull([[1.0, 1.0], [1.0, 1.0]]).len(), 1);
+        assert!(hull([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0], [3.0, 3.0]]).len() < 3);
+        assert_eq!(hull([[0.0, 0.0], [f64::NAN, 1.0], [1.0, 0.0], [0.0, f64::INFINITY], [0.0, 1.0]]).len(), 3);
+        assert!(hull(std::iter::empty()).is_empty());
     }
 
     #[test]
