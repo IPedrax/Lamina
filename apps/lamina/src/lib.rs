@@ -623,16 +623,17 @@ impl App {
 
     /// Slices the plate with the settings shown, on a thread, and opens the preview when it is done.
     pub fn slice(&mut self) {
-        let objects: Vec<(u32, Mesh)> = self.session.scene.objects.iter().map(|o| (o.id, o.world())).collect();
         let all: Vec<&lamina_core::Object> = self.session.scene.objects.iter().collect();
-        let own = match lamina_slicer::commands::own(&all, &self.profile) {
+        let (parts, modifiers) = lamina_slicer::commands::split(&all);
+        let objects: Vec<(u32, Mesh)> = parts.iter().map(|o| (o.id, o.world())).collect();
+        let own = match lamina_slicer::commands::own(&parts, &self.profile) {
             Ok(own) => own,
             Err(e) => return (self.failed, self.status) = (true, e),
         };
         let profile = self.profile.clone();
         let scene = Arc::as_ptr(&self.session.scene) as usize;
         let work = move |_: &mut Session| {
-            let out = lamina_slicer::print::gcode_each(&objects, &own, &profile)?;
+            let out = lamina_slicer::print::gcode_with(&objects, &own, &modifiers, &profile)?;
             let layers = preview::parse(&out.gcode);
             let minutes = (out.seconds / 60.0).round() as u64;
             let summary = tf(
@@ -1081,6 +1082,35 @@ impl App {
             ui.add(crate::lang::number(&mut self.factor).speed(0.01).range(0.01..=100.0).prefix("x "));
             if ui.button(t("Scale")).clicked() {
                 self.run("scale", json!({ "id": id, "factor": self.factor }));
+            }
+        });
+        // A part, or a modifier the slicer reads and does not print.
+        ui.horizontal(|ui| {
+            use lamina_core::Modifier;
+            let now = self.session.scene.get(id).ok().and_then(|o| o.modifier);
+            let name = |m: Option<Modifier>| match m {
+                None => t("A part"),
+                Some(Modifier::SupportEnforcer) => t("Support enforcer"),
+                Some(Modifier::SupportBlocker) => t("Support blocker"),
+            };
+            ui.label(t("Prints as"));
+            let mut chosen = now;
+            egui::ComboBox::from_id_salt("modifier")
+                .selected_text(name(now))
+                .show_ui(ui, |ui| {
+                    for m in [None, Some(Modifier::SupportEnforcer), Some(Modifier::SupportBlocker)] {
+                        ui.selectable_value(&mut chosen, m, name(m));
+                    }
+                })
+                .response
+                .on_hover_text(t("A support enforcer or blocker is not printed: the overhangs of a part inside it get supports, or none"));
+            if chosen != now {
+                let kind = match chosen {
+                    None => "none",
+                    Some(Modifier::SupportEnforcer) => "support_enforcer",
+                    Some(Modifier::SupportBlocker) => "support_blocker",
+                };
+                self.run("set_modifier", json!({ "id": id, "kind": kind }));
             }
         });
         crate::lang::section("Cut into pieces").show(ui, |ui| self.cut_ui(ui, id));
@@ -2474,6 +2504,20 @@ mod tests {
             let w = width(language);
             assert!(w >= 0.9 * english, "{language:?}: the 3D view is {w} wide, against {english} in English");
         }
+    }
+
+    #[test]
+    fn prints_as_makes_the_picked_object_a_support_blocker_in_one_step() {
+        let mut h = window();
+        press(&mut h, "Add box");
+        // The picker shows what the object is now as its value.
+        h.get_by(|n| n.role() == egui::accesskit::Role::ComboBox && n.value().as_deref() == Some("A part")).click();
+        h.run();
+        press(&mut h, "Support blocker");
+        assert_eq!(h.state().session.scene.get(1).unwrap().modifier, Some(lamina_core::Modifier::SupportBlocker));
+        h.get_by(|n| n.role() == egui::accesskit::Role::ComboBox && n.value().as_deref() == Some("Support blocker"));
+        press(&mut h, "Undo");
+        assert_eq!(h.state().session.scene.get(1).unwrap().modifier, None);
     }
 
     #[test]

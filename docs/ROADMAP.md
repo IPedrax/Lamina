@@ -269,6 +269,13 @@ Priorities:
   0.6 mm thick, 21.7 mm3, gets 21.6 as one line (classic folds a loop: 32.1). A golden fin case with `variable`; the other golden
   files are unchanged. Imported as PrusaSlicer's `perimeter_generator` and OrcaSlicer's `wall_generator` (`arachne`). A per-object
   and process field, in the window beside Walls. Classic stays the default until a print has shown the variable walls.
+- **4.24 Support enforcers and blockers as modifier objects.** An object's `modifier` in the core (`set_modifier {id, kind}`,
+  kept in projects, shown by `info`, one undo step): it is not printed, and `print::gcode_with` slices it on the plate's layers and
+  hands its slice to `support::plan_with`. A blocker's region is taken out of each overhang; an enforcer holds up all of a layer that
+  is over air inside it, whatever the angle and with supports off. Arrange leaves modifiers where they are; the 3D view draws an
+  enforcer green and a blocker red; the picked object's tools have Prints as. Tested: a T whose right arm is under a blocker keeps
+  the left arm's support only; with supports off, an enforcer under the right arm supports it and not the left; neither prints a
+  wall; an enforcer beside the part adds nothing; a modifier survives a project and an arrange.
 - **5.1 Process presets.** A third kind in `presets.rs`, setting only the layers and the strength (`PROCESS_FIELDS`): 0.12 mm Fine,
   0.20 mm Standard, 0.28 mm Draft and Strong. `slice` and `slice_check` take `process` (after the printer and the filament, before
   `profile`); `slicer_presets` lists them; the window has a Process picker and Save process, kept in the settings file and the
@@ -457,14 +464,6 @@ along the plate's axes. How: a pivot choice in the view (median, each its own) f
 gizmo from the object's transform; `reset_transform {id, what}`.
 
 ## 4. Slicer
-
-**4.24 Support enforcers and blockers as modifier objects (P1).** PrusaSlicer adds supports where an enforcer intersects the model
-and none where a blocker does; Cura's per-model Mesh Type has support mesh and anti-overhang mesh. How: an object's `modifier`
-(`set_modifier {id, kind: "support_enforcer" | "support_blocker" | "none"}`, kept in projects, shown by `info`): it is not printed,
-and on each layer its slice is handed to the support planner. A blocker's region is taken out of every overhang before it is
-carried down; an enforcer's region adds the overhang under it even with `support` off, at its own `support_angle`. The window draws
-modifiers tinted and lists them with their kind. Test: a T with a blocker over one arm gets support under the other only; with
-supports off, an enforcer under one arm supports that arm alone; the modifiers print nothing.
 
 **4.25 A flow ratio (P1).** Every slicer has an extrusion multiplier (PrusaSlicer's and OrcaSlicer's flow ratio); Lamina's
 calibration skill makes do with `filament_diameter`. How: a filament field `flow_ratio` (1.0, from 0.5 to 1.5) multiplying the

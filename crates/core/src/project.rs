@@ -60,6 +60,9 @@ fn object_json(o: &Object) -> Value {
     if let Some(r) = &o.recipe {
         v["recipe"] = (**r).clone();
     }
+    if let Some(m) = o.modifier {
+        v["modifier"] = serde_json::to_value(m).unwrap_or(Value::Null);
+    }
     if let Some(p) = &o.settings {
         v["settings"] = (**p).clone();
     }
@@ -113,7 +116,7 @@ pub fn read(text: &str) -> Result<Loaded, String> {
 
 fn read_object(k: usize, o: &Map<String, Value>, ignored: &mut Vec<String>) -> Result<Object, String> {
     for key in o.keys() {
-        if !matches!(key.as_str(), "id" | "name" | "transform" | "vertices" | "triangles" | "recipe" | "settings") {
+        if !matches!(key.as_str(), "id" | "name" | "transform" | "vertices" | "triangles" | "recipe" | "settings" | "modifier") {
             ignored.push(format!("objects[{k}].{key}"));
         }
     }
@@ -155,7 +158,17 @@ fn read_object(k: usize, o: &Map<String, Value>, ignored: &mut Vec<String>) -> R
             None
         }
     };
-    Ok(Object { id, name, mesh: Arc::new(mesh), xf, recipe, settings })
+    let modifier = match o.get("modifier") {
+        None | Some(Value::Null) => None,
+        Some(m) => match serde_json::from_value(m.clone()) {
+            Ok(m) => Some(m),
+            Err(_) => {
+                ignored.push(format!("objects[{k}].modifier"));
+                None
+            }
+        },
+    };
+    Ok(Object { id, name, mesh: Arc::new(mesh), xf, recipe, settings, modifier })
 }
 
 fn transform(v: &Value) -> Result<Transform, String> {

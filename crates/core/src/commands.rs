@@ -105,6 +105,13 @@ pub static ALL: &[Command] = &[
     cmd("drop_to_bed", "{id} lowers or raises an object so its lowest point touches the plate", drop_to_bed, true, Files::None),
     cmd("delete", "{id} removes an object", delete, true, Files::None),
     cmd(
+        "set_modifier",
+        "{id, kind: \"support_enforcer\" | \"support_blocker\" | \"none\"} makes an object a modifier, which is not printed: the overhangs of any part inside a support enforcer get supports (even with supports off), and those inside a support blocker get none. Place a box over the overhang it is for. \"none\" makes it a part again. Arrange leaves modifiers where they are. Returns {}",
+        set_modifier,
+        true,
+        Files::None,
+    ),
+    cmd(
         "arrange",
         "{ids?, gap? (mm between footprints, default 5), bed?:[x,y] (default the project's plate, else 220 x 220)} lays the objects (all, or `ids`) out on the plate in rows, tallest footprints first, the whole centred, none touching. Returns {fits}: false when they do not all fit the plate",
         arrange,
@@ -120,7 +127,7 @@ pub static ALL: &[Command] = &[
     ),
     cmd(
         "info",
-        "{} every object: id, name, triangles, size, min, max, volume_mm3, watertight (a slicer can only fill a closed mesh), and its problems: open_edges (holes), nonmanifold_edges (edges of three or more faces), flipped_faces; `repair` mends what it can",
+        "{} every object: id, name, triangles, size, min, max, volume_mm3, watertight (a slicer can only fill a closed mesh), and its problems: open_edges (holes), nonmanifold_edges (edges of three or more faces), flipped_faces; `repair` mends what it can; its recipe, its own settings and its modifier (support_enforcer, support_blocker, or null for a part)",
         info,
         false,
         Files::None,
@@ -822,7 +829,8 @@ fn arrange(s: &mut Session, p: &Value) -> Result<Value, String> {
         None => plate(s),
         Some(b) => [positive("bed", b[0], 10_000.0)?, positive("bed", b[1], 10_000.0)?],
     };
-    let ids = a.ids.unwrap_or_else(|| s.scene.objects.iter().map(|o| o.id).collect());
+    // A modifier stays where it is on the part it changes: arranged only when named.
+    let ids = a.ids.unwrap_or_else(|| s.scene.objects.iter().filter(|o| o.modifier.is_none()).map(|o| o.id).collect());
     if ids.is_empty() {
         return Err("nothing to arrange: the plate is empty".into());
     }
@@ -912,6 +920,26 @@ fn delete(s: &mut Session, p: &Value) -> Result<Value, String> {
     Ok(json!({}))
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SetModifier {
+    id: u32,
+    kind: String,
+}
+
+fn set_modifier(s: &mut Session, p: &Value) -> Result<Value, String> {
+    let a: SetModifier = parse(p)?;
+    let modifier = match a.kind.as_str() {
+        "none" => None,
+        kind => Some(
+            serde_json::from_value(json!(kind))
+                .map_err(|_| format!("`kind` is support_enforcer, support_blocker or none, not `{kind}`"))?,
+        ),
+    };
+    s.scene_mut().get_mut(a.id)?.modifier = modifier;
+    Ok(json!({}))
+}
+
 fn info(s: &mut Session, p: &Value) -> Result<Value, String> {
     let _: Value = parse(p)?;
     let objects: Vec<Value> = s
@@ -929,6 +957,7 @@ fn info(s: &mut Session, p: &Value) -> Result<Value, String> {
                 "open_edges": problems.open_edges, "nonmanifold_edges": problems.nonmanifold_edges, "flipped_faces": problems.flipped_faces,
                 "recipe": o.recipe.as_deref().cloned().unwrap_or(Value::Null),
                 "settings": o.settings.as_deref().cloned().unwrap_or(Value::Null),
+                "modifier": o.modifier.map_or(Value::Null, |m| serde_json::to_value(m).unwrap_or(Value::Null)),
             })
         })
         .collect();
@@ -1590,5 +1619,30 @@ mod tests {
         let mut s = Session::new();
         let err = s.script("# a plate\nadd_primitive {\"kind\":\"box\",\"size\":[5,5,5]}\nmove {\"id\":9,\"by\":[0,0,0]}\n").unwrap_err();
         assert!(err.starts_with("line 3:"), "{err}");
+    }
+
+    #[test]
+    fn a_modifier_is_kept_in_projects_shown_by_info_and_left_where_it_is_by_arrange() {
+        let mut s = Session::new();
+        s.execute("add_primitive", &json!({"kind": "box", "size": [20, 20, 10]})).unwrap();
+        s.execute("add_primitive", &json!({"kind": "box", "size": [5, 5, 5], "at": [3, 3]})).unwrap();
+        s.execute("set_modifier", &json!({"id": 2, "kind": "support_blocker"})).unwrap();
+        assert_eq!(s.execute("info", &json!({})).unwrap()["objects"][1]["modifier"], "support_blocker");
+        let before = s.scene.get(2).unwrap().bounds();
+        s.execute("arrange", &json!({})).unwrap();
+        assert_eq!(s.scene.get(2).unwrap().bounds(), before, "arrange leaves the modifier on its part");
+        let path = std::env::temp_dir().join(format!("lamina-modifier-{}.lamina", std::process::id()));
+        s.execute("save", &json!({"path": path})).unwrap();
+        let mut t = Session::new();
+        t.execute("open", &json!({"path": path})).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(t.scene.get(2).unwrap().modifier, Some(crate::Modifier::SupportBlocker));
+        assert_eq!(t.scene.get(1).unwrap().modifier, None);
+        s.execute("set_modifier", &json!({"id": 2, "kind": "none"})).unwrap();
+        assert_eq!(s.scene.get(2).unwrap().modifier, None);
+        assert!(s.execute("set_modifier", &json!({"id": 2, "kind": "infill"})).unwrap_err().contains("support_enforcer"));
+        assert!(s.execute("set_modifier", &json!({"id": 9, "kind": "none"})).is_err());
+        s.undo().unwrap();
+        assert_eq!(s.scene.get(2).unwrap().modifier, Some(crate::Modifier::SupportBlocker), "one undo step");
     }
 }

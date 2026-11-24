@@ -99,7 +99,7 @@ pub fn instances(scene: &Scene, selected: &[u32], moved: &[(u32, Transform)]) ->
     one(&mut out, 0, render::PLATE, &Transform::IDENTITY);
     one(&mut out, 0, render::GRID, &Transform::IDENTITY);
     for o in &scene.objects {
-        let color = if selected.contains(&o.id) { render::SELECTED } else { render::MODEL };
+        let color = render::colour_of(o, selected);
         let t = moved.iter().find(|(id, _)| *id == o.id).map_or(&Transform::IDENTITY, |(_, t)| t);
         one(&mut out, o.id, color, t);
     }
