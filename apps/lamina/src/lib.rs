@@ -39,7 +39,7 @@ use crate::view3d::Pick;
 fn field<N: egui::emath::Numeric>(ui: &mut Ui, label: &str, name: &str, value: &mut N, speed: f64) {
     let (lo, hi) = lamina_slicer::profile::limits(name).unwrap_or((0.0, 1e6));
     ui.label(t(label)).on_hover_text(hint(name));
-    ui.add(egui::DragValue::new(value).speed(speed).range(N::from_f64(lo)..=N::from_f64(hi))).on_hover_text(hint(name));
+    ui.add(crate::lang::number(value).speed(speed).range(N::from_f64(lo)..=N::from_f64(hi))).on_hover_text(hint(name));
     ui.end_row();
 }
 
@@ -47,7 +47,7 @@ fn field<N: egui::emath::Numeric>(ui: &mut Ui, label: &str, name: &str, value: &
 fn hint(name: &str) -> String {
     let about = t(lamina_slicer::profile::about(name));
     match lamina_slicer::profile::limits(name) {
-        Some((lo, hi)) => format!("{about} {}", tf("From {} to {}.", &[&lo.to_string(), &hi.to_string()])),
+        Some((lo, hi)) => format!("{about} {}", tf("From {} to {}.", &[&lang::mark(lo.to_string()), &lang::mark(hi.to_string())])),
         None => about.to_string(),
     }
 }
@@ -612,7 +612,8 @@ impl App {
             && let Some(m) = self.run("measure", json!({ "a": a, "b": b }))
         {
             let f = |k: &str| m[k].as_f64().unwrap_or(0.0);
-            self.status = format!("{:.2} mm (x {:+.2}, y {:+.2}, z {:+.2})", f("distance"), f("dx"), f("dy"), f("dz"));
+            let n = |k: &str, signed: bool| lang::mark(if signed { format!("{:+.2}", f(k)) } else { format!("{:.2}", f(k)) });
+            self.status = format!("{} mm (x {}, y {}, z {})", n("distance", false), n("dx", true), n("dy", true), n("dz", true));
         } else if self.view.marks.len() == 1 {
             self.status = t("Click a second point to measure to.").into();
         }
@@ -636,7 +637,7 @@ impl App {
                 "{} layers, {} m of filament, about {}h {}m",
                 &[
                     &out.layers.to_string(),
-                    &format!("{:.2}", out.filament_mm / 1000.0),
+                    &lang::mark(format!("{:.2}", out.filament_mm / 1000.0)),
                     &(minutes / 60).to_string(),
                     &format!("{:02}", minutes % 60),
                 ],
@@ -946,7 +947,8 @@ impl App {
             .iter()
             .map(|o| {
                 let (lo, hi) = o.bounds().unwrap_or_default();
-                (o.id, format!("{}  {:.1} x {:.1} x {:.1}", o.name, hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]))
+                let side = |k: usize| lang::mark(format!("{:.1}", hi[k] - lo[k]));
+                (o.id, format!("{}  {} x {} x {}", o.name, side(0), side(1), side(2)))
             })
             .collect();
         let rows: Vec<(u32, String, Option<lamina_core::repair::Problems>)> =
@@ -1050,7 +1052,7 @@ impl App {
         ui.label(t("Move by, mm"));
         ui.horizontal(|ui| {
             for (k, axis) in ["x", "y", "z"].into_iter().enumerate() {
-                ui.add(egui::DragValue::new(&mut self.nudge[k]).speed(0.5).prefix(format!("{axis} ")));
+                ui.add(crate::lang::number(&mut self.nudge[k]).speed(0.5).prefix(format!("{axis} ")));
             }
             if ui.button(t("Move")).clicked() {
                 self.run("move", json!({ "id": id, "by": self.nudge }));
@@ -1062,7 +1064,7 @@ impl App {
                     ui.selectable_value(&mut self.axis, k, axis);
                 }
             });
-            ui.add(egui::DragValue::new(&mut self.degrees).speed(1.0).suffix(t(" deg")));
+            ui.add(crate::lang::number(&mut self.degrees).speed(1.0).suffix(t(" deg")));
             if ui.button(t("Rotate")).clicked() {
                 let axis = ["x", "y", "z"][self.axis];
                 self.run("rotate", json!({ "id": id, "axis": axis, "degrees": self.degrees }));
@@ -1073,7 +1075,7 @@ impl App {
             }
         });
         ui.horizontal(|ui| {
-            ui.add(egui::DragValue::new(&mut self.factor).speed(0.01).range(0.01..=100.0).prefix("x "));
+            ui.add(crate::lang::number(&mut self.factor).speed(0.01).range(0.01..=100.0).prefix("x "));
             if ui.button(t("Scale")).clicked() {
                 self.run("scale", json!({ "id": id, "factor": self.factor }));
             }
@@ -1083,7 +1085,7 @@ impl App {
         let triangles = self.session.scene.get(id).map_or(0, |o| o.mesh.triangles.len());
         if triangles > 1000 {
             ui.horizontal(|ui| {
-                ui.add(egui::DragValue::new(&mut self.keep).speed(1.0).range(1.0..=99.0).suffix(" %"))
+                ui.add(crate::lang::number(&mut self.keep).speed(1.0).range(1.0..=99.0).suffix(" %"))
                     .on_hover_text(t("The share of its triangles to keep"));
                 if ui
                     .button(t("Simplify"))
@@ -1199,12 +1201,12 @@ impl App {
                     self.connector_size = if auto { None } else { Some(5.0) };
                 }
                 if let Some(d) = &mut self.connector_size {
-                    ui.add(egui::DragValue::new(d).speed(0.1).range(2.0..=30.0).suffix(" mm"));
+                    ui.add(crate::lang::number(d).speed(0.1).range(2.0..=30.0).suffix(" mm"));
                 }
             });
             ui.end_row();
             ui.label(t("Fit"));
-            ui.add(egui::DragValue::new(&mut self.connector_fit).speed(0.01).range(0.0..=1.0).suffix(t(" mm a side")))
+            ui.add(crate::lang::number(&mut self.connector_fit).speed(0.01).range(0.0..=1.0).suffix(t(" mm a side")))
                 .on_hover_text(t("The gap between a peg or pin and its hole: more is looser. 0.2 mm suits most printers"));
             ui.end_row();
         });
@@ -1240,7 +1242,7 @@ impl App {
         egui::Grid::new("fields").num_columns(4).show(ui, |ui| {
             ui.label(t("Position"));
             for (k, axis) in ["x", "y", "z"].into_iter().enumerate() {
-                let r = ui.add(egui::DragValue::new(&mut f.at[k]).speed(0.5).prefix(format!("{axis} ")).max_decimals(3));
+                let r = ui.add(crate::lang::number(&mut f.at[k]).speed(0.5).prefix(format!("{axis} ")).max_decimals(3));
                 if r.drag_stopped() || (r.changed() && !r.dragged()) {
                     moved = Some(k);
                 }
@@ -1249,7 +1251,7 @@ impl App {
             ui.label(t("Size"));
             for (k, axis) in ["x", "y", "z"].into_iter().enumerate() {
                 let r = ui
-                    .add(egui::DragValue::new(&mut f.size[k]).speed(0.5).range(0.01..=10_000.0).prefix(format!("{axis} ")).max_decimals(3));
+                    .add(crate::lang::number(&mut f.size[k]).speed(0.5).range(0.01..=10_000.0).prefix(format!("{axis} ")).max_decimals(3));
                 if r.drag_stopped() || (r.changed() && !r.dragged()) {
                     sized = Some(k);
                 }
@@ -1280,7 +1282,7 @@ impl App {
             ui.horizontal(|ui| {
                 ui.checkbox(&mut own_infill, t("Infill"));
                 let mut percent = infill.unwrap_or(self.profile.infill_density) * 100.0;
-                if ui.add_enabled(own_infill, egui::DragValue::new(&mut percent).range(0.0..=100.0).suffix(" %")).changed()
+                if ui.add_enabled(own_infill, crate::lang::number(&mut percent).range(0.0..=100.0).suffix(" %")).changed()
                     || own_infill != infill.is_some()
                 {
                     infill = own_infill.then_some(percent / 100.0);
@@ -1290,7 +1292,7 @@ impl App {
             ui.horizontal(|ui| {
                 ui.checkbox(&mut own_walls, t("Walls"));
                 let mut w = walls.unwrap_or(self.profile.perimeters);
-                if ui.add_enabled(own_walls, egui::DragValue::new(&mut w).range(0..=10)).changed() || own_walls != walls.is_some() {
+                if ui.add_enabled(own_walls, crate::lang::number(&mut w).range(0..=10)).changed() || own_walls != walls.is_some() {
                     walls = own_walls.then_some(w);
                     changed = Some(());
                 }
@@ -1301,7 +1303,7 @@ impl App {
                 ui.checkbox(&mut own_extruder, t("Extruder")).on_hover_text(hint("extruder"));
                 let mut e = extruder.unwrap_or(self.profile.extruder);
                 let range = 1..=self.profile.extruders.max(1);
-                if ui.add_enabled(own_extruder, egui::DragValue::new(&mut e).range(range)).changed() || own_extruder != extruder.is_some() {
+                if ui.add_enabled(own_extruder, crate::lang::number(&mut e).range(range)).changed() || own_extruder != extruder.is_some() {
                     extruder = own_extruder.then_some(e);
                     changed = Some(());
                 }
@@ -1350,32 +1352,32 @@ impl App {
             let max_layer = p.nozzle * 0.8;
             egui::Grid::new("settings").num_columns(2).show(ui, |ui| {
                 ui.label(t("Layer height, mm"));
-                ui.add(egui::DragValue::new(&mut p.layer_height).speed(0.01).range(0.02..=max_layer)).on_hover_text(hint("layer_height"));
+                ui.add(crate::lang::number(&mut p.layer_height).speed(0.01).range(0.02..=max_layer)).on_hover_text(hint("layer_height"));
                 ui.end_row();
                 ui.label("");
                 ui.horizontal(|ui| {
                     ui.checkbox(&mut p.adaptive_layers, t("Adaptive, from")).on_hover_text(hint("adaptive_layers"));
-                    ui.add_enabled(p.adaptive_layers, egui::DragValue::new(&mut p.min_layer_height).speed(0.01).range(0.02..=max_layer))
+                    ui.add_enabled(p.adaptive_layers, crate::lang::number(&mut p.min_layer_height).speed(0.01).range(0.02..=max_layer))
                         .on_hover_text(hint("min_layer_height"));
                 });
                 ui.end_row();
                 ui.label(t("First layer, mm"));
-                ui.add(egui::DragValue::new(&mut p.first_layer_height).speed(0.01).range(0.02..=max_layer))
+                ui.add(crate::lang::number(&mut p.first_layer_height).speed(0.01).range(0.02..=max_layer))
                     .on_hover_text(hint("first_layer_height"));
                 ui.end_row();
                 ui.label(t("Walls"));
-                ui.add(egui::DragValue::new(&mut p.perimeters).range(0..=10)).on_hover_text(hint("perimeters"));
+                ui.add(crate::lang::number(&mut p.perimeters).range(0..=10)).on_hover_text(hint("perimeters"));
                 ui.end_row();
                 ui.label(t("Top / bottom layers"));
                 ui.horizontal(|ui| {
-                    ui.add(egui::DragValue::new(&mut p.top_layers).range(0..=50)).on_hover_text(hint("top_layers"));
-                    ui.add(egui::DragValue::new(&mut p.bottom_layers).range(0..=50)).on_hover_text(hint("bottom_layers"));
+                    ui.add(crate::lang::number(&mut p.top_layers).range(0..=50)).on_hover_text(hint("top_layers"));
+                    ui.add(crate::lang::number(&mut p.bottom_layers).range(0..=50)).on_hover_text(hint("bottom_layers"));
                 });
                 ui.end_row();
                 ui.label(t("Infill"));
                 let mut percent = p.infill_density * 100.0;
                 if ui
-                    .add(egui::DragValue::new(&mut percent).speed(1.0).range(0.0..=100.0).suffix(" %"))
+                    .add(crate::lang::number(&mut percent).speed(1.0).range(0.0..=100.0).suffix(" %"))
                     .on_hover_text(t(lamina_slicer::profile::about("infill_density")))
                     .changed()
                 {
@@ -1408,16 +1410,15 @@ impl App {
                 ui.end_row();
                 ui.label(t("Nozzle / bed, C"));
                 ui.horizontal(|ui| {
-                    ui.add(egui::DragValue::new(&mut p.nozzle_temp).range(0.0..=400.0)).on_hover_text(hint("nozzle_temp"));
-                    ui.add(egui::DragValue::new(&mut p.bed_temp).range(0.0..=400.0)).on_hover_text(hint("bed_temp"));
+                    ui.add(crate::lang::number(&mut p.nozzle_temp).range(0.0..=400.0)).on_hover_text(hint("nozzle_temp"));
+                    ui.add(crate::lang::number(&mut p.bed_temp).range(0.0..=400.0)).on_hover_text(hint("bed_temp"));
                 });
                 ui.end_row();
                 ui.label(t("First layer nozzle / bed"));
                 ui.horizontal(|ui| {
-                    ui.add(egui::DragValue::new(&mut p.first_layer_nozzle_temp).range(0.0..=400.0))
+                    ui.add(crate::lang::number(&mut p.first_layer_nozzle_temp).range(0.0..=400.0))
                         .on_hover_text(hint("first_layer_nozzle_temp"));
-                    ui.add(egui::DragValue::new(&mut p.first_layer_bed_temp).range(0.0..=400.0))
-                        .on_hover_text(hint("first_layer_bed_temp"));
+                    ui.add(crate::lang::number(&mut p.first_layer_bed_temp).range(0.0..=400.0)).on_hover_text(hint("first_layer_bed_temp"));
                 });
                 ui.end_row();
                 ui.label(t("Seam"));
@@ -1442,8 +1443,8 @@ impl App {
                 ui.end_row();
                 ui.label(t("Brim, mm / raft layers"));
                 ui.horizontal(|ui| {
-                    ui.add(egui::DragValue::new(&mut p.brim_width).speed(0.5).range(0.0..=50.0)).on_hover_text(hint("brim_width"));
-                    ui.add(egui::DragValue::new(&mut p.raft_layers).range(0..=10)).on_hover_text(hint("raft_layers"));
+                    ui.add(crate::lang::number(&mut p.brim_width).speed(0.5).range(0.0..=50.0)).on_hover_text(hint("brim_width"));
+                    ui.add(crate::lang::number(&mut p.raft_layers).range(0..=10)).on_hover_text(hint("raft_layers"));
                 });
                 ui.end_row();
                 ui.label(t("Supports"));
@@ -1464,7 +1465,7 @@ impl App {
                         .response
                         .on_hover_text(hint("support"));
                     if p.support != Support::Off {
-                        ui.add(egui::DragValue::new(&mut p.support_angle).range(10.0..=89.0).suffix(t(" deg")))
+                        ui.add(crate::lang::number(&mut p.support_angle).range(10.0..=89.0).suffix(t(" deg")))
                             .on_hover_text(hint("support_angle"));
                         use lamina_slicer::profile::SupportStyle;
                         let style = |s: SupportStyle| match s {
@@ -1485,8 +1486,8 @@ impl App {
                 ui.end_row();
                 ui.label(t("Plate, mm"));
                 ui.horizontal(|ui| {
-                    ui.add(egui::DragValue::new(&mut p.bed[0]).range(10.0..=2000.0)).on_hover_text(hint("bed"));
-                    ui.add(egui::DragValue::new(&mut p.bed[1]).range(10.0..=2000.0)).on_hover_text(hint("bed"));
+                    ui.add(crate::lang::number(&mut p.bed[0]).range(10.0..=2000.0)).on_hover_text(hint("bed"));
+                    ui.add(crate::lang::number(&mut p.bed[1]).range(10.0..=2000.0)).on_hover_text(hint("bed"));
                 });
                 ui.end_row();
             });
@@ -1572,7 +1573,7 @@ impl App {
             for i in 1..p.extruders as usize {
                 let mut t = p.extruder_temps.get(i - 1).copied().unwrap_or(p.nozzle_temp);
                 ui.label(tf("Extruder {} nozzle, C", &[&(i + 1).to_string()])).on_hover_text(hint("extruder_temps"));
-                if ui.add(egui::DragValue::new(&mut t).range(0.0..=400.0)).on_hover_text(hint("extruder_temps")).changed() {
+                if ui.add(crate::lang::number(&mut t).range(0.0..=400.0)).on_hover_text(hint("extruder_temps")).changed() {
                     p.extruder_temps.resize(p.extruder_temps.len().max(i), p.nozzle_temp);
                     p.extruder_temps[i - 1] = t;
                 }
@@ -1613,7 +1614,7 @@ impl App {
             }
             ui.end_row();
             ui.label(t("Thumbnail, pixels"));
-            ui.add(egui::DragValue::new(&mut p.thumbnail).range(0..=512)).on_hover_text(format!(
+            ui.add(crate::lang::number(&mut p.thumbnail).range(0..=512)).on_hover_text(format!(
                 "{} {}",
                 t(lamina_slicer::profile::about("thumbnail")),
                 t("0, or from 16 to 512.")
@@ -1712,7 +1713,7 @@ impl App {
         let z = sliced.layers.get(self.layer).map_or(0.0, |l| l.z);
         ui.horizontal(|ui| {
             ui.add(egui::Slider::new(&mut self.layer, 0..=last).text(t("layer")));
-            ui.label(format!("z = {z:.2} mm"));
+            ui.label(format!("z = {} mm", lang::mark(format!("{z:.2}"))));
             ui.checkbox(&mut self.travels, t("Travels"));
             ui.separator();
             ui.selectable_value(&mut self.preview_3d, true, "3D")
@@ -2392,6 +2393,49 @@ mod tests {
         assert!(h.query_by_label("Fatiar").is_none());
         let again = App::with_settings(session(), Arc::new(lamina_assistant::testing::Fake::default()), path);
         assert_eq!(again.lang, lang::Lang::English, "kept for the next start");
+    }
+
+    /// Types `text` into the number field that shows `shown`, and presses Enter.
+    fn type_number(h: &mut Harness<App>, shown: &str, text: &str) {
+        let role = egui::accesskit::Role::SpinButton;
+        h.get_by(|n| n.role() == role && n.value().as_deref() == Some(shown)).focus();
+        h.run();
+        h.get_by(|n| n.role() == role && n.value().as_deref() == Some(shown)).type_text(text);
+        h.run();
+        h.key_press(Key::Enter);
+        h.run();
+    }
+
+    #[test]
+    fn number_fields_write_and_read_a_decimal_comma_in_portuguese_and_spanish() {
+        let mut h = window();
+        press(&mut h, "Add box");
+        h.get_by_label_contains("20.0 x 20.0 x 20.0");
+        h.state_mut().profile.layer_height = 0.17;
+        h.run();
+        let spin = |h: &Harness<App>, text: &str| {
+            h.query_by(|n| n.role() == egui::accesskit::Role::SpinButton && n.value().as_deref() == Some(text)).is_some()
+        };
+        assert!(spin(&h, "0.17") && !spin(&h, "0,17"), "English writes a point");
+        // English reads as before: a point, and a comma is no number, so the value stays.
+        type_number(&mut h, "0.17", "0,3");
+        assert_eq!(h.state().profile.layer_height, 0.17);
+        type_number(&mut h, "0.17", "0.15");
+        assert_eq!(h.state().profile.layer_height, 0.15);
+        for (language, typed, want) in [(lang::Lang::Portuguese, "0,25", 0.25), (lang::Lang::Spanish, "0,12", 0.12)] {
+            h.state_mut().lang = language;
+            h.state_mut().profile.layer_height = 0.17;
+            h.run();
+            assert!(spin(&h, "0,17") && !spin(&h, "0.17"), "{language:?} writes a comma");
+            // So do the tooltips' ranges and the sizes in the plate's list.
+            assert!(hint("layer_height").contains("0,02"), "{}", hint("layer_height"));
+            h.get_by_label_contains("20,0 x 20,0 x 20,0");
+            type_number(&mut h, "0,17", typed);
+            assert_eq!(h.state().profile.layer_height, want, "{language:?} reads {typed}");
+            // A point, as a number pasted from elsewhere has, is read too.
+            type_number(&mut h, typed, "0.2");
+            assert_eq!(h.state().profile.layer_height, 0.2, "{language:?} reads a point");
+        }
     }
 
     #[test]
