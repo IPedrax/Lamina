@@ -431,9 +431,11 @@ After those, the P1 items below, roughly top to bottom within each area.
 
 ## 0. Foundations
 
-**0.2 Real test prints (P0).** How: export a 20 mm calibration cube, a 0.4 mm single-wall box and a bridge test with `lamina-cli slice`.
-Print each on one Marlin and one Klipper printer. Measure with calipers. Write the results, with photos, in `docs/PRINT-TESTS.md`. Fix
-what is wrong before adding features.
+**0.2 Real test prints (P0).** Made ready: [PRINT-TESTS.md](PRINT-TESTS.md) has the three parts as `lamina-cli` scripts in
+`docs/print-tests/` (a 20 mm cube, a single-wall box in vase mode, a bar with bridges of 10, 20 and 30 mm), the exact command to slice
+each for a Marlin and a Klipper preset, what to measure and what to expect, and tables for the results and photos;
+`crates/slicer/tests/print_tests.rs` keeps the scripts and commands working. What is left needs the printers: print each on one Marlin
+and one Klipper printer, measure with calipers, fill in the tables, and fix what is wrong before adding features.
 
 ## 1. Files and projects
 
