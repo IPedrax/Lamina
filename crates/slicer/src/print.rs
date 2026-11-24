@@ -176,6 +176,24 @@ pub fn gcode_each(objects: &[(u32, Mesh)], own: &[Option<Profile>], p: &Profile)
         objects.iter().enumerate().map(|(i, (_, m))| object_layers(m, profile_of(i), tops.as_deref())).collect::<Result<_, _>>()?;
     let regions: Vec<Vec<Region>> = sliced.iter().map(|ls| ls.iter().map(|l| geom::region(&l.loops)).collect()).collect();
     let supports = plate_supports(&sliced, &regions, &profile_of, p.sequential);
+    // What each object prints on each layer, its supports included: what a purge tower may not stand in (only a printer with
+    // several extruders changes tools and has one).
+    let occupied: Vec<Vec<Region>> = regions
+        .iter()
+        .take(if p.extruders > 1 { usize::MAX } else { 0 })
+        .zip(&supports)
+        .map(|(own, sup)| {
+            own.iter()
+                .enumerate()
+                .map(|(k, r)| match sup.get(k) {
+                    Some(l) if !geom::is_empty(&l.sparse) || !geom::is_empty(&l.interface) => {
+                        geom::union(r, &geom::union(&l.sparse, &l.interface))
+                    }
+                    _ => r.clone(),
+                })
+                .collect()
+        })
+        .collect();
     // The plan of each object: its first layer's region, then its layers and the strokes of each.
     let mut plans: Vec<ObjectPlan> = sliced
         .iter()
@@ -214,7 +232,7 @@ pub fn gcode_each(objects: &[(u32, Mesh)], own: &[Option<Profile>], p: &Profile)
     let last_change = changes.iter().rposition(|&n| n > 0);
     // The purge tower, when a tool changes: a square on the plate clear of every object, its layers the tallest object's.
     let tower = match last_change {
-        Some(_) => Some(tower_square(objects, p)?),
+        Some(last) => Some(tower_square(objects, &occupied, last, p)?),
         None => None,
     };
     let zs: Vec<(f64, f64)> =
@@ -464,8 +482,8 @@ pub fn gcode_each(objects: &[(u32, Mesh)], own: &[Option<Profile>], p: &Profile)
 const SEQUENTIAL_LIFT: f64 = 2.0;
 
 /// The order objects print one at a time, the shortest first so the tallest is last, or why they cannot: they use more than one
-/// extruder, two stand closer than the head's `clearance_radius`, or one that is not last is taller than the `gantry_height`.
-/// Objects are taken by their bounding boxes.
+/// extruder, two stand closer than the head's `clearance_radius` (by their convex hulls seen from above, the outline the head's
+/// cylinder sweeps round), or one that is not last is taller than the `gantry_height`.
 fn one_at_a_time(objects: &[(u32, Mesh)], tools: &[usize], p: &Profile) -> Result<Vec<usize>, String> {
     let boxes: Vec<([f64; 3], [f64; 3])> = objects.iter().map(|(_, m)| m.bounds()).collect::<Option<_>>().ok_or("an object is empty")?;
     if let Some(i) = (1..tools.len()).find(|&i| tools[i] != tools[0]) {
@@ -475,10 +493,11 @@ fn one_at_a_time(objects: &[(u32, Mesh)], tools: &[usize], p: &Profile) -> Resul
             objects[0].0, objects[i].0
         ));
     }
-    for a in 0..boxes.len() {
-        for b in a + 1..boxes.len() {
-            let ((alo, ahi), (blo, bhi)) = (boxes[a], boxes[b]);
-            let gap = (blo[0] - ahi[0]).max(alo[0] - bhi[0]).max(0.0).hypot((blo[1] - ahi[1]).max(alo[1] - bhi[1]).max(0.0));
+    let hulls: Vec<Vec<P2>> =
+        objects.iter().map(|(_, m)| geom::hull(m.vertices.iter().map(|v| [f64::from(v[0]), f64::from(v[1])]))).collect();
+    for a in 0..hulls.len() {
+        for b in a + 1..hulls.len() {
+            let gap = geom::hull_distance(&hulls[a], &hulls[b]);
             if gap < p.clearance_radius {
                 return Err(format!(
                     "objects {} and {} are {gap:.1} mm apart, closer than the print head's clearance (`clearance_radius`, {} mm): \
@@ -506,21 +525,22 @@ fn one_at_a_time(objects: &[(u32, Mesh)], tools: &[usize], p: &Profile) -> Resul
     Ok(order)
 }
 
-/// The purge tower's square, or why it cannot stand there: off the plate, or over an object (by the object's bounding box).
-fn tower_square(objects: &[(u32, Mesh)], p: &Profile) -> Result<Region, String> {
+/// The purge tower's square, or why it cannot stand there: off the plate, or over what an object prints (its layers and their
+/// supports) on a layer the tower rises through, up to `last`. An object's notch or the room under a high overhang may hold it.
+fn tower_square(objects: &[(u32, Mesh)], occupied: &[Vec<Region>], last: usize, p: &Profile) -> Result<Region, String> {
     let h = p.tower_size / 2.0;
     let (lo, hi) = ([p.tower_x - h, p.tower_y - h], [p.tower_x + h, p.tower_y + h]);
     let at = format!("the purge tower ({} mm square at x {}, y {})", p.tower_size, p.tower_x, p.tower_y);
     if lo[0] < -p.bed[0] / 2.0 || hi[0] > p.bed[0] / 2.0 || lo[1] < -p.bed[1] / 2.0 || hi[1] > p.bed[1] / 2.0 {
         return Err(format!("{at} is off the {} x {} mm plate: move it with `tower_x` and `tower_y`", p.bed[0], p.bed[1]));
     }
-    for (id, m) in objects {
-        let Some((a, b)) = m.bounds() else { continue };
-        if lo[0] < b[0] && hi[0] > a[0] && lo[1] < b[1] && hi[1] > a[1] {
-            return Err(format!("{at} overlaps object {id}: move the tower with `tower_x` and `tower_y`, or move the object"));
+    let square = geom::region(&[vec![lo, [hi[0], lo[1]], hi, [lo[0], hi[1]]]]);
+    for ((id, _), layers) in objects.iter().zip(occupied) {
+        if let Some(k) = layers.iter().take(last + 1).position(|r| geom::area(&geom::intersect(r, &square)) > 1e-6) {
+            return Err(format!("{at} overlaps object {id} on layer {k}: move the tower with `tower_x` and `tower_y`, or move the object"));
         }
     }
-    Ok(geom::region(&[vec![lo, [hi[0], lo[1]], hi, [lo[0], hi[1]]]]))
+    Ok(square)
 }
 
 /// The nozzle temperature of tool `t` (from 0) on layer `label`: the profile's (the first layer's until layer 2), or the one
@@ -2264,6 +2284,36 @@ mod tests {
     }
 
     #[test]
+    fn a_tower_may_stand_in_a_notch_or_under_what_rises_above_its_last_layer() {
+        let bar = |size: [f64; 3], at: [f64; 3]| Mesh::cuboid(size).transformed(&lamina_core::Transform::translate(at));
+        let p = Profile { extruders: 2, tower_x: 15.0, tower_y: 15.0, tower_size: 16.0, ..Profile::default() };
+        // An L 40 mm each way, its bars 8 wide, the tower in its notch (x and y 7 to 23), and a box on the second extruder.
+        let l = Mesh::merged([&bar([40.0, 8.0, 6.0], [16.0, -4.0, 0.0]), &bar([8.0, 40.0, 6.0], [-4.0, 16.0, 0.0])]);
+        let other = bar([10.0, 10.0, 4.0], [-40.0, -40.0, 0.0]);
+        let two = Profile { extruder: 2, ..p.clone() };
+        let out = gcode_each(&[(1, l.clone()), (2, other.clone())], &[None, Some(two.clone())], &p).unwrap();
+        assert!(out.features["purge-tower"] > 0.0, "the tower stands in the notch, which the L's box covers");
+        // Its lines stay in its square, clear of the L.
+        let runs: Vec<P2> = (0..20).flat_map(|k| layer_runs(&out.gcode, k, "purge-tower", &p)).flatten().collect();
+        assert!(
+            !runs.is_empty()
+                && runs.iter().all(|q| (7.0 - 1e-3..=23.0 + 1e-3).contains(&q[0]) && (7.0 - 1e-3..=23.0 + 1e-3).contains(&q[1]))
+        );
+        // A shelf over the notch, from 10 mm up, is above the tower's last layer (the box is 4 mm tall): it may.
+        let shelf = bar([16.0, 16.0, 2.0], [15.0, 15.0, 10.0]);
+        let posts = Mesh::merged([&l, &bar([40.0, 8.0, 12.0], [16.0, -4.0, 0.0]), &shelf]);
+        assert!(gcode_each(&[(1, posts.clone()), (2, other.clone())], &[None, Some(two.clone())], &p).is_ok());
+        // Down to 2 mm, the shelf is in the tower's way on a layer it rises through.
+        let low = Mesh::merged([&l, &bar([16.0, 16.0, 2.0], [15.0, 15.0, 2.0])]);
+        let e = gcode_each(&[(1, low), (2, other.clone())], &[None, Some(two.clone())], &p).unwrap_err();
+        assert!(e.contains("overlaps object 1 on layer 10"), "{e}");
+        // And a support under the high shelf would stand in it.
+        let held = Profile { support: support::Support::Everywhere, ..p.clone() };
+        let e = gcode_each(&[(1, posts), (2, other)], &[None, Some(Profile { extruder: 2, ..held.clone() })], &held).unwrap_err();
+        assert!(e.contains("overlaps object 1 on layer 0"), "{e}");
+    }
+
+    #[test]
     fn the_tool_change_gcode_has_its_placeholders_and_rrf_its_own_temperatures() {
         let custom = "; from [previous_tool] to [next_tool]\nG1 Z{layer_z + 5}";
         let g = two_tools(&Profile { extruders: 2, toolchange_gcode: custom.into(), ..Profile::default() }).unwrap().gcode;
@@ -2321,6 +2371,18 @@ mod tests {
         let close = gcode(&two, &Profile { clearance_radius: 45.0, ..p.clone() }).unwrap_err();
         assert!(close.contains("objects 1 and 2 are 40.0 mm apart") && close.contains("`clearance_radius`, 45 mm"), "{close}");
         assert!(gcode(&two, &Profile { clearance_radius: 45.0, ..Profile::default() }).is_ok(), "printed together, they may be close");
+        // Two wedges whose slanted sides face each other: their boxes overlap (x and y -5 to 5), their outlines are 20 times the
+        // square root of 2 apart (28.3 mm), which a head that reaches a little less clears and one that reaches a little more does not.
+        let wedge = |flip: f64| {
+            let tri: Vec<P2> = vec![[0.0, 0.0], [30.0 * flip, 0.0], [0.0, 30.0 * flip]];
+            let mesh = lamina_core::sketch::extrude(&tri, &[], 5.0).unwrap();
+            mesh.transformed(&lamina_core::Transform::translate([-25.0 * flip, -25.0 * flip, 0.0]))
+        };
+        let wedges = [(1, wedge(1.0)), (2, wedge(-1.0))];
+        let apart = 2f64.sqrt() * 20.0;
+        assert!(gcode(&wedges, &Profile { clearance_radius: apart - 0.1, ..p.clone() }).is_ok(), "their boxes overlap, but not they");
+        let e = gcode(&wedges, &Profile { clearance_radius: apart + 0.1, ..p.clone() }).unwrap_err();
+        assert!(e.contains(&format!("are {apart:.1} mm apart")), "{e}");
         // Only the last printed may pass the gantry: the tall one alone may, both may not.
         assert!(gcode(&two, &Profile { gantry_height: 5.0, ..p.clone() }).is_ok());
         let tall = gcode(&two, &Profile { gantry_height: 1.5, ..p.clone() }).unwrap_err();
