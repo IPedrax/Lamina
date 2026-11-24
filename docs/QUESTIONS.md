@@ -141,7 +141,8 @@ Every P0 and P1 item is done except 0.2 (below). Of P2, these were left for a de
 
 - Printing the calibration cube, the single-wall box and the bridge test on a Marlin and a Klipper printer needs the printers, and
   measuring them needs calipers. Not possible from a cloud session; nothing here has touched a printer. The golden G-code tests
-  (0.1) guard the output meanwhile. `lamina-cli slice` makes the three files when you are ready.
+  (0.1) guard the output meanwhile. [PRINT-TESTS.md](PRINT-TESTS.md) has the parts as scripts, the commands for a Marlin and a
+  Klipper preset, and the tables to fill in.
 
 ## The picture of the window: drawn on a software adapter
 

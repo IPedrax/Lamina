@@ -1,0 +1,3 @@
+# Lamina print test 2: a box printed as a single wall, for the flow (docs/PRINT-TESTS.md). Slice it in vase mode with one bottom
+# layer: the wall is then one line, as wide as Lamina's line width (1.125 times the nozzle: 0.45 mm for a 0.4 mm nozzle).
+add_primitive {"kind": "box", "size": [20, 20, 15], "name": "single wall box"}

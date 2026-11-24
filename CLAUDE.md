@@ -114,6 +114,7 @@ Linux only). A change to a string the window shows needs `cargo i18n update` and
   THIRD-PARTY-NOTICES.txt each release carries.
 - `packaging/` and `.github/workflows/release.yml`: the AppImage and tarball, the MSI and the DMG, built and published on each tag
   (lifted from BIMCraft's). `assets/app-icon/` is written by `apps/lamina/src/icon.rs` (`LAMINA_BLESS=1`; a test checks they match).
-- `docs/`: `USER-GUIDE.md` (for people using the window; its table of settings is checked by `crates/slicer/tests/guide.rs`,
+- `docs/`: `PRINT-TESTS.md` (the three test prints of roadmap 0.2: scripts in `print-tests/`, commands, tables to fill in; checked by
+  `crates/slicer/tests/print_tests.rs`), `USER-GUIDE.md` (for people using the window; its table of settings is checked by `crates/slicer/tests/guide.rs`,
   its pictures in `images/` drawn by `docs_pictures`), `ARCHITECTURE.md` (what is ported from BIMCraft and what is not), `RESEARCH.md` (slicers, editors, crates, licence flags),
   `ROADMAP.md` (the order of work and the known limits).
