@@ -130,6 +130,13 @@ Priorities:
 - **3.11 Fillets and chamfers, where tractable.** Rounded boxes, rounded corners on any extruded outline and tapered cones exist,
   and the modelling skill now says plainly that there is no fillet or chamfer for an arbitrary edge. A chamfer of the bottom edge
   of any object, against elephant's foot, is still open: it needs the object's bottom outline lofted to an inset of itself.
+- **3.15 Threads.** `add_primitive {kind: "thread", metric | diameter and pitch, height, internal?, clearance?}`: the ISO metric
+  basic profile of ISO 68-1 (60 degree flanks, crest flat P/8, root flat P/4, depth 5H/8), ISO 261's coarse pitches from M2 to M30
+  by name. `Mesh::thread` is a cylinder's grid, eight rows a pitch, each corner at the radius the profile gives along the helix at its
+  angle and height, so it is closed by construction; an external thread's ends are chamfered to its root, an internal one is the
+  tool for a tapped hole, `clearance` (0.2 mm a side) wider. At most 24,000 triangles, so a boolean with it stays within its limit.
+  Tested: every corner on the profile, the volume of the profile's area swept round within 2 %, an M8 nut cut and an M6 bolt joined,
+  both closed and of the right volume; in More shapes and the modelling skill. Not printed.
 - **4.1 Supports.** `crates/slicer/src/support.rs`: where a layer leans past `support_angle` from vertical, all of it that is over
   air is held up; overhangs are carried down to the model or the plate (`support`: `off`, `everywhere`, `from_plate`), keep
   `support_xy_gap` from the walls and stop `support_z_gap` below the model, with `support_interface_layers` of denser lines on top.
@@ -442,15 +449,6 @@ and one Klipper printer, measure with calipers, fill in the tables, and fix what
 ## 2. Meshes
 
 ## 3. Modelling
-
-**3.15 Threads (P1).** PrusaSlicer, OrcaSlicer and Cura print threads but make none; Lamina's assistant is asked for bolts, nuts and
-caps, and has no way to cut a thread. How: `add_primitive {kind: "thread", size: "M8" | diameter + pitch, length, internal?,
-clearance?, segments?}`, the ISO metric basic profile of ISO 68-1 (60 degree flanks, a crest flat of P/8 and a root flat of P/4,
-depth 5H/8 with H = 0.866 P; coarse pitches of ISO 261 for `size`). The mesh is a cylinder's grid whose radius at each angle and
-height follows the profile along the helix (a radius per point, so it is closed by construction), its ends chamfered so the
-thread starts cleanly. `internal: true` makes the tool to cut a tapped hole with `difference`, `clearance` wider (0.2 mm by default;
-0 for an external thread). Test: closed, the volume between the major and minor cylinders, a printed-like check of the profile by
-sections, and a nut cut with it that stays closed.
 
 **3.16 Pivot, orientation and clearing a transform (P2).** Blender turns and scales about the median point, the box's centre, each
 object's own origin or the 3D cursor (its Pivot Point menu), moves along the global or the object's own axes (Transform

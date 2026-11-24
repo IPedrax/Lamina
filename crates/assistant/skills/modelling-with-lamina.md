@@ -20,6 +20,11 @@ with `move {id, by: [x, y, 0]}`.
 - Flat parts: `extrude {shape: "rounded_rect", size: [60, 40], corner: 5, height: 4, round_holes: [[-22, -12, 4], [22, -12, 4]]}`
   lifts an outline into a solid (also `shape: "slot"` or `"circle"`, or your own `outline: [[x, y], ...]` with `holes`). Brackets,
   plates with mounting holes and spacers are one extrude each: prefer it to a box with cylinders subtracted.
+- Threads: `add_primitive {kind: "thread", metric: "M8", height: 20}` is a threaded rod (ISO metric, coarse pitch, ends
+  chamfered; or `diameter` and `pitch`). A bolt is a head (`prism` with `sides: 6`) joined with `union` to a rod that sinks 0.5 mm
+  into it. A nut or a tapped hole: `add_primitive {kind: "thread", metric: "M8", height: 10, internal: true}` is the cutting tool,
+  0.2 mm a side wider (`clearance`), made longer than the hole and cut with `difference`. Use 32 segments for threads you cut or
+  join, and M3 or larger: finer threads print poorly. Printed threads fit with play; say so.
 - Lettering: `text {text: "LAMINA", height: 8, depth: 1}` is a solid of letters lying on the plate (capitals `height` mm tall,
   5 mm or more to print cleanly). To emboss, put it on a face and `union`; to engrave, move it so it sinks 0.5 to 1 mm into the face
   and `difference`. Turn it with `rotate` for a side face. Latin, Greek and Cyrillic only.
@@ -47,8 +52,7 @@ the result stands, as one undo step. The result keeps the first object's name un
   changes nothing: move or resize a shape by a hundredth of a millimetre and try again. Do turns before booleans where you can: the
   first boolean on an object sees its faces exactly flat, a later one only to the precision stored.
 - Booleans take longer on shapes with many segments. Use 24 to 32 segments for a cutting tool.
-- Still missing: fillets and chamfers for any edge (a rounded box and a rounded_rect extrude round their edges), threads and
-  sweeps. Say so plainly, and offer the closest thing that works (`text` makes lettering, above).
+- Still missing: fillets and chamfers for any edge (a rounded box and a rounded_rect extrude round their edges), and sweeps. Say so plainly, and offer the closest thing that works (`text` makes lettering, above).
 
 ## Pieces that go back together
 

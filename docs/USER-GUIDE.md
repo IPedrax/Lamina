@@ -34,7 +34,8 @@ all, set the environment variable `LAMINA_NO_UPDATE_CHECK=1`: the menu items and
   the names you give objects, files and presets are never translated. In Portuguese and Spanish numbers have a decimal comma:
   fields show 0,2 and take 0,25 (or 0.25, as a number pasted from elsewhere has). The G-code, the project file and what the
   assistant reads keep the point.
-- **The toolbar.** Shapes to add, Import mesh, Undo and Redo, Frame all, Arrange, the three tools (Move, Lay flat, Measure),
+- **The toolbar.** Shapes to add (More shapes has cones, tubes, a torus, prisms, a pyramid, an M8 thread, lettering and a plate
+  with holes; the assistant makes any size of thread, and the tool that cuts a tapped hole), Import mesh, Undo and Redo, Frame all, Arrange, the three tools (Move, Lay flat, Measure),
   Prepare and Preview, Slice and Export G-code.
 - **The plate panel, on the left.** The objects on the plate, what can be done to the picked one, the presets, the print settings
   and the printer connection. Hover over any setting to see what it does and its range.

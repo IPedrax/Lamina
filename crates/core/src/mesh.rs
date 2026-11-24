@@ -199,6 +199,53 @@ impl Mesh {
         Mesh { vertices, triangles }
     }
 
+    /// An ISO metric thread along z, its bottom on the plate: the basic profile of ISO 68-1 (flanks at 60 degrees, a crest flat of
+    /// P/8 at the major radius, a root flat of P/4 at the major radius less 5H/8, H = 0.866 P), `diameter` major and `pitch` P,
+    /// right-handed, `height` long, every radius `offset` larger (a tool for a tapped hole: its clearance) or smaller (a bolt with
+    /// play). Each corner of a grid of `segments` round and eight rows a pitch up stands at the radius the profile gives along
+    /// the helix at its angle and height, so the mesh is closed as a cylinder's is; with `chamfer`, the ends slope in at 45 degrees
+    /// to the root so the thread starts cleanly.
+    pub fn thread(diameter: f64, pitch: f64, height: f64, offset: f64, segments: u32, chamfer: bool) -> Mesh {
+        let n = segments.max(3);
+        let major = diameter / 2.0 + offset;
+        let depth = 5.0 / 8.0 * 3f64.sqrt() / 2.0 * pitch;
+        let root = major - depth;
+        let rows = ((height / (pitch / 8.0)).ceil() as u32).max(1);
+        let radius = |angle: f64, z: f64| {
+            let t = (z - pitch * angle / std::f64::consts::TAU).rem_euclid(pitch) / pitch;
+            let r = match t {
+                t if t < 1.0 / 8.0 => major,
+                t if t < 7.0 / 16.0 => major - depth * (t - 1.0 / 8.0) / (5.0 / 16.0),
+                t if t < 11.0 / 16.0 => root,
+                t => root + depth * (t - 11.0 / 16.0) / (5.0 / 16.0),
+            };
+            if chamfer { r.min(root + z.max(0.0)).min(root + (height - z).max(0.0)) } else { r }
+        };
+        let mut vertices = Vec::with_capacity((n * (rows + 1) + 2) as usize);
+        for k in 0..=rows {
+            let z = height * f64::from(k) / f64::from(rows);
+            for i in 0..n {
+                let a = std::f64::consts::TAU * f64::from(i) / f64::from(n);
+                let r = radius(a, z);
+                vertices.push([(r * a.cos()) as f32, (r * a.sin()) as f32, z as f32]);
+            }
+        }
+        let (bottom, top) = (vertices.len() as u32, vertices.len() as u32 + 1);
+        vertices.push([0.0, 0.0, 0.0]);
+        vertices.push([0.0, 0.0, height as f32]);
+        let mut triangles = Vec::with_capacity((2 * n * (rows + 1)) as usize);
+        let at = |k: u32, i: u32| k * n + i % n;
+        for i in 0..n {
+            triangles.push([bottom, at(0, i + 1), at(0, i)]);
+            triangles.push([top, at(rows, i), at(rows, i + 1)]);
+            for k in 0..rows {
+                triangles.push([at(k, i), at(k, i + 1), at(k + 1, i + 1)]);
+                triangles.push([at(k, i), at(k + 1, i + 1), at(k + 1, i)]);
+            }
+        }
+        Mesh { vertices, triangles }
+    }
+
     /// A tube along z, its bottom on the plate: a cylinder of radius `outer` with one of radius `inner` taken out, built directly.
     pub fn tube(outer: f64, inner: f64, height: f64, segments: u32) -> Mesh {
         let n = segments.max(3);
@@ -502,5 +549,47 @@ mod tests {
         assert_eq!(t.apply([1.0, 1.0, 1.0]), [3.0, 2.0, 2.0]);
         let r = Transform::rotate(2, 90.0).apply([1.0, 0.0, 0.0]);
         assert!(r[0].abs() < 1e-12 && (r[1] - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn a_thread_follows_the_iso_profile_along_its_helix_and_is_closed() {
+        // M8 x 1.25, 10 mm, no chamfer: the major radius 4, the root 4 - 5H/8 = 3.3234.
+        let (d, p, h) = (8.0, 1.25, 10.0);
+        let m = Mesh::thread(d, p, h, 0.0, 48, false);
+        assert!(m.is_watertight());
+        let depth = 5.0 / 8.0 * 3f64.sqrt() / 2.0 * p;
+        assert!((depth - 0.541_266 * p).abs() < 1e-6);
+        // The profile over one pitch, from the crest's start: flat P/8, down 5P/16, flat P/4, up 5P/16.
+        let profile = |t: f64| match t {
+            t if t < 1.0 / 8.0 => 4.0,
+            t if t < 7.0 / 16.0 => 4.0 - depth * (t - 0.125) / 0.3125,
+            t if t < 11.0 / 16.0 => 4.0 - depth,
+            t => 4.0 - depth + depth * (t - 0.6875) / 0.3125,
+        };
+        // The column at angle 0 follows it up; the one a quarter turn on is a quarter pitch behind (right-handed).
+        for v in &m.vertices[..m.vertices.len() - 2] {
+            let (x, y, z) = (f64::from(v[0]), f64::from(v[1]), f64::from(v[2]));
+            let angle = y.atan2(x).rem_euclid(std::f64::consts::TAU);
+            let want = profile((z - p * angle / std::f64::consts::TAU).rem_euclid(p) / p);
+            assert!((x.hypot(y) - want).abs() < 1e-4, "at {angle} rad, z {z}: {} not {want}", x.hypot(y));
+        }
+        // Its volume is the mean of the profile's area round the axis, times its length (the grid's straight sides cut a little).
+        let mean = (0..10_000).map(|k| profile(f64::from(k) / 10_000.0).powi(2)).sum::<f64>() / 10_000.0;
+        let want = std::f64::consts::PI * mean * h;
+        assert!((m.volume() - want).abs() < 0.02 * want, "{} against {want}", m.volume());
+        let (lo, hi) = m.bounds().unwrap();
+        assert!((hi[0] - lo[0] - d).abs() < 0.05 && (hi[2] - h).abs() < 1e-6 && lo[2].abs() < 1e-9);
+        // A tool for a tapped hole, 0.2 wider a side; the chamfered rod starts and ends at its root.
+        let tool = Mesh::thread(d, p, h, 0.2, 48, false);
+        assert!(tool.is_watertight() && tool.volume() > m.volume());
+        let rod = Mesh::thread(d, p, h, 0.0, 48, true);
+        assert!(rod.is_watertight() && rod.volume() < m.volume());
+        let ends: Vec<f64> = rod
+            .vertices
+            .iter()
+            .filter(|v| v[2] == 0.0 && (v[0] != 0.0 || v[1] != 0.0))
+            .map(|v| f64::from(v[0]).hypot(f64::from(v[1])))
+            .collect();
+        assert!(ends.iter().all(|r| (r - (4.0 - depth)).abs() < 1e-4), "{ends:?}");
     }
 }

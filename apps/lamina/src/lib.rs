@@ -843,6 +843,7 @@ impl App {
                     (ui_msg!("Torus"), json!({"kind": "torus", "radius": 10, "tube": 3}), 26.0),
                     (ui_msg!("Hexagonal prism"), json!({"kind": "prism", "radius": 10, "height": 20, "sides": 6}), 20.0),
                     (ui_msg!("Pyramid"), json!({"kind": "pyramid", "radius": 12, "height": 15, "sides": 4}), 24.0),
+                    (ui_msg!("Thread, M8"), json!({"kind": "thread", "metric": "M8", "height": 20, "name": "M8 thread"}), 8.0),
                 ];
                 for (label, params, width) in shapes {
                     if ui.button(t(label)).clicked() {
