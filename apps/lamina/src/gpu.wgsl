@@ -35,7 +35,7 @@ struct VertexIn {
     @location(0) position: vec3<f32>,
     // The triangle's unit normal; none for the plate and the grid, which are not lit.
     @location(1) normal: vec3<f32>,
-    // The triangle's place in its object's mesh.
+    // The triangle's place in its object's mesh, and its paint in the top two bits (`gpu::paint_bits`).
     @location(2) tri: u32,
     // The object's: its id and colour (red in the low byte), and the transform a drag shows it moved by, as three rows.
     @location(3) object: vec2<u32>,
@@ -58,8 +58,17 @@ fn vs_scene(v: VertexIn) -> VertexOut {
     let d = world - g.eye.xyz;
     var o: VertexOut;
     o.clip = vec4<f32>(dot(d, g.right.xyz), dot(d, g.up.xyz), NEAR, dot(d, g.forward.xyz));
-    o.ids = vec2<u32>(v.object.x, v.tri);
-    let base = unpack4x8unorm(v.object.y).xyz * 255.0;
+    o.ids = vec2<u32>(v.object.x, v.tri & 0x3fffffffu);
+    // Paint over the object's colour: `render::PAINT`, seam, support and block.
+    let paint = v.tri >> 30u;
+    var base = unpack4x8unorm(v.object.y).xyz * 255.0;
+    if paint == 1u {
+        base = vec3<f32>(175.0, 95.0, 235.0);
+    } else if paint == 2u {
+        base = vec3<f32>(70.0, 190.0, 90.0);
+    } else if paint == 3u {
+        base = vec3<f32>(225.0, 70.0, 70.0);
+    }
     // What is not a part's face (the plate) is level, through the origin: `render::FLAT`.
     o.plane = vec4<f32>(0.0, 0.0, 1.0, 0.0);
     var k = 1.0;

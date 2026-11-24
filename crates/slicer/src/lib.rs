@@ -7,6 +7,7 @@ pub mod gap;
 pub mod geom;
 pub mod import;
 pub mod infill;
+pub mod paint;
 pub mod presets;
 pub mod print;
 pub mod profile;

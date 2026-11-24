@@ -14,12 +14,12 @@ use std::sync::Arc;
 use egui::{
     Color32, ColorImage, FontId, Key, PointerButton, Pos2, Rect, Sense, Shape, Stroke, TextureHandle, TextureOptions, Ui, Vec2, pos2, vec2,
 };
-use lamina_core::Scene;
+use lamina_core::{Paint, Scene};
 
 type P3 = [f64; 3];
 
 pub use lamina_core::render::{Camera, FOV, Picture, draw};
-use lamina_core::render::{add, scale};
+use lamina_core::render::{add, dot, scale, sub};
 
 /// The picture as egui shows it.
 pub fn image(p: &Picture) -> ColorImage {
@@ -52,7 +52,36 @@ pub enum Tool {
     Move,
     LayFlat,
     Measure,
+    Paint,
 }
+
+/// What the paint brush lays on the faces it touches (`Paint::None` rubs paint out), and how far round the point it reaches, mm.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Brush {
+    pub kind: Paint,
+    pub radius: f64,
+}
+
+impl Default for Brush {
+    fn default() -> Brush {
+        Brush { kind: Paint::Seam, radius: 3.0 }
+    }
+}
+
+impl Brush {
+    /// The `kind` the `paint` command takes.
+    pub fn command_kind(&self) -> &'static str {
+        match self.kind {
+            Paint::Seam => "seam",
+            Paint::Support => "support",
+            Paint::Block => "block",
+            Paint::None => "none",
+        }
+    }
+}
+
+/// The most points one stroke of the brush keeps: each is a `paint` command when it ends.
+pub const MAX_STROKE: usize = 500;
 
 /// A part of the gizmo: an axis arrow, the square that slides the object on the plate, a ring that turns it about an axis, or the
 /// corner square that scales it.
@@ -458,6 +487,8 @@ pub struct Shown {
     pub point: Option<P3>,
     /// What a right click landed on, for the menu it opens.
     pub context: Option<Pick>,
+    /// A stroke of the paint brush that ended: the object and the points on it, each painted round.
+    pub painted: Option<(u32, Vec<P3>)>,
 }
 
 /// Moves `camera` with the pointer over `response`: a primary drag orbits (when `orbit`), a secondary or middle drag pans, the wheel
@@ -499,6 +530,9 @@ pub struct View {
     /// The gizmo as last drawn, for a test to find its handles.
     pub gizmo: Option<Gizmo>,
     pub tool: Tool,
+    pub brush: Brush,
+    /// A stroke of the brush under way: the object it started on, and the points on it so far.
+    stroke: Option<(u32, Vec<P3>)>,
     /// Points measured, drawn joined over the picture.
     pub marks: Vec<P3>,
     /// The corners of a cut's plane, drawn translucent over the picture while the window shows the Cut tools; set each frame.
@@ -597,6 +631,34 @@ impl View {
         {
             self.moving = Some(Moving { ids: selected.to_vec(), handle, start, at, change: Change::Move([0.0; 3]) });
         }
+        // The paint brush: a drag that starts on an object paints along it, as one stroke, and one that starts off it turns the view.
+        if !keyed && self.tool == Tool::Paint {
+            let (_, ppp) = picture_size(ui, rect);
+            let pixel = |p: Pos2| (((p.x - rect.min.x) * ppp).max(0.0) as usize, ((p.y - rect.min.y) * ppp).max(0.0) as usize);
+            if response.drag_started_by(PointerButton::Primary)
+                && let Some(start) = press
+                && let (x, y) = pixel(start)
+                && let (Some(id), _, Some(point)) = self.seen(x, y)
+            {
+                self.stroke = Some((id, vec![point]));
+            }
+            let under = response.interact_pointer_pos().map(pixel).map(|(x, y)| self.seen(x, y));
+            let gap = self.brush.radius / 2.0;
+            if let Some((id, points)) = &mut self.stroke {
+                if let Some((Some(seen), _, Some(point))) = under
+                    && seen == *id
+                    && points.len() < MAX_STROKE
+                    && points.last().is_none_or(|&last| dot(sub(point, last), sub(point, last)).sqrt() > gap)
+                {
+                    points.push(point);
+                }
+                if response.drag_stopped() || !response.dragged() {
+                    shown.painted = self.stroke.take();
+                }
+            }
+        } else {
+            self.stroke = None;
+        }
         if let Some(m) = &mut self.moving {
             if let Some(now) = response.interact_pointer_pos() {
                 let free = ui.input(|i| i.modifiers.shift);
@@ -607,7 +669,7 @@ impl View {
                 self.moving = None;
             }
         } else if !keyed {
-            steer(&mut self.camera, &response, ui, true);
+            steer(&mut self.camera, &response, ui, self.stroke.is_none());
         }
         if self.moving.is_some() {
             steer(&mut self.camera, &response, ui, false);
@@ -715,6 +777,18 @@ impl View {
         if let [a, b] = marks[..] {
             painter.line_segment([a, b], Stroke::new(2.0, Color32::from_rgb(255, 230, 90)));
         }
+        // The brush's stroke so far, until it ends and the paint shows on the faces.
+        if let Some((_, points)) = &self.stroke {
+            let c = match self.brush.kind {
+                Paint::Seam => lamina_core::render::PAINT[0],
+                Paint::Support => lamina_core::render::PAINT[1],
+                Paint::Block => lamina_core::render::PAINT[2],
+                Paint::None => [235, 235, 235, 255],
+            };
+            for q in points.iter().filter_map(|&m| self.camera.project(m, f64::from(rect.width()), f64::from(rect.height()))) {
+                painter.circle_filled(pos2(rect.min.x + q[0] as f32, rect.min.y + q[1] as f32), 3.0, Color32::from_rgb(c[0], c[1], c[2]));
+            }
+        }
         if let Some(m) = &self.modal
             && let Some(p) = ui.input(|i| i.pointer.hover_pos())
         {
@@ -732,6 +806,7 @@ impl View {
                 Tool::Move => shown.pick = Some(id.map_or(Pick::Nothing, Pick::Object)),
                 Tool::LayFlat => shown.face = face,
                 Tool::Measure => shown.point = point,
+                Tool::Paint => shown.painted = id.zip(point).map(|(id, p)| (id, vec![p])),
             }
         }
         if !keyed

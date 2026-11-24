@@ -24,7 +24,7 @@ use std::sync::Arc;
 
 use egui::{Color32, Key, Panel, RichText, ScrollArea, Ui};
 use lamina_assistant::net::Net;
-use lamina_core::{Mesh, Scene, Session};
+use lamina_core::{Scene, Session};
 use lamina_i18n::ui_msg;
 use lamina_slicer::presets::{self, FILAMENT_FIELDS, FILAMENTS, PRINTER_FIELDS, PRINTERS, PROCESS_FIELDS, PROCESSES};
 use lamina_slicer::profile::Profile;
@@ -643,20 +643,14 @@ impl App {
     /// Slices the plate with the settings shown, on a thread, and opens the preview when it is done.
     pub fn slice(&mut self) {
         let all: Vec<&lamina_core::Object> = self.session.scene.objects.iter().collect();
-        let (parts, modifiers) = lamina_slicer::commands::split(&all);
-        let objects: Vec<(u32, Mesh)> = parts.iter().map(|o| (o.id, o.world())).collect();
-        let own = match lamina_slicer::commands::own(&parts, &self.profile) {
-            Ok(own) => own,
-            Err(e) => return (self.failed, self.status) = (true, e),
-        };
-        let ranges = match lamina_slicer::commands::range_profiles(&parts, &own, &self.profile) {
-            Ok(r) => r,
+        let job = match lamina_slicer::commands::Job::of(&all, &self.profile) {
+            Ok(job) => job,
             Err(e) => return (self.failed, self.status) = (true, e),
         };
         let profile = self.profile.clone();
         let scene = Arc::as_ptr(&self.session.scene) as usize;
         let work = move |_: &mut Session| {
-            let out = lamina_slicer::print::gcode_ranged(&objects, &own, &ranges, &modifiers, &profile)?;
+            let out = job.gcode(&profile)?;
             let layers = preview::parse(&out.gcode);
             let minutes = (out.seconds / 60.0).round() as u64;
             let summary = tf(
@@ -958,6 +952,8 @@ impl App {
                     .on_hover_text(t("Click a face to turn it down onto the plate (L)"));
                 ui.selectable_value(&mut self.view.tool, Tool::Measure, t("Measure"))
                     .on_hover_text(t("Click two points to measure between them (M)"));
+                ui.selectable_value(&mut self.view.tool, Tool::Paint, t("Paint"))
+                    .on_hover_text(t("Paint where seams go and where supports must or must not go: click or drag over an object (P)"));
                 if self.view.tool != before {
                     self.view.marks.clear();
                 }
@@ -1833,9 +1829,46 @@ impl App {
         });
     }
 
+    /// The brush's settings, over the 3D view while the paint tool is in hand.
+    fn brush_ui(&mut self, ui: &mut Ui) {
+        use lamina_core::Paint;
+        ui.horizontal(|ui| {
+            let b = &mut self.view.brush;
+            ui.label(t("Paint:"));
+            ui.selectable_value(&mut b.kind, Paint::Seam, t("Seam")).on_hover_text(t("Each wall's seam starts on the painted faces"));
+            ui.selectable_value(&mut b.kind, Paint::Support, t("Support"))
+                .on_hover_text(t("Painted faces looking down are held up, even with supports off"));
+            ui.selectable_value(&mut b.kind, Paint::Block, t("Block")).on_hover_text(t("No support under the painted faces"));
+            ui.selectable_value(&mut b.kind, Paint::None, t("Erase")).on_hover_text(t("Rub paint out"));
+            ui.separator();
+            ui.label(t("Brush"));
+            ui.add(crate::lang::number(&mut b.radius).speed(0.1).range(0.2..=50.0).suffix(" mm"));
+            ui.separator();
+            let painted: Vec<u32> =
+                self.selected.iter().copied().filter(|&id| self.session.scene.get(id).is_ok_and(|o| o.paint.is_some())).collect();
+            if ui
+                .add_enabled(!painted.is_empty(), egui::Button::new(t("Clear the picked objects' paint")))
+                .on_hover_text(t("Take all paint off the picked objects"))
+                .clicked()
+            {
+                let commands = painted.iter().map(|&id| ("paint", json!({ "id": id, "kind": "none" }))).collect();
+                self.run_all("paint", commands);
+            }
+        });
+    }
+
     fn prepare(&mut self, ui: &mut Ui) {
+        if self.view.tool == view3d::Tool::Paint {
+            self.brush_ui(ui);
+        }
         let scene = Arc::clone(&self.session.scene);
         let shown = self.view.show(ui, &scene, &self.selected, self.profile.bed);
+        if let Some((id, points)) = &shown.painted {
+            // A stroke is one step to undo: each point painted round, in one transaction.
+            let (kind, radius) = (self.view.brush.command_kind(), self.view.brush.radius);
+            let commands = points.iter().map(|p| ("paint", json!({ "id": id, "kind": kind, "at": p, "radius": radius }))).collect();
+            self.run_all("paint", commands);
+        }
         if let Some(note) = self.view.card.note.take() {
             (self.failed, self.status) = (true, note);
         }
@@ -1926,6 +1959,7 @@ mod tests {
     use super::*;
     use egui_kittest::Harness;
     use egui_kittest::kittest::Queryable;
+    use lamina_core::Mesh;
 
     fn window() -> Harness<'static, App> {
         let app = App::new(session(), Arc::new(lamina_assistant::testing::Fake::default()));
@@ -3103,6 +3137,58 @@ fill_angle = 45
         h.run();
         assert!(h.state().status.contains("Laid flat"), "{}", h.state().status);
         assert!(h.state().session.can_undo());
+    }
+
+    #[test]
+    fn the_paint_tool_paints_where_it_is_clicked_and_dragged_and_each_stroke_is_one_undo() {
+        use lamina_core::Paint;
+        let mut h = window();
+        press(&mut h, "Add box");
+        press(&mut h, "Paint");
+        assert_eq!(h.state().view.tool, view3d::Tool::Paint);
+        // Looking at the box's front face (y = -10) square on, its middle in the middle of the view.
+        h.state_mut().view.camera = view3d::Camera { target: [0.0, 0.0, 10.0], azimuth: -90.0, elevation: 0.0, distance: 200.0 };
+        h.run();
+        h.run();
+        let rect = h.state().view.rect.unwrap();
+        let tags = |h: &Harness<App>| h.state().session.scene.get(1).unwrap().paint.as_deref().cloned();
+        let click = |h: &mut Harness<App>, at: egui::Pos2| {
+            h.hover_at(at);
+            h.run();
+            for pressed in [true, false] {
+                let (button, modifiers) = (egui::PointerButton::Primary, egui::Modifiers::NONE);
+                h.event(egui::Event::PointerButton { pos: at, button, pressed, modifiers });
+                h.run();
+            }
+        };
+        // A click paints the seam on the front face's two triangles, and nowhere else.
+        click(&mut h, rect.center());
+        let seam = tags(&h).expect("painted");
+        assert_eq!(seam.iter().filter(|&&t| t == Paint::Seam as u8).count(), 2, "{seam:?}");
+        let front: Vec<usize> = (0..seam.len()).filter(|&i| seam[i] != 0).collect();
+        let world = h.state().session.scene.get(1).unwrap().world();
+        assert!(front.iter().all(|&i| world.tri(i).unwrap().iter().all(|q| (q[1] + 10.0).abs() < 1e-6)));
+        // A drag across the face with the support brush: the same faces, now support, in one step.
+        let steps = h.state().session.history().0.len();
+        press(&mut h, "Erase");
+        assert_eq!(h.state().view.brush.kind, Paint::None);
+        h.state_mut().view.brush.kind = Paint::Support;
+        let camera = h.state().view.camera;
+        drag(&mut h, rect.center() - egui::vec2(20.0, 0.0), rect.center() + egui::vec2(20.0, 0.0));
+        let support = tags(&h).unwrap();
+        assert!(front.iter().all(|&i| support[i] == Paint::Support as u8), "{support:?}");
+        assert_eq!(h.state().session.history().0.len(), steps + 1, "one stroke, one step");
+        assert_eq!(h.state().view.camera, camera, "a stroke on the object does not turn the view");
+        h.state_mut().run("undo", json!({}));
+        assert_eq!(tags(&h).unwrap(), seam);
+        // A drag that starts off the object turns the view and paints nothing.
+        drag(&mut h, rect.left_top() + egui::vec2(10.0, 10.0), rect.left_top() + egui::vec2(60.0, 10.0));
+        assert_ne!(h.state().view.camera, camera);
+        assert_eq!(tags(&h).unwrap(), seam);
+        // Clearing the picked object's paint takes it all off.
+        h.state_mut().selected = vec![1];
+        press(&mut h, "Clear the picked objects' paint");
+        assert!(tags(&h).is_none());
     }
 
     /// A window taller than the graphics card's largest texture (2048 pixels in the test harness) draws the 3D view smaller and

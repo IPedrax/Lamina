@@ -130,21 +130,31 @@ pub fn gcode_each(objects: &[(u32, Mesh)], own: &[Option<Profile>], p: &Profile)
 /// The same, with the plate's modifiers where they stand: support enforcers and blockers, which print nothing and say where the
 /// parts' supports go.
 pub fn gcode_with(objects: &[(u32, Mesh)], own: &[Option<Profile>], modifiers: &[(Modifier, Mesh)], p: &Profile) -> Result<Output, String> {
-    gcode_ranged(objects, own, &[], modifiers, p)
+    gcode_plate(&Plate { objects, own, modifiers, ..Plate::default() }, p)
 }
 
 /// Each object's height ranges: `(from, to, profile)`.
 pub type RangeProfiles = Vec<Vec<(f64, f64, Profile)>>;
 
-/// The same, each object with its settings by height: `ranges[i]` is object i's `(from, to, profile)`, a layer whose middle is
-/// from `from` up to `to` printing with `profile` (made from the object's own by `commands::range_profiles`).
-pub fn gcode_ranged<'a>(
-    objects: &[(u32, Mesh)],
-    own: &'a [Option<Profile>],
-    ranges: &'a [Vec<(f64, f64, Profile)>],
-    modifiers: &[(Modifier, Mesh)],
-    p: &'a Profile,
-) -> Result<Output, String> {
+/// Everything on the plate the slicer reads, each list in the order of `objects` (a shorter list leaves the rest unset).
+#[derive(Clone, Copy, Default)]
+pub struct Plate<'a> {
+    /// Each object's id and its mesh where it stands.
+    pub objects: &'a [(u32, Mesh)],
+    /// Each object's own profile, where it has one.
+    pub own: &'a [Option<Profile>],
+    /// Each object's settings by height: `(from, to, profile)`, a layer whose middle is from `from` up to `to` printing with
+    /// `profile` (made from the object's own by `commands::range_profiles`).
+    pub ranges: &'a [Vec<(f64, f64, Profile)>],
+    /// Each object's paint, one `lamina_core::Paint` tag a triangle of its mesh (ignored when the lengths differ).
+    pub paint: &'a [Option<std::sync::Arc<Vec<u8>>>],
+    /// The support enforcers and blockers where they stand.
+    pub modifiers: &'a [(Modifier, Mesh)],
+}
+
+/// The same, with all the plate holds: settings by height, paint and modifiers.
+pub fn gcode_plate<'a>(plate: &Plate<'a>, p: &'a Profile) -> Result<Output, String> {
+    let Plate { objects, own, ranges, paint, modifiers } = *plate;
     for r in ranges.iter().flatten() {
         r.2.check()?;
     }
@@ -230,6 +240,30 @@ pub fn gcode_ranged<'a>(
             into[k] = geom::union(&into[k], &geom::region(&l.loops));
         }
     }
+    // Faces painted for supports, or against them, do as an enforcer or a blocker does where their shadow falls; faces painted for
+    // the seam give each layer's seam points. A paint whose length is not the mesh's is ignored.
+    let tags_of = |i: usize| {
+        let tags = paint.get(i).and_then(Option::as_deref)?;
+        (tags.len() == objects.get(i)?.1.triangles.len()).then_some(tags.as_slice())
+    };
+    for (i, layers) in sliced.iter().enumerate() {
+        let (Some(tags), Some((_, m))) = (tags_of(i), objects.get(i)) else { continue };
+        for (kind, into) in [(lamina_core::Paint::Support, &mut volumes.enforce), (lamina_core::Paint::Block, &mut volumes.block)] {
+            for (k, r) in crate::paint::shadows(m, tags, kind, layers, w / 2.0).into_iter().enumerate().take(count) {
+                if !geom::is_empty(&r) {
+                    into[k] = geom::union(&into[k], &r);
+                }
+            }
+        }
+    }
+    let seam_points: Vec<Vec<Vec<P2>>> = sliced
+        .iter()
+        .enumerate()
+        .map(|(i, layers)| match (tags_of(i), objects.get(i)) {
+            (Some(tags), Some((_, m))) => crate::paint::seams(m, tags, layers),
+            _ => Vec::new(),
+        })
+        .collect();
     let supports = plate_supports(&sliced, &regions, &profile_of, p.sequential, &volumes);
     // What each object prints on each layer, its supports included: what a purge tower may not stand in (only a printer with
     // several extruders changes tools and has one).
@@ -304,6 +338,7 @@ pub fn gcode_ranged<'a>(
         planner: crate::time::Planner::new(p.max_acceleration, p.junction_deviation),
         seams: Vec::new(),
         below: Vec::new(),
+        painted: Vec::new(),
         feature: None,
         by_feature: std::collections::BTreeMap::new(),
         fan: 0.0,
@@ -508,7 +543,10 @@ pub fn gcode_ranged<'a>(
                 g.line(pressure_advance(p.firmware, lp.pressure_advance));
                 g.pa = lp.pressure_advance;
             }
+            // Painted seams: each wall loop near one starts there, whatever the seam rule.
+            g.painted = seam_points.get(i).and_then(|l| l.get(k)).cloned().unwrap_or_default();
             g.strokes(std::mem::take(strokes), flow(*height, w, p.filament_diameter));
+            g.painted.clear();
             if klipper {
                 g.line(format!("EXCLUDE_OBJECT_END NAME={}", names[i]));
             }
@@ -1391,6 +1429,8 @@ struct Writer<'a> {
     /// Where this layer's loops started, and the layer below's, for aligned seams.
     seams: Vec<P2>,
     below: Vec<P2>,
+    /// Where seam paint crosses the layer of the object being printed: a wall loop near one of these starts there.
+    painted: Vec<P2>,
     /// The feature last named with `;TYPE:`, named again after each layer change.
     feature: Option<Feature>,
     /// The fan the layer asks for, and the fan as last set (a bridge turns it up).
@@ -1695,7 +1735,13 @@ impl Writer<'_> {
                 break;
             };
             let mut s = loops.swap_remove(i);
-            if let Some(start) = seam(&s.pts, self.p.seam, here, &self.below) {
+            // A wall near painted seam starts at the paint: the outer wall is half a line in from the surface, the last inner one a
+            // line for each wall further.
+            let reach = (self.p.perimeters as f64 + 1.0) * self.p.line_width();
+            let wall = matches!(s.kind, Feature::OuterWall | Feature::InnerWall);
+            if wall && crate::paint::start_near(&mut s.pts, &self.painted, reach) {
+                self.seams.push(s.pts[0]);
+            } else if let Some(start) = seam(&s.pts, self.p.seam, here, &self.below) {
                 s.pts.rotate_left(start);
                 self.seams.push(s.pts[0]);
             }
@@ -2083,6 +2129,61 @@ mod tests {
         // An enforcer under nothing over air (a box beside the tee) adds nothing.
         let beside = Mesh::cuboid([5.0, 5.0, 5.0]).transformed(&lamina_core::Transform::translate([30.0, 0.0, 0.0]));
         assert!(!gcode_with(&tee, &[], &[(Modifier::SupportEnforcer, beside)], &off).unwrap().features.contains_key("support"));
+    }
+
+    #[test]
+    fn painted_faces_say_where_the_seams_start_and_where_supports_go() {
+        use std::sync::Arc;
+        let tags = |m: &Mesh, kind: u8, pick: &dyn Fn([lamina_core::P3; 3]) -> bool| -> Option<Arc<Vec<u8>>> {
+            Some(Arc::new((0..m.triangles.len()).map(|i| if pick(m.tri(i).unwrap()) { kind } else { 0 }).collect()))
+        };
+        // Seams: a tower 8 mm round with its side painted round +x. The rule says the rear (+y); the paint wins on every layer, and
+        // the inner wall starts there too.
+        let tower = Mesh::cylinder(8.0, 6.0, 48);
+        let at_x = tags(&tower, 1, &|t| t.iter().all(|q| q[0] > 7.0 && q[1].abs() < 1.2));
+        let p = Profile { seam: Seam::Rear, skirt_loops: 0, infill_density: 0.0, top_layers: 0, bottom_layers: 0, ..Profile::default() };
+        let objects = vec![(1, tower.clone())];
+        let painted = gcode_plate(&Plate { objects: &objects, paint: std::slice::from_ref(&at_x), ..Plate::default() }, &p).unwrap();
+        let layers = painted.layers;
+        for k in 0..layers {
+            for kind in ["outer-wall", "inner-wall"] {
+                // A loop ends where it starts (its first point is missing from the run when no travel led to it).
+                let runs = layer_runs(&painted.gcode, k, kind, &p);
+                let start = runs.first().and_then(|r| r.last()).copied().unwrap_or_else(|| panic!("layer {k}: no {kind}"));
+                assert!(start[0] > 6.0 && start[1].abs() < 0.6, "layer {k}'s {kind} starts at {start:?}");
+            }
+        }
+        let plain = gcode(&objects, &p).unwrap();
+        let start = *layer_runs(&plain.gcode, 3, "outer-wall", &p)[0].last().unwrap();
+        assert!(start[1] > 7.0, "unpainted, the rear: {start:?}");
+        // Paint of the wrong length is ignored.
+        let wrong = Some(Arc::new(vec![1u8; 3]));
+        let ignored = gcode_plate(&Plate { objects: &objects, paint: std::slice::from_ref(&wrong), ..Plate::default() }, &p).unwrap();
+        assert_eq!(ignored.gcode, plain.gcode);
+
+        // Supports: a tee whose arms are boxes of their own, so the right arm's underside can be painted alone.
+        let pillar = Mesh::cuboid([6.0, 6.0, 6.0]);
+        let arm = |x: f64| Mesh::cuboid([7.0, 6.0, 2.0]).transformed(&lamina_core::Transform::translate([x, 0.0, 4.0]));
+        let tee = Mesh::merged([&pillar, &arm(-6.5), &arm(6.5)]);
+        let under_right = |kind: u8| tags(&tee, kind, &|t| t.iter().all(|q| (q[2] - 4.0).abs() < 1e-9 && q[0] >= 3.0 - 1e-9));
+        let side = |g: &str, p: &Profile, sign: f64| -> usize {
+            (0..30).flat_map(|k| layer_runs(g, k, "support", p)).flatten().filter(|q| q[0] * sign > 3.5).count()
+        };
+        let objects = vec![(1, tee.clone())];
+        // Supports off: painted support holds the right arm up, and the left gets none.
+        let off = Profile { skirt_loops: 0, ..Profile::default() };
+        assert!(!gcode(&objects, &off).unwrap().features.contains_key("support"));
+        let wanted = under_right(2);
+        let held = gcode_plate(&Plate { objects: &objects, paint: std::slice::from_ref(&wanted), ..Plate::default() }, &off).unwrap();
+        assert!(side(&held.gcode, &off, 1.0) > 0 && side(&held.gcode, &off, -1.0) == 0);
+        // Supports everywhere: painted block takes the right arm's away, and the left keeps its own.
+        let on = Profile { support: support::Support::Everywhere, skirt_loops: 0, ..Profile::default() };
+        let all = gcode(&objects, &on).unwrap();
+        assert!(side(&all.gcode, &on, 1.0) > 0 && side(&all.gcode, &on, -1.0) > 0);
+        let unwanted = under_right(3);
+        let blocked = gcode_plate(&Plate { objects: &objects, paint: std::slice::from_ref(&unwanted), ..Plate::default() }, &on).unwrap();
+        assert_eq!(side(&blocked.gcode, &on, 1.0), 0, "painted block takes the right arm's support away");
+        assert!(side(&blocked.gcode, &on, -1.0) > 0);
     }
 
     #[test]

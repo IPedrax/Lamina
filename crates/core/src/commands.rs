@@ -112,6 +112,13 @@ pub static ALL: &[Command] = &[
     cmd("drop_to_bed", "{id} lowers or raises an object so its lowest point touches the plate", drop_to_bed, true, Files::None),
     cmd("delete", "{id} removes an object", delete, true, Files::None),
     cmd(
+        "paint",
+        "{id, kind:\"seam\"|\"support\"|\"block\"|\"none\", at?:[x,y,z], radius? (mm, default 3)} paints the object's faces within `radius` of the point `at` on its surface (where the window's brush is clicked): \"seam\" puts each wall's seam there, \"support\" holds those faces up even with supports off, \"block\" keeps supports off them, \"none\" rubs paint out. Without `at`, \"none\" clears all its paint. Repair, simplify and edit drop the paint. Returns {painted} (faces now that kind)",
+        paint,
+        true,
+        Files::None,
+    ),
+    cmd(
         "set_modifier",
         "{id, kind: \"support_enforcer\" | \"support_blocker\" | \"none\"} makes an object a modifier, which is not printed: the overhangs of any part inside a support enforcer get supports (even with supports off), and those inside a support blocker get none. Place a box over the overhang it is for. \"none\" makes it a part again. Arrange leaves modifiers where they are. Returns {}",
         set_modifier,
@@ -637,7 +644,7 @@ fn edit(s: &mut Session, p: &Value) -> Result<Value, String> {
     }
     let mesh = cook(s, &recipe)?;
     let o = s.scene_mut().get_mut(a.id)?;
-    (o.mesh, o.recipe) = (std::sync::Arc::new(mesh), Some(std::sync::Arc::new(recipe)));
+    (o.mesh, o.recipe, o.paint) = (std::sync::Arc::new(mesh), Some(std::sync::Arc::new(recipe)), None);
     // Where it stands stays; a part that grew or shrank is set back on the plate.
     settle(o)?;
     let world = o.world();
@@ -798,7 +805,9 @@ fn repair(s: &mut Session, p: &Value) -> Result<Value, String> {
     }
     // Only a change makes an undo step.
     if r.changed() {
-        s.scene_mut().get_mut(a.id)?.mesh = std::sync::Arc::new(mesh);
+        let o = s.scene_mut().get_mut(a.id)?;
+        // Its triangles are new: paint on the old ones does not carry over.
+        (o.mesh, o.paint) = (std::sync::Arc::new(mesh), None);
     }
     Ok(json!({"dropped": r.dropped, "flipped": r.flipped, "holes_filled": r.holes_filled, "watertight": r.closed}))
 }
@@ -827,7 +836,8 @@ fn simplify(s: &mut Session, p: &Value) -> Result<Value, String> {
     }
     let out = crate::simplify::simplify(&mesh, target)?;
     let (triangles, watertight) = (out.triangles.len(), out.is_watertight());
-    s.scene_mut().get_mut(a.id)?.mesh = std::sync::Arc::new(out);
+    let o = s.scene_mut().get_mut(a.id)?;
+    (o.mesh, o.paint) = (std::sync::Arc::new(out), None);
     Ok(json!({"before": before, "triangles": triangles, "watertight": watertight}))
 }
 
@@ -910,8 +920,13 @@ fn duplicate(s: &mut Session, p: &Value) -> Result<Value, String> {
     let o = s.scene.get(a.id)?.clone();
     let mut ids = Vec::with_capacity(count as usize);
     for _ in 0..count {
-        // The mesh is an `Arc`: a copy shares it and costs nothing.
-        ids.push(s.scene_mut().add_shared(&o.name, std::sync::Arc::clone(&o.mesh), o.xf)?);
+        // The mesh is an `Arc`: a copy shares it and costs nothing. It carries what was set on the first: its recipe, settings,
+        // modifier kind, settings by height and paint.
+        let id = s.scene_mut().add_shared(&o.name, std::sync::Arc::clone(&o.mesh), o.xf)?;
+        let c = s.scene_mut().get_mut(id)?;
+        (c.recipe, c.settings, c.modifier, c.ranges, c.paint) =
+            (o.recipe.clone(), o.settings.clone(), o.modifier, o.ranges.clone(), o.paint.clone());
+        ids.push(id);
     }
     let fits = if a.arrange.unwrap_or(true) {
         let all: Vec<u32> = s.scene.objects.iter().map(|o| o.id).collect();
@@ -978,6 +993,52 @@ fn delete(s: &mut Session, p: &Value) -> Result<Value, String> {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct PaintArgs {
+    id: u32,
+    kind: String,
+    at: Option<P3>,
+    radius: Option<f64>,
+}
+
+fn paint(s: &mut Session, p: &Value) -> Result<Value, String> {
+    use crate::Paint;
+    let a: PaintArgs = parse(p)?;
+    let tag = match a.kind.as_str() {
+        "seam" => Paint::Seam,
+        "support" => Paint::Support,
+        "block" => Paint::Block,
+        "none" => Paint::None,
+        other => return Err(format!("`kind` is seam, support, block or none, not `{other}`")),
+    };
+    let radius = positive("radius", a.radius.unwrap_or(3.0), 1000.0)?;
+    let o = s.scene_mut().get_mut(a.id)?;
+    let n = o.mesh.triangles.len();
+    let mut tags: Vec<u8> = o.paint.as_deref().cloned().filter(|t| t.len() == n).unwrap_or_else(|| vec![0; n]);
+    match a.at {
+        None if tag == Paint::None => tags.iter_mut().for_each(|t| *t = 0),
+        None => return Err("`at` is needed to paint: the point on the surface to paint round".into()),
+        Some(at) => {
+            let at = finite3("at", at)?;
+            if at.iter().any(|c| c.abs() > crate::mesh::MAX_COORD) {
+                return Err(format!("`at` is a point on the object, within {} mm of the plate's middle", crate::mesh::MAX_COORD));
+            }
+            // A face is painted when any part of it is within the radius of the point: small faces near it and large faces it lands
+            // on alike.
+            let world = o.world();
+            for (i, t) in tags.iter_mut().enumerate() {
+                if world.tri(i).is_some_and(|c| crate::mesh::distance_to_triangle(at, c) <= radius) {
+                    *t = tag as u8;
+                }
+            }
+        }
+    }
+    let painted = tags.iter().filter(|&&t| t == tag as u8 && tag != Paint::None).count();
+    o.paint = if tags.iter().all(|&t| t == 0) { None } else { Some(std::sync::Arc::new(tags)) };
+    Ok(json!({ "painted": painted }))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct SetModifier {
     id: u32,
     kind: String,
@@ -1015,10 +1076,18 @@ fn info(s: &mut Session, p: &Value) -> Result<Value, String> {
                 "settings": o.settings.as_deref().cloned().unwrap_or(Value::Null),
                 "modifier": o.modifier.map_or(Value::Null, |m| serde_json::to_value(m).unwrap_or(Value::Null)),
                 "ranges": o.ranges.as_deref().cloned().unwrap_or(Value::Null),
+                "painted": painted(o),
             })
         })
         .collect();
     Ok(json!({"objects": objects}))
+}
+
+/// How many faces carry each kind of paint, or null when none do.
+fn painted(o: &crate::Object) -> Value {
+    let Some(tags) = o.paint.as_deref() else { return Value::Null };
+    let count = |t: u8| tags.iter().filter(|&&x| x == t).count();
+    json!({"seam": count(1), "support": count(2), "block": count(3)})
 }
 
 #[derive(Deserialize)]
@@ -1554,6 +1623,82 @@ mod tests {
         run(&mut s, "undo", json!({})).unwrap();
         assert_eq!(s.scene.objects.len(), 1, "one undo takes the copies back");
         assert!(run(&mut s, "duplicate", json!({"id": 1, "count": 0})).is_err());
+    }
+
+    #[test]
+    fn paint_marks_the_faces_round_a_point_and_comes_off_again() {
+        let mut s = Session::new();
+        run(&mut s, "add_primitive", json!({"kind": "box", "size": [20, 20, 10]})).unwrap();
+        let faces = s.scene.get(1).unwrap().mesh.triangles.len();
+        // The box stands on the plate with its middle at the origin: (10, 0, 5) is the middle of its +x side.
+        let r = run(&mut s, "paint", json!({"id": 1, "kind": "seam", "at": [10, 0, 5], "radius": 2})).unwrap();
+        let n = r["painted"].as_u64().unwrap() as usize;
+        assert!((1..=2).contains(&n), "only the side's faces under the brush: {n}");
+        let o = s.scene.get(1).unwrap();
+        let tags = o.paint.as_deref().unwrap();
+        assert_eq!(tags.len(), faces);
+        let world = o.world();
+        for (i, &t) in tags.iter().enumerate() {
+            let c = world.tri(i).unwrap();
+            let on_the_side = c.iter().all(|q| (q[0] - 10.0).abs() < 1e-9);
+            assert!(t == 0 || on_the_side, "face {i} painted off the +x side");
+        }
+        assert_eq!(run(&mut s, "info", json!({})).unwrap()["objects"][0]["painted"]["seam"], n);
+        // A copy carries it; a project keeps it.
+        run(&mut s, "duplicate", json!({"id": 1, "arrange": false})).unwrap();
+        assert_eq!(s.scene.get(2).unwrap().paint, s.scene.get(1).unwrap().paint);
+        let dir = std::env::temp_dir().join(format!("lamina-paint-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("painted.lamina");
+        run(&mut s, "save", json!({"path": path.to_str().unwrap()})).unwrap();
+        let mut t = Session::new();
+        run(&mut t, "open", json!({"path": path.to_str().unwrap()})).unwrap();
+        assert_eq!(t.scene.get(1).unwrap().paint, s.scene.get(1).unwrap().paint);
+        std::fs::remove_dir_all(&dir).ok();
+        // "none" at the point rubs it out; with no point it clears it all, and nothing painted is no paint at all.
+        run(&mut s, "paint", json!({"id": 1, "kind": "support", "at": [0, 0, 0], "radius": 30})).unwrap();
+        assert!(s.scene.get(1).unwrap().paint.as_deref().unwrap().iter().all(|&t| t == 2), "a big brush paints every face");
+        run(&mut s, "paint", json!({"id": 1, "kind": "none", "at": [10, 0, 5], "radius": 2})).unwrap();
+        assert_eq!(s.scene.get(1).unwrap().paint.as_deref().unwrap().iter().filter(|&&t| t == 0).count(), n);
+        run(&mut s, "paint", json!({"id": 1, "kind": "none"})).unwrap();
+        assert!(s.scene.get(1).unwrap().paint.is_none());
+        run(&mut s, "undo", json!({})).unwrap();
+        assert!(s.scene.get(1).unwrap().paint.is_some(), "each stroke is one undo step");
+        // Simplify makes new triangles: the paint goes with the old ones.
+        let ball = run(&mut s, "add_primitive", json!({"kind": "sphere", "radius": 10})).unwrap()["id"].as_u64().unwrap() as u32;
+        run(&mut s, "paint", json!({"id": ball, "kind": "seam", "at": [0, 0, 0], "radius": 100})).unwrap();
+        run(&mut s, "simplify", json!({"id": ball, "ratio": 0.5})).unwrap();
+        assert!(s.scene.get(ball).unwrap().paint.is_none());
+        for bad in [
+            json!({"id": 1, "kind": "glitter", "at": [0, 0, 0]}),
+            json!({"id": 1, "kind": "seam"}),
+            json!({"id": 1, "kind": "seam", "at": [0, 0, 0], "radius": 0}),
+            json!({"id": 1, "kind": "seam", "at": [0, 0, 1e300]}),
+            json!({"id": 1, "kind": "seam", "at": [0, 0, 0], "size": 3}),
+            json!({"id": 9, "kind": "seam", "at": [0, 0, 0]}),
+        ] {
+            assert!(run(&mut s, "paint", bad.clone()).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_project_with_paint_of_the_wrong_length_opens_without_it() {
+        let mut s = Session::new();
+        run(&mut s, "add_primitive", json!({"kind": "box", "size": [10, 10, 10]})).unwrap();
+        run(&mut s, "paint", json!({"id": 1, "kind": "block", "at": [0, 0, 0], "radius": 100})).unwrap();
+        let dir = std::env::temp_dir().join(format!("lamina-paint-bad-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("p.lamina");
+        run(&mut s, "save", json!({"path": path.to_str().unwrap()})).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        let mut v: Value = serde_json::from_str(&text).unwrap();
+        v["objects"][0]["paint"] = json!(crate::base64::encode(&[1, 2, 3]));
+        std::fs::write(&path, serde_json::to_string(&v).unwrap()).unwrap();
+        let mut t = Session::new();
+        let r = run(&mut t, "open", json!({"path": path.to_str().unwrap()})).unwrap();
+        assert!(t.scene.get(1).unwrap().paint.is_none());
+        assert!(r.to_string().contains("objects[0].paint"), "{r}");
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

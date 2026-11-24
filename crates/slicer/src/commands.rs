@@ -145,11 +145,41 @@ fn run(s: &Session, ids: Option<&[u32]>, settings: Settings) -> Result<print::Ou
         Some(ids) => ids.iter().map(|&id| s.scene.get(id)).collect::<Result<_, _>>()?,
         None => s.scene.objects.iter().collect(),
     };
-    let (parts, modifiers) = split(&chosen);
-    let objects: Vec<(u32, Mesh)> = parts.iter().map(|o| (o.id, o.world())).collect();
-    let own = own(&parts, &profile)?;
-    let ranges = range_profiles(&parts, &own, &profile)?;
-    print::gcode_ranged(&objects, &own, &ranges, &modifiers, &profile)
+    Job::of(&chosen, &profile)?.gcode(&profile)
+}
+
+/// What the slicer needs from the plate, gathered from its objects and owned, so a thread can take it: the parts where they stand
+/// with their own settings, settings by height and paint, and the modifiers.
+#[derive(Clone, Default)]
+pub struct Job {
+    pub objects: Vec<(u32, Mesh)>,
+    pub own: Vec<Option<Profile>>,
+    pub ranges: print::RangeProfiles,
+    pub paint: Vec<Option<std::sync::Arc<Vec<u8>>>>,
+    pub modifiers: Vec<(lamina_core::Modifier, Mesh)>,
+}
+
+impl Job {
+    /// The job for these objects with the plate's `profile` under each object's own settings.
+    pub fn of(objects: &[&lamina_core::Object], profile: &Profile) -> Result<Job, String> {
+        let (parts, modifiers) = split(objects);
+        let own = own(&parts, profile)?;
+        Ok(Job {
+            objects: parts.iter().map(|o| (o.id, o.world())).collect(),
+            ranges: range_profiles(&parts, &own, profile)?,
+            paint: parts.iter().map(|o| o.paint.clone()).collect(),
+            own,
+            modifiers,
+        })
+    }
+
+    pub fn plate(&self) -> print::Plate<'_> {
+        print::Plate { objects: &self.objects, own: &self.own, ranges: &self.ranges, paint: &self.paint, modifiers: &self.modifiers }
+    }
+
+    pub fn gcode(&self, profile: &Profile) -> Result<print::Output, String> {
+        print::gcode_plate(&self.plate(), profile)
+    }
 }
 
 /// The objects to print, and the modifiers (support enforcers and blockers) where they stand, which print nothing.
@@ -663,6 +693,43 @@ mod tests {
     /// The lines of layer `k` of the G-code.
     fn layer(g: &str, k: usize) -> String {
         g.split(&format!(";LAYER:{k}\n")).nth(1).unwrap_or("").split(";LAYER:").next().unwrap_or("").to_string()
+    }
+
+    #[test]
+    fn a_seam_painted_with_the_paint_command_moves_where_the_walls_start() {
+        let mut s = session();
+        s.execute("add_primitive", &json!({"kind": "cylinder", "radius": 10, "height": 4, "segments": 64})).unwrap();
+        // The wall's start on layer 5: where the head is when the first outer-wall line begins (the plate's middle is 0, 0).
+        let start = |g: &str| -> [f64; 2] {
+            let mut at = [f64::NAN; 2];
+            let mut wall = false;
+            for l in layer(g, 5).lines() {
+                if let Some(t) = l.strip_prefix(";TYPE:") {
+                    wall = t == "outer-wall";
+                    continue;
+                }
+                let word = |c: char| l.split(' ').find_map(|w| w.strip_prefix(c)?.parse::<f64>().ok());
+                if let (Some(x), Some(y)) = (word('X'), word('Y')) {
+                    if wall && word('E').is_some_and(|e| e > 0.0) {
+                        return at;
+                    }
+                    at = [x - 110.0, y - 110.0];
+                }
+            }
+            at
+        };
+        let profile = json!({"skirt_loops": 0, "seam": "rear", "perimeters": 1, "infill_density": 0});
+        let rear = start(&sliced(&mut s, profile.clone()));
+        assert!(rear[1] > 9.0, "the rear: {rear:?}");
+        // Painted down the front (-y), the wall starts there.
+        for z in [0.5, 1.5, 2.5, 3.5] {
+            s.execute("paint", &json!({"id": 1, "kind": "seam", "at": [0, -10, z], "radius": 1})).unwrap();
+        }
+        let front = start(&sliced(&mut s, profile.clone()));
+        assert!(front[1] < -9.0 && front[0].abs() < 1.0, "the paint: {front:?}");
+        // Rubbed out, it is back at the rear.
+        s.execute("paint", &json!({"id": 1, "kind": "none"})).unwrap();
+        assert_eq!(start(&sliced(&mut s, profile)), rear);
     }
 
     #[test]

@@ -472,6 +472,46 @@ impl Transform {
     }
 }
 
+/// The distance from `p` to the nearest point of the triangle `t`, its inside, edges or corners (the paint brush's test). The
+/// nearest point is found by which region round the triangle `p` falls in; a triangle with no area falls back to its corners.
+pub fn distance_to_triangle(p: P3, t: [P3; 3]) -> f64 {
+    let sub = |a: P3, b: P3| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    let along = |a: P3, d: P3, k: f64| [a[0] + d[0] * k, a[1] + d[1] * k, a[2] + d[2] * k];
+    let [a, b, c] = t;
+    let (ab, ac) = (sub(b, a), sub(c, a));
+    let nearest = (|| {
+        let (d1, d2) = (dot(ab, sub(p, a)), dot(ac, sub(p, a)));
+        if d1 <= 0.0 && d2 <= 0.0 {
+            return a;
+        }
+        let (d3, d4) = (dot(ab, sub(p, b)), dot(ac, sub(p, b)));
+        if d3 >= 0.0 && d4 <= d3 {
+            return b;
+        }
+        let vc = d1 * d4 - d3 * d2;
+        if vc <= 0.0 && d1 >= 0.0 && d3 <= 0.0 {
+            return along(a, ab, d1 / (d1 - d3));
+        }
+        let (d5, d6) = (dot(ab, sub(p, c)), dot(ac, sub(p, c)));
+        if d6 >= 0.0 && d5 <= d6 {
+            return c;
+        }
+        let vb = d5 * d2 - d1 * d6;
+        if vb <= 0.0 && d2 >= 0.0 && d6 <= 0.0 {
+            return along(a, ac, d2 / (d2 - d6));
+        }
+        let va = d3 * d6 - d5 * d4;
+        if va <= 0.0 && d4 - d3 >= 0.0 && d5 - d6 >= 0.0 {
+            return along(b, sub(c, b), (d4 - d3) / ((d4 - d3) + (d5 - d6)));
+        }
+        let sum = va + vb + vc;
+        along(along(a, ab, vb / sum), ac, vc / sum)
+    })();
+    let length = |d: P3| dot(d, d).sqrt();
+    let d = length(sub(p, nearest));
+    if d.is_finite() { d } else { [a, b, c].iter().map(|&q| length(sub(p, q))).fold(f64::INFINITY, f64::min) }
+}
+
 fn cross(a: P3, b: P3) -> P3 {
     [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
 }
@@ -483,6 +523,21 @@ fn dot(a: P3, b: P3) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_distance_to_a_triangle_is_to_its_inside_edge_or_corner() {
+        let t = [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [0.0, 10.0, 0.0]];
+        let near = |p: P3, d: f64| assert!((distance_to_triangle(p, t) - d).abs() < 1e-9, "{p:?}: {}", distance_to_triangle(p, t));
+        near([2.0, 2.0, 3.0], 3.0); // above the inside
+        near([-3.0, -4.0, 0.0], 5.0); // past the corner a
+        near([14.0, -3.0, 0.0], 5.0); // past the corner b
+        near([5.0, -2.0, 0.0], 2.0); // beside the edge ab
+        near([-2.0, 5.0, 0.0], 2.0); // beside the edge ac
+        near([6.0, 6.0, 0.0], 2.0_f64.sqrt()); // beside the long edge bc
+        // A triangle with no area is measured to its corners, and nothing comes out not a number.
+        let flat = [[1.0, 1.0, 1.0]; 3];
+        assert!((distance_to_triangle([1.0, 1.0, 4.0], flat) - 3.0).abs() < 1e-9);
+    }
 
     #[test]
     fn primitives_are_closed_and_enclose_their_volume() {

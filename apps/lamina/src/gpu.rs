@@ -44,6 +44,12 @@ const DEPTH_AT: u64 = 256;
 
 /// The scene's triangles as the card takes them: each object's world mesh, three vertices a triangle (none for a triangle with no
 /// area, which the processor leaves out too), and each object's run of vertices, in the scene's order.
+/// A face's paint (`lamina_core::Paint`, 0 to 3) in the top two bits of its index, which the shader takes off again: a mesh has
+/// fewer than 2^30 triangles (`MAX_TRIANGLES`).
+fn paint_bits(o: &lamina_core::Object, i: usize) -> u32 {
+    o.paint.as_deref().and_then(|tags| tags.get(i)).map_or(0, |&t| u32::from(t.min(3)) << 30)
+}
+
 pub fn pack(scene: &Scene) -> (Vec<u8>, Vec<Range<u32>>) {
     let mut out = Vec::new();
     let mut runs = Vec::with_capacity(scene.objects.len());
@@ -63,7 +69,7 @@ pub fn pack(scene: &Scene) -> (Vec<u8>, Vec<Range<u32>>) {
                 for c in p.into_iter().chain(n) {
                     out.extend_from_slice(&(c as f32).to_le_bytes());
                 }
-                out.extend_from_slice(&(i as u32).to_le_bytes());
+                out.extend_from_slice(&(i as u32 | paint_bits(o, i)).to_le_bytes());
             }
         }
         runs.push(start..(out.len() / STRIDE) as u32);
@@ -669,6 +675,27 @@ mod tests {
     }
 
     #[test]
+    fn a_painted_face_carries_its_paint_above_its_place_and_the_shader_colours_it_as_the_processor_does() {
+        let mut s = Scene::default();
+        let id = s.add("box", Mesh::cuboid([20.0, 10.0, 5.0])).unwrap();
+        let mut tags = vec![0u8; 12];
+        (tags[0], tags[5], tags[11]) = (1, 2, 3);
+        s.get_mut(id).unwrap().paint = Some(std::sync::Arc::new(tags.clone()));
+        let (bytes, _) = pack(&s);
+        for (v, vertex) in bytes.as_chunks::<STRIDE>().0.iter().enumerate() {
+            let tri = u32::from_le_bytes([vertex[24], vertex[25], vertex[26], vertex[27]]);
+            assert_eq!(((tri & 0x3fff_ffff) as usize, (tri >> 30) as u8), (v / 3, tags[v / 3]), "vertex {v}");
+        }
+        // The shader's three colours are `render::PAINT`, in order.
+        let shader = include_str!("gpu.wgsl");
+        let mut at = 0;
+        for c in render::PAINT {
+            let text = format!("vec3<f32>({}.0, {}.0, {}.0)", c[0], c[1], c[2]);
+            at += shader[at..].find(&text).unwrap_or_else(|| panic!("{text} after byte {at} of gpu.wgsl"));
+        }
+    }
+
+    #[test]
     fn the_globals_put_a_point_where_the_camera_projects_it_and_carry_the_edge_settings() {
         let camera = Camera { target: [5.0, -3.0, 12.0], azimuth: -50.0, elevation: 25.0, distance: 240.0 };
         let (w, h) = (640.0, 360.0);
@@ -791,7 +818,11 @@ mod tests {
     #[ignore = "needs a graphics card: cargo test -p lamina -- --ignored the_card_draws"]
     fn the_card_draws_what_the_processor_draws() {
         let Some(mut gpu) = headless() else { return eprintln!("no graphics card: nothing checked") };
-        let scene = Arc::new(plate());
+        // The first object painted: its faces unpainted, seam, support and block in turn.
+        let mut painted = plate();
+        let first = &mut painted.objects[0];
+        first.paint = Some(Arc::new((0..first.mesh.triangles.len()).map(|i| (i % 4) as u8).collect()));
+        let scene = Arc::new(painted);
         let ids: Vec<u32> = scene.objects.iter().map(|o| o.id).collect();
         let (w, h) = (800, 600);
         for (camera, selected, moved) in [

@@ -78,6 +78,11 @@ all, set the environment variable `LAMINA_NO_UPDATE_CHECK=1`: the menu items and
 - **Move** (G): drag the arrows to move along an axis, the square to slide on the plate, a ring to turn about its axis, the corner
   square to scale. Moves snap; hold Shift to move freely. The position and size fields under the object take typed numbers.
 - **Lay flat** (L): click a face to turn it down onto the plate. **Measure** (M): click two points.
+- **Paint** (P): click or drag over an object to paint its faces. **Seam** (violet) puts each wall's seam there; **Support**
+  (green) holds up the painted faces that look down, even with supports off; **Block** (red) keeps supports off them; **Erase**
+  rubs paint out. Brush sets how far round the pointer it reaches, and Clear the picked objects' paint takes it all off. A drag
+  that starts on the object paints along it as one undo step; one that starts off it turns the view. Paint is kept in the project
+  and goes with a copy; Repair, Simplify and editing the shape take it off, as their faces are new.
 - **G, R, S as in Blender**: with objects picked and the pointer over the 3D view, G moves them with the pointer, R turns them
   (about z) and S scales them; X, Y or Z keeps to that axis (press it again to free it), typed numbers give the exact amount (12.5
   mm, 90 degrees, 1.5 times), Ctrl snaps, and Enter or a click applies it as one undo step while Escape or a right click puts it

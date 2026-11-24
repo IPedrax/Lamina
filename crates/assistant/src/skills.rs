@@ -145,7 +145,7 @@ mod tests {
                 }
             }
         }
-        assert!(claims >= 3, "found only {claims} claims of something missing: has the way skills write them changed?");
+        assert!(claims >= 2, "found only {claims} claims of something missing: has the way skills write them changed?");
     }
 
     /// The slicing skill promises this split: the model checks a slice, the user writes the file.

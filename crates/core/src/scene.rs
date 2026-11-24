@@ -33,6 +33,28 @@ pub struct Object {
     pub modifier: Option<Modifier>,
     /// Settings by height (`set_height_range`): a list of `{from, to, profile}` the slicer reads, kept as it was given.
     pub ranges: Option<Arc<serde_json::Value>>,
+    /// Paint on its mesh's triangles (`paint`), one [`Paint`] tag each, as long as the mesh has triangles; none when unpainted.
+    pub paint: Option<Arc<Vec<u8>>>,
+}
+
+/// What a face is painted: where the seam goes, or where supports must or must not hold it up. The tag kept per triangle.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Paint {
+    None = 0,
+    Seam = 1,
+    Support = 2,
+    Block = 3,
+}
+
+impl Paint {
+    pub fn from_tag(tag: u8) -> Paint {
+        match tag {
+            1 => Paint::Seam,
+            2 => Paint::Support,
+            3 => Paint::Block,
+            _ => Paint::None,
+        }
+    }
 }
 
 impl Object {
@@ -78,6 +100,7 @@ impl Scene {
             settings: None,
             modifier: None,
             ranges: None,
+            paint: None,
         });
         Ok(self.next_id)
     }
@@ -100,6 +123,7 @@ impl Scene {
             settings: None,
             modifier: None,
             ranges: None,
+            paint: None,
         });
         Ok(self.next_id)
     }
@@ -127,6 +151,7 @@ impl Scene {
             settings: None,
             modifier: None,
             ranges: None,
+            paint: None,
         });
         Ok(self.next_id)
     }

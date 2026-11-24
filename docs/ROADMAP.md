@@ -307,6 +307,20 @@ Priorities:
   shaping are not made; input shaping stays the firmware's (Klipper's TEST_RESONANCES and SHAPER_CALIBRATE). Tested through G-code:
   the tower's nine temperatures in order, the retraction lengths, Klipper's pressure advance values, each flow block pushing more
   than the one before by its ratio; bad kinds, steps and values refused; one undo takes every block back. Not printed.
+- **4.29 Painted seams and supports.** `paint {id, kind, at?, radius?}` tags the faces within `radius` of a point on the surface
+  (one tag a triangle on the object, base64 in projects, shown by `info`, one undo step; a copy carries it; repair, simplify and
+  edit drop it, as their triangles are new; a project whose paint does not fit its mesh opens without it). `crates/slicer/src/paint.rs`
+  reads it on each layer: the shadow of the downward faces painted "support" or "block", between the middle of the layer below and
+  its own, joins the enforcers' and blockers' regions (4.24); where seam paint crosses a layer's cut gives one point a run of
+  paint, and each wall loop within reach of one starts there, whatever `seam` says. `print::Plate` and `commands::Job` now carry
+  everything the slicer reads from the plate, for the `slice` command and the window alike. In the window, the Paint tool (P):
+  Seam, Support, Block or Erase, a brush size, a click or a drag over an object (one stroke one undo step, a drag that starts off
+  the object turns the view), Clear the picked objects' paint; painted faces are drawn violet, green or red by the processor and
+  by the card (the paint in the top two bits of the face's index). Tested through G-code: every layer's outer and inner wall
+  start at the painted side of a tower whose rule says the rear, and back at the rear when rubbed out; painted support holds up
+  one arm of a tee with supports off, painted block takes one arm's support away with them on; paint of the wrong length is
+  ignored. Not done: painting by a smart fill (a whole flat face or an overhang angle at once) and the brush's circle shown on
+  the model before a click.
 - **5.1 Process presets.** A third kind in `presets.rs`, setting only the layers and the strength (`PROCESS_FIELDS`): 0.12 mm Fine,
   0.20 mm Standard, 0.28 mm Draft and Strong. `slice` and `slice_check` take `process` (after the printer and the filament, before
   `profile`); `slicer_presets` lists them; the window has a Process picker and Save process, kept in the settings file and the
@@ -500,10 +514,6 @@ and one Klipper printer, measure with calipers, fill in the tables, and fix what
 ## 3. Modelling
 
 ## 4. Slicer
-
-**4.29 Painted seams and supports (P2).** PrusaSlicer (since 2.3) and OrcaSlicer paint seams and supports on the model's faces. How:
-a per-triangle tag on the object (kept in projects), a brush in the 3D view over the picked faces, the seam choosing among painted
-points first and the support planner treating painted faces as enforcers or blockers (4.24).
 
 **4.30 Variable layer height by hand (P2).** PrusaSlicer's variable layer height takes adaptive layers as a start and lets the user
 add or remove detail by height and smooth it. Lamina has adaptive layers only. How: a layer-height curve kept with the plate, edited

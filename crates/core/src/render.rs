@@ -33,6 +33,17 @@ pub fn colour_of(o: &crate::Object, selected: &[u32]) -> Rgba {
     }
 }
 pub const SELECTED: Rgba = [245, 165, 60, 255];
+/// Paint on a face (`crate::Paint`): seam violet, support green, block red, drawn over the object's own colour. The graphics card's
+/// shader (`apps/lamina/src/gpu.wgsl`) holds the same three.
+pub const PAINT: [Rgba; 3] = [[175, 95, 235, 255], [70, 190, 90, 255], [225, 70, 70, 255]];
+
+/// The colour face `i` of `o` is drawn in: its paint's, or `base`.
+pub fn face_colour(o: &crate::Object, i: usize, base: Rgba) -> Rgba {
+    match o.paint.as_deref().and_then(|tags| tags.get(i)) {
+        Some(&tag @ 1..=3) => PAINT[tag as usize - 1],
+        _ => base,
+    }
+}
 /// The plane given to what is not a part's face (the plate): level, through the origin.
 const FLAT: [f32; 4] = [0.0, 0.0, 1.0, 0.0];
 /// How much an edge darkens the pixel it is drawn on: where a part's faces meet at a crease or a step, and round each part.
@@ -179,7 +190,7 @@ pub fn draw(scene: &Scene, selected: &[u32], camera: &Camera, bed: [f64; 2], siz
         for i in 0..world.triangles.len() {
             if let Some(t) = world.tri(i) {
                 r.tri = i as u32;
-                r.shaded(camera, t, base, o.id);
+                r.shaded(camera, t, face_colour(o, i, base), o.id);
             }
         }
     }

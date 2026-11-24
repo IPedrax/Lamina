@@ -56,7 +56,7 @@ presets live in the app's settings panel, not in these commands.
   for one object alone.
 - Seams: `seam` is where each wall loop starts and ends, which leaves a small mark: `"aligned"` (the default, one tidy line up the
   part), `"rear"` (at the back, out of sight), `"sharpest"` (hidden in an inside corner) or `"nearest"` (least travel, marks
-  scattered).
+  scattered). To put it in one place, `paint {id, kind: "seam", at: [x, y, z]}` at points up the side: each wall starts there.
 - Bridges: solid infill over air (a span between two supports) is printed straight across, at the angle whose lines rest on the
   layer below at both ends, with `bridge_speed` (25 mm/s), `bridge_flow` (1.0 of the normal flow) and `bridge_fan` (255). A span
   up to about 10 mm bridges; longer ones need support.

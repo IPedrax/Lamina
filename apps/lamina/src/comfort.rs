@@ -41,6 +41,7 @@ pub const SHORTCUTS: &[(&str, &str)] = &[
     ("G", ui_msg!("Move tool: pick and drag, turn with the rings, scale with the square")),
     ("L", ui_msg!("Lay flat tool: click a face to turn it down")),
     ("M", ui_msg!("Measure tool: click two points")),
+    ("P", ui_msg!("Paint tool: click or drag over an object to paint seams, supports or blocks")),
     ("R", ui_msg!("Away from the 3D view: turn the picked objects 90 degrees about z")),
     ("F", ui_msg!("Frame the picked objects, or everything")),
     ("A", ui_msg!("Arrange the plate")),
@@ -90,7 +91,7 @@ impl App {
         if ctx.input_mut(|i| i.consume_shortcut(&SELECT_ALL)) {
             self.selected = self.session.scene.objects.iter().map(|o| o.id).collect();
         }
-        for (key, tool) in [(Key::G, Tool::Move), (Key::L, Tool::LayFlat), (Key::M, Tool::Measure)] {
+        for (key, tool) in [(Key::G, Tool::Move), (Key::L, Tool::LayFlat), (Key::M, Tool::Measure), (Key::P, Tool::Paint)] {
             if plain(key) && self.view.tool != tool {
                 self.view.tool = tool;
                 self.view.marks.clear();
