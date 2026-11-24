@@ -12,6 +12,10 @@ bottom layers, infill, seam, speeds, supports, its extruder); the printer, the f
 {nozzle_temp: 230}}` gives the layers whose middle is between 4 and 6 mm their own walls, infill, speeds, seam, nozzle_temp,
 fan_speed, pressure_advance, retraction or flow_ratio (a temperature tower, denser infill where a load goes).
 
+Part of an object, by place: a box made `set_modifier {id, kind: "settings"}` and given `set_object_settings {id, profile:
+{infill_density: 0.6}}` (only `infill_density`, `infill_pattern`, `infill_speed`) fills the sparse infill of every part inside
+it so, and is not printed: denser round a screw hole or a clip, `0` for a hollow. The walls and skins stay the part's.
+
 ## Two colours or materials
 
 A part in two colours is two objects placed together, each with its `extruder` (from 1) on a printer with `extruders` (up to 8):

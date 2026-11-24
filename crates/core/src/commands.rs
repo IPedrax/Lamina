@@ -120,7 +120,7 @@ pub static ALL: &[Command] = &[
     ),
     cmd(
         "set_modifier",
-        "{id, kind: \"support_enforcer\" | \"support_blocker\" | \"none\"} makes an object a modifier, which is not printed: the overhangs of any part inside a support enforcer get supports (even with supports off), and those inside a support blocker get none. Place a box over the overhang it is for. \"none\" makes it a part again. Arrange leaves modifiers where they are. Returns {}",
+        "{id, kind: \"support_enforcer\" | \"support_blocker\" | \"settings\" | \"none\"} makes an object a modifier, which is not printed: the overhangs of any part inside a support enforcer get supports (even with supports off), and those inside a support blocker get none. Place a box over the overhang it is for. A \"settings\" modifier gives the sparse infill of every part inside it its own settings: give them with `set_object_settings {id, profile: {infill_density, infill_pattern, infill_speed}}` (denser infill round a screw hole, none in a hollow). \"none\" makes it a part again. Arrange leaves modifiers where they are. Returns {}",
         set_modifier,
         true,
         Files::None,
@@ -141,7 +141,7 @@ pub static ALL: &[Command] = &[
     ),
     cmd(
         "info",
-        "{} every object: id, name, triangles, size, min, max, volume_mm3, watertight (a slicer can only fill a closed mesh), and its problems: open_edges (holes), nonmanifold_edges (edges of three or more faces), flipped_faces; `repair` mends what it can; its recipe, its own settings, its modifier (support_enforcer, support_blocker, or null for a part), its settings by height (ranges) and its painted faces (painted: how many seam, support, block). Also the plate's layer height curve (layer_heights: [z, height] points, or null)",
+        "{} every object: id, name, triangles, size, min, max, volume_mm3, watertight (a slicer can only fill a closed mesh), and its problems: open_edges (holes), nonmanifold_edges (edges of three or more faces), flipped_faces; `repair` mends what it can; its recipe, its own settings, its modifier (support_enforcer, support_blocker, settings, or null for a part), its settings by height (ranges) and its painted faces (painted: how many seam, support, block). Also the plate's layer height curve (layer_heights: [z, height] points, or null)",
         info,
         false,
         Files::None,
@@ -1050,7 +1050,7 @@ fn set_modifier(s: &mut Session, p: &Value) -> Result<Value, String> {
         "none" => None,
         kind => Some(
             serde_json::from_value(json!(kind))
-                .map_err(|_| format!("`kind` is support_enforcer, support_blocker or none, not `{kind}`"))?,
+                .map_err(|_| format!("`kind` is support_enforcer, support_blocker, settings or none, not `{kind}`"))?,
         ),
     };
     s.scene_mut().get_mut(a.id)?.modifier = modifier;

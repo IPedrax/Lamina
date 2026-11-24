@@ -170,6 +170,7 @@ pub struct Job {
     pub ranges: print::RangeProfiles,
     pub paint: Vec<Option<std::sync::Arc<Vec<u8>>>>,
     pub modifiers: Vec<(lamina_core::Modifier, Mesh)>,
+    pub zones: Vec<print::Zone>,
     pub heights: Vec<[f64; 2]>,
 }
 
@@ -185,6 +186,7 @@ impl Job {
             paint: parts.iter().map(|o| o.paint.clone()).collect(),
             own,
             modifiers,
+            zones: zones(objects),
             heights: heights.map(<[_]>::to_vec).unwrap_or_default(),
         })
     }
@@ -196,6 +198,7 @@ impl Job {
             ranges: &self.ranges,
             paint: &self.paint,
             modifiers: &self.modifiers,
+            zones: &self.zones,
             heights: &self.heights,
         }
     }
@@ -207,10 +210,26 @@ impl Job {
 
 /// The objects to print, and the modifiers (support enforcers and blockers) where they stand, which print nothing.
 pub fn split<'a>(objects: &[&'a lamina_core::Object]) -> (Vec<&'a lamina_core::Object>, Vec<(lamina_core::Modifier, Mesh)>) {
+    use lamina_core::Modifier;
     let parts = objects.iter().filter(|o| o.modifier.is_none()).copied().collect();
-    let modifiers = objects.iter().filter_map(|o| o.modifier.map(|m| (m, o.world()))).collect();
+    let modifiers = objects
+        .iter()
+        .filter_map(|o| o.modifier.filter(|m| matches!(m, Modifier::SupportEnforcer | Modifier::SupportBlocker)).map(|m| (m, o.world())))
+        .collect();
     (parts, modifiers)
 }
+
+/// The settings modifiers where they stand, with the fields each gives (none set: it changes nothing).
+pub fn zones(objects: &[&lamina_core::Object]) -> Vec<print::Zone> {
+    objects
+        .iter()
+        .filter(|o| o.modifier == Some(lamina_core::Modifier::Settings))
+        .map(|o| (o.id, o.world(), o.settings.as_deref().and_then(Value::as_object).cloned().unwrap_or_default()))
+        .collect()
+}
+
+/// What a settings modifier may change: the sparse infill of the parts inside it.
+pub const ZONE_FIELDS: &[&str] = &["infill_density", "infill_pattern", "infill_speed"];
 
 /// The fields an object may set for itself: what it is made of and how, never the machine, the filament or the layer heights.
 pub const PER_OBJECT_FIELDS: &[&str] = &[
@@ -571,8 +590,11 @@ struct ObjectSettings {
 
 fn set_object_settings(s: &mut Session, p: &Value) -> Result<Value, String> {
     let a = ObjectSettings::deserialize(p).map_err(|e| format!("bad parameters: {e}"))?;
-    s.scene.get(a.id)?;
+    let zone = s.scene.get(a.id)?.modifier == Some(lamina_core::Modifier::Settings);
     let fields = a.profile.unwrap_or_default();
+    if zone && let Some(k) = fields.keys().find(|k| !ZONE_FIELDS.contains(&k.as_str())) {
+        return Err(format!("object {} is a settings modifier, which may set {}, not `{k}`", a.id, ZONE_FIELDS.join(", ")));
+    }
     if let Some(k) = fields.keys().find(|k| !PER_OBJECT_FIELDS.contains(&k.as_str())) {
         return Err(format!("`{k}` is the plate's, not an object's; an object may set {}", PER_OBJECT_FIELDS.join(", ")));
     }
@@ -916,6 +938,29 @@ mod tests {
         ] {
             assert!(s.execute("layer_heights", &bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn a_settings_modifier_takes_only_infill_fields_and_thickens_the_infill_inside_it() {
+        let mut s = session();
+        s.execute("add_primitive", &json!({"kind": "box", "size": [40, 10, 6]})).unwrap();
+        let before = s.execute("slice_check", &json!({})).unwrap()["features"]["sparse-infill"].as_f64().unwrap();
+        s.execute("add_primitive", &json!({"kind": "box", "size": [20, 14, 10]})).unwrap();
+        s.execute("set_modifier", &json!({"id": 2, "kind": "settings"})).unwrap();
+        // The new box was laid beside the bar: back over its right half.
+        let (lo, hi) = s.scene.get(2).unwrap().bounds().unwrap();
+        s.execute("move", &json!({"id": 2, "by": [10.0 - (lo[0] + hi[0]) / 2.0, -(lo[1] + hi[1]) / 2.0, 0]})).unwrap();
+        let o = s.scene.get(2).unwrap().bounds().unwrap();
+        assert!(o.0[0] > -1.0, "the modifier over the right half: {o:?}");
+        // With no settings it changes nothing.
+        assert_eq!(s.execute("slice_check", &json!({})).unwrap()["features"]["sparse-infill"].as_f64().unwrap(), before);
+        assert!(
+            s.execute("set_object_settings", &json!({"id": 2, "profile": {"perimeters": 3}})).unwrap_err().contains("settings modifier")
+        );
+        s.execute("set_object_settings", &json!({"id": 2, "profile": {"infill_density": 0.6, "infill_pattern": "grid"}})).unwrap();
+        let after = s.execute("slice_check", &json!({})).unwrap()["features"]["sparse-infill"].as_f64().unwrap();
+        assert!(after > 1.5 * before, "{after} against {before}");
+        assert_eq!(s.execute("info", &json!({})).unwrap()["objects"][1]["modifier"], "settings");
     }
 
     #[test]

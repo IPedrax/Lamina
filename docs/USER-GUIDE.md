@@ -62,7 +62,9 @@ all, set the environment variable `LAMINA_NO_UPDATE_CHECK=1`: the menu items and
    plate: a support never goes through another object, and stands on it where it is in the way (From the plate only leaves those
    out). To support one overhang only, or to keep supports off one, add a box over it and set Prints as, under the picked
    object's tools, to Support enforcer (green) or Support blocker (red): it is not printed, and the overhangs of a part inside
-   it get supports, even with Supports off, or none. Beside Walls, Variable width gives a part thinner than its walls (a fin, a rib, a tube's wall) as many lines as its width
+   it get supports, even with Supports off, or none. Prints as Settings modifier (yellow) gives the infill of the parts inside the
+   box its own density instead, set under This object's settings (denser round a screw hole, none in a part's hollow); the
+   walls and skins stay the part's. Beside Walls, Variable width gives a part thinner than its walls (a fin, a rib, a tube's wall) as many lines as its width
    holds, each a share of it, where Classic folds a loop onto itself or leaves a gap to fill.
 4. **Slice.** Press Slice. The window stays usable while it works, and the Preview tab opens when it is done, with the layer count,
    the filament and the print time.

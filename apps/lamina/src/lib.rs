@@ -1153,23 +1153,28 @@ impl App {
                 None => t("A part"),
                 Some(Modifier::SupportEnforcer) => t("Support enforcer"),
                 Some(Modifier::SupportBlocker) => t("Support blocker"),
+                Some(Modifier::Settings) => t("Settings modifier"),
             };
             ui.label(t("Prints as"));
             let mut chosen = now;
             egui::ComboBox::from_id_salt("modifier")
                 .selected_text(name(now))
                 .show_ui(ui, |ui| {
-                    for m in [None, Some(Modifier::SupportEnforcer), Some(Modifier::SupportBlocker)] {
+                    for m in [None, Some(Modifier::SupportEnforcer), Some(Modifier::SupportBlocker), Some(Modifier::Settings)] {
                         ui.selectable_value(&mut chosen, m, name(m));
                     }
                 })
                 .response
-                .on_hover_text(t("A support enforcer or blocker is not printed: the overhangs of a part inside it get supports, or none"));
+                .on_hover_text(t(
+                    "A modifier is not printed. The overhangs of a part inside a support enforcer get supports, inside a blocker none; \
+                     a settings modifier gives the infill of a part inside it its own density (in This object's settings)",
+                ));
             if chosen != now {
                 let kind = match chosen {
                     None => "none",
                     Some(Modifier::SupportEnforcer) => "support_enforcer",
                     Some(Modifier::SupportBlocker) => "support_blocker",
+                    Some(Modifier::Settings) => "settings",
                 };
                 self.run("set_modifier", json!({ "id": id, "kind": kind }));
             }
@@ -1367,8 +1372,13 @@ impl App {
     fn object_settings(&mut self, ui: &mut Ui, id: u32) {
         let Ok(o) = self.session.scene.get(id) else { return };
         let mine = o.settings.as_deref().and_then(Value::as_object).cloned().unwrap_or_default();
+        // A settings modifier gives only the infill inside it.
+        let zone = o.modifier == Some(lamina_core::Modifier::Settings);
         let mut changed = None;
         crate::lang::section("This object's settings").show(ui, |ui| {
+            if zone {
+                ui.label(t("The infill of the parts inside this modifier:"));
+            }
             let mut infill = mine.get("infill_density").and_then(Value::as_f64);
             let mut walls = mine.get("perimeters").and_then(Value::as_u64).map(|w| w as u32);
             let mut own_infill = infill.is_some();
@@ -1383,25 +1393,29 @@ impl App {
                     changed = Some(());
                 }
             });
-            ui.horizontal(|ui| {
-                ui.checkbox(&mut own_walls, t("Walls"));
-                let mut w = walls.unwrap_or(self.profile.perimeters);
-                if ui.add_enabled(own_walls, crate::lang::number(&mut w).range(0..=10)).changed() || own_walls != walls.is_some() {
-                    walls = own_walls.then_some(w);
-                    changed = Some(());
-                }
-            });
             let mut extruder = mine.get("extruder").and_then(Value::as_u64).map(|e| e as u32);
-            let mut own_extruder = extruder.is_some();
-            ui.horizontal(|ui| {
-                ui.checkbox(&mut own_extruder, t("Extruder")).on_hover_text(hint("extruder"));
-                let mut e = extruder.unwrap_or(self.profile.extruder);
-                let range = 1..=self.profile.extruders.max(1);
-                if ui.add_enabled(own_extruder, crate::lang::number(&mut e).range(range)).changed() || own_extruder != extruder.is_some() {
-                    extruder = own_extruder.then_some(e);
-                    changed = Some(());
-                }
-            });
+            if !zone {
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut own_walls, t("Walls"));
+                    let mut w = walls.unwrap_or(self.profile.perimeters);
+                    if ui.add_enabled(own_walls, crate::lang::number(&mut w).range(0..=10)).changed() || own_walls != walls.is_some() {
+                        walls = own_walls.then_some(w);
+                        changed = Some(());
+                    }
+                });
+                let mut own_extruder = extruder.is_some();
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut own_extruder, t("Extruder")).on_hover_text(hint("extruder"));
+                    let mut e = extruder.unwrap_or(self.profile.extruder);
+                    let range = 1..=self.profile.extruders.max(1);
+                    if ui.add_enabled(own_extruder, crate::lang::number(&mut e).range(range)).changed()
+                        || own_extruder != extruder.is_some()
+                    {
+                        extruder = own_extruder.then_some(e);
+                        changed = Some(());
+                    }
+                });
+            }
             if changed.is_some() {
                 let mut fields = mine.clone();
                 let own = [
@@ -1418,7 +1432,9 @@ impl App {
                 changed = None;
                 self.run("set_object_settings", json!({ "id": id, "profile": fields }));
             }
-            self.ranges_ui(ui, id);
+            if !zone {
+                self.ranges_ui(ui, id);
+            }
         });
     }
 
@@ -2866,6 +2882,24 @@ mod tests {
         h.get_by(|n| n.role() == egui::accesskit::Role::ComboBox && n.value().as_deref() == Some("Support blocker"));
         press(&mut h, "Undo");
         assert_eq!(h.state().session.scene.get(1).unwrap().modifier, None);
+    }
+
+    #[test]
+    fn a_settings_modifier_shows_only_the_infill_in_its_settings() {
+        let mut h = window();
+        press(&mut h, "Add box");
+        h.get_by(|n| n.role() == egui::accesskit::Role::ComboBox && n.value().as_deref() == Some("A part")).click();
+        h.run();
+        press(&mut h, "Settings modifier");
+        assert_eq!(h.state().session.scene.get(1).unwrap().modifier, Some(lamina_core::Modifier::Settings));
+        press(&mut h, "This object's settings");
+        h.get_by_label("The infill of the parts inside this modifier:");
+        assert!(h.query_by_label("By height").is_none(), "a modifier has no settings by height");
+        // The object's own Infill is a checkbox; the print settings' Infill is a label.
+        h.get_by(|n| n.role() == egui::accesskit::Role::CheckBox && n.label().as_deref() == Some("Infill")).click();
+        h.run();
+        let fields = h.state().session.scene.get(1).unwrap().settings.as_deref().cloned().unwrap();
+        assert_eq!(fields["infill_density"], h.state().profile.infill_density, "{fields}");
     }
 
     #[test]

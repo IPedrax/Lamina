@@ -136,6 +136,10 @@ pub fn gcode_with(objects: &[(u32, Mesh)], own: &[Option<Profile>], modifiers: &
 /// Each object's height ranges: `(from, to, profile)`.
 pub type RangeProfiles = Vec<Vec<(f64, f64, Profile)>>;
 
+/// A settings modifier: its id, its mesh where it stands, and the fields it gives the sparse infill inside it
+/// (`commands::ZONE_FIELDS`).
+pub type Zone = (u32, Mesh, serde_json::Map<String, serde_json::Value>);
+
 /// Everything on the plate the slicer reads, each list in the order of `objects` (a shorter list leaves the rest unset).
 #[derive(Clone, Copy, Default)]
 pub struct Plate<'a> {
@@ -150,13 +154,17 @@ pub struct Plate<'a> {
     pub paint: &'a [Option<std::sync::Arc<Vec<u8>>>],
     /// The support enforcers and blockers where they stand.
     pub modifiers: &'a [(Modifier, Mesh)],
+    /// The settings modifiers where they stand.
+    pub zones: &'a [Zone],
     /// Layer heights by hand (`heights`), for the whole plate; empty for the profile's.
     pub heights: &'a [[f64; 2]],
 }
 
 /// The same, with all the plate holds: settings by height, paint and modifiers.
 pub fn gcode_plate<'a>(plate: &Plate<'a>, p: &'a Profile) -> Result<Output, String> {
-    let Plate { objects, own, ranges, paint, modifiers, heights } = *plate;
+    let Plate { objects, own, ranges, paint, modifiers, zones, heights } = *plate;
+    // A settings modifier with no settings changes nothing, and is left out.
+    let zones: Vec<&Zone> = zones.iter().filter(|z| !z.2.is_empty()).collect();
     for r in ranges.iter().flatten() {
         r.2.check()?;
     }
@@ -242,6 +250,7 @@ pub fn gcode_plate<'a>(plate: &Plate<'a>, p: &'a Profile) -> Result<Output, Stri
         let into = match kind {
             Modifier::SupportEnforcer => &mut volumes.enforce,
             Modifier::SupportBlocker => &mut volumes.block,
+            Modifier::Settings => continue,
         };
         for (k, l) in layers.iter().enumerate().take(count) {
             into[k] = geom::union(&into[k], &geom::region(&l.loops));
@@ -272,6 +281,25 @@ pub fn gcode_plate<'a>(plate: &Plate<'a>, p: &'a Profile) -> Result<Output, Stri
         })
         .collect();
     let supports = plate_supports(&sliced, &regions, &profile_of, p.sequential, &volumes);
+    // Settings modifiers: each one's slice on the plate's layers, and each object's settings inside it (its own, with the
+    // modifier's infill fields over them).
+    if let Some((id, k)) =
+        zones.iter().find_map(|(id, _, f)| f.keys().find(|k| !crate::commands::ZONE_FIELDS.contains(&k.as_str())).map(|k| (id, k)))
+    {
+        return Err(format!("modifier {id} is a settings modifier, which may set {}, not `{k}`", crate::commands::ZONE_FIELDS.join(", ")));
+    }
+    let zone_regions: Vec<Vec<Region>> = zones
+        .iter()
+        .map(|(_, m, _)| object_layers(m, p, tops.as_deref()).map(|ls| ls.iter().map(|l| geom::region(&l.loops)).collect()))
+        .collect::<Result<_, _>>()?;
+    let zone_profiles: Vec<Vec<Profile>> = (0..objects.len())
+        .map(|i| {
+            zones
+                .iter()
+                .map(|(id, _, f)| crate::presets::apply(profile_of(i), f).map_err(|e| format!("modifier {id}'s settings: {e}")))
+                .collect::<Result<_, _>>()
+        })
+        .collect::<Result<_, _>>()?;
     // What each object prints on each layer, its supports included: what a purge tower may not stand in (only a printer with
     // several extruders changes tools and has one).
     let occupied: Vec<Vec<Region>> = regions
@@ -296,7 +324,11 @@ pub fn gcode_plate<'a>(plate: &Plate<'a>, p: &'a Profile) -> Result<Output, Stri
         .zip(regions)
         .zip(supports)
         .enumerate()
-        .map(|(i, ((layers, regions), supports))| plan(layers, regions, supports, profile_of(i), w, &|k| layer_profile(i, k)))
+        .map(|(i, ((layers, regions), supports))| {
+            let here: Vec<(&[Region], &Profile)> =
+                zone_regions.iter().zip(zone_profiles.get(i).into_iter().flatten()).map(|(r, zp)| (r.as_slice(), zp)).collect();
+            plan(layers, regions, supports, profile_of(i), w, &|k| layer_profile(i, k), &here)
+        })
         .collect::<Result<_, _>>()?;
     let count = plans.iter().map(|(_, l)| l.len()).max().unwrap_or(0);
     // Each layer's extruders in the order they print (the one in use first, then the rest from the lowest, so each changes once a
@@ -873,6 +905,7 @@ fn plan<'p>(
     base: &'p Profile,
     w: f64,
     at: &dyn Fn(usize) -> &'p Profile,
+    zones: &[(&[Region], &Profile)],
 ) -> Result<ObjectPlan, String> {
     let no_support = support::Layer::default();
     // Walls of varying width: each layer's parts too thin for its walls, and the lines that print them.
@@ -1041,14 +1074,33 @@ fn plan<'p>(
                 spiral: false,
             }));
         }
-        if p.infill_density > 0.0 && !geom::is_empty(&sparse) {
-            let spacing = w / p.infill_density;
-            let pattern = infill::sparse(p.infill_pattern, &sparse, layer.z, k, w, p.infill_density, lines);
-            let joined = connect(pattern, &sparse, CONNECT_REACH * spacing, p.infill_pattern != infill::Pattern::Lines);
+        // Inside a settings modifier the sparse infill is the modifier's: each piece of the sparse area is filled once, by the first
+        // modifier over it, and the rest with the layer's own settings.
+        let mut rest = sparse;
+        let mut fills: Vec<(Region, &Profile)> = Vec::with_capacity(zones.len() + 1);
+        for (zone, zp) in zones {
+            let Some(r) = zone.get(k).filter(|r| !geom::is_empty(r)) else { continue };
+            if geom::is_empty(&rest) {
+                break;
+            }
+            let part = geom::intersect(&rest, r);
+            if !geom::is_empty(&part) {
+                rest = geom::difference(&rest, r);
+                fills.push((part, zp));
+            }
+        }
+        fills.push((rest, p));
+        for (area, fp) in fills {
+            if fp.infill_density <= 0.0 || geom::is_empty(&area) {
+                continue;
+            }
+            let spacing = w / fp.infill_density;
+            let pattern = infill::sparse(fp.infill_pattern, &area, layer.z, k, w, fp.infill_density, lines);
+            let joined = connect(pattern, &area, CONNECT_REACH * spacing, fp.infill_pattern != infill::Pattern::Lines);
             strokes.extend(joined.into_iter().map(|pts| Stroke {
                 pts,
                 closed: false,
-                speed: speed(p.infill_speed),
+                speed: speed(fp.infill_speed),
                 kind: Feature::SparseInfill,
                 flow: 1.0,
                 spiral: false,
@@ -1824,6 +1876,7 @@ impl Writer<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     /// The filament the file pushes in the print (the sum of the positive E of moves that travel), as volume in mm³.
     fn volume(g: &str, p: &Profile) -> f64 {
@@ -2136,6 +2189,52 @@ mod tests {
         // An enforcer under nothing over air (a box beside the tee) adds nothing.
         let beside = Mesh::cuboid([5.0, 5.0, 5.0]).transformed(&lamina_core::Transform::translate([30.0, 0.0, 0.0]));
         assert!(!gcode_with(&tee, &[], &[(Modifier::SupportEnforcer, beside)], &off).unwrap().features.contains_key("support"));
+    }
+
+    #[test]
+    fn a_settings_modifier_fills_the_part_inside_it_with_its_own_infill_and_leaves_the_rest() {
+        // A bar 40 mm long, and a box over its right half (x from 0) asking for 50 % infill where the part has 15 %.
+        let bar = vec![(1, Mesh::cuboid([40.0, 10.0, 6.0]))];
+        let right = Mesh::cuboid([20.0, 14.0, 10.0]).transformed(&lamina_core::Transform::translate([10.0, 0.0, 0.0]));
+        let dense: Vec<Zone> = vec![(2, right.clone(), json!({"infill_density": 0.5}).as_object().unwrap().clone())];
+        let p = Profile { infill_density: 0.15, skirt_loops: 0, ..Profile::default() };
+        let plain = gcode(&bar, &p).unwrap();
+        let zoned = gcode_plate(&Plate { objects: &bar, zones: &dense, ..Plate::default() }, &p).unwrap();
+        // Sparse infill on a middle layer, by length: the part of each line left of x = -2, or right of x = 2.
+        let length = |g: &str, sign: f64| -> f64 {
+            let beyond = |a: P2, b: P2| -> f64 {
+                let (u, v) = (a[0] * sign - 2.0, b[0] * sign - 2.0);
+                let share = match (u > 0.0, v > 0.0) {
+                    (true, true) => 1.0,
+                    (false, false) => 0.0,
+                    _ => u.max(v) / (u - v).abs(),
+                };
+                dist(a, b) * share
+            };
+            layer_runs(g, 15, "sparse-infill", &p).iter().flat_map(|r| r.windows(2).map(|w| beyond(w[0], w[1])).collect::<Vec<_>>()).sum()
+        };
+        let (left, right_len) = (length(&zoned.gcode, -1.0), length(&zoned.gcode, 1.0));
+        println!(
+            "sparse infill on layer 15: left {left:.0} mm, right {right_len:.0} mm, without {:.0} and {:.0}",
+            length(&plain.gcode, -1.0),
+            length(&plain.gcode, 1.0)
+        );
+        assert!((left - length(&plain.gcode, -1.0)).abs() < 0.05 * left, "the left half as it was");
+        assert!(right_len > 2.5 * left, "the right half three times as dense: {right_len} against {left}");
+        // The walls and the skins are the part's own, as without the modifier.
+        let walls = |g: &str| (0..30).map(|k| layer_runs(g, k, "outer-wall", &p).len()).sum::<usize>();
+        assert_eq!(walls(&zoned.gcode), walls(&plain.gcode));
+        // None inside: the right half hollow.
+        let hollow: Vec<Zone> = vec![(2, right.clone(), json!({"infill_density": 0}).as_object().unwrap().clone())];
+        let none = gcode_plate(&Plate { objects: &bar, zones: &hollow, ..Plate::default() }, &p).unwrap();
+        assert!(length(&none.gcode, 1.0) < 1.0 && length(&none.gcode, -1.0) > 0.9 * left);
+        // A modifier beside the part changes nothing; one with a field it may not set is refused.
+        let away = Mesh::cuboid([5.0, 5.0, 5.0]).transformed(&lamina_core::Transform::translate([60.0, 0.0, 0.0]));
+        let beside: Vec<Zone> = vec![(3, away, json!({"infill_density": 0.9}).as_object().unwrap().clone())];
+        assert_eq!(gcode_plate(&Plate { objects: &bar, zones: &beside, ..Plate::default() }, &p).unwrap().gcode, plain.gcode);
+        let walled: Vec<Zone> = vec![(2, right, json!({"perimeters": 4}).as_object().unwrap().clone())];
+        let e = gcode_plate(&Plate { objects: &bar, zones: &walled, ..Plate::default() }, &p).unwrap_err();
+        assert!(e.contains("modifier 2") && e.contains("perimeters"), "{e}");
     }
 
     #[test]

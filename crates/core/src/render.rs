@@ -22,6 +22,8 @@ pub const MODEL: Rgba = [110, 165, 225, 255];
 /// A support enforcer and a support blocker: green and red, so a modifier is never taken for a part.
 pub const ENFORCER: Rgba = [110, 200, 120, 255];
 pub const BLOCKER: Rgba = [215, 105, 100, 255];
+/// A modifier with settings of its own: yellow.
+pub const SETTINGS: Rgba = [220, 195, 90, 255];
 
 /// The colour an object is drawn in: picked, a modifier, or a part.
 pub fn colour_of(o: &crate::Object, selected: &[u32]) -> Rgba {
@@ -29,6 +31,7 @@ pub fn colour_of(o: &crate::Object, selected: &[u32]) -> Rgba {
         (true, _) => SELECTED,
         (false, Some(crate::Modifier::SupportEnforcer)) => ENFORCER,
         (false, Some(crate::Modifier::SupportBlocker)) => BLOCKER,
+        (false, Some(crate::Modifier::Settings)) => SETTINGS,
         (false, None) => MODEL,
     }
 }

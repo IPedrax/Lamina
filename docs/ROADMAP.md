@@ -332,6 +332,16 @@ Priorities:
   it. Tested through G-code: a box with 0.1 mm layers from 4 to 6 mm and 0.2 mm elsewhere, 60 layers; adaptive then smoothed on a
   ball; kept in a project, one undo; hostile curves; the strip's drag, buttons and undo. Not done: PrusaSlicer's brush that adds or
   takes away detail gradually with the wheel, and a curve per object (one curve serves the plate, as adaptive layers do).
+- **4.31 Settings modifiers.** `set_modifier {id, kind: "settings"}` makes an object a modifier whose own settings
+  (`set_object_settings`, only `infill_density`, `infill_pattern` and `infill_speed`, `commands::ZONE_FIELDS`) fill the sparse
+  infill of every part inside it, as PrusaSlicer's modifier and Cura's infill mesh do for infill. Sliced on the plate's layers
+  (`print::Zone`), each layer's sparse area split by it: the piece inside filled with the modifier's settings over the part's
+  own, the rest as before; the first of two overlapping modifiers wins. One without settings changes nothing. Drawn yellow; in
+  the window Prints as, Settings modifier, and This object's settings shows only Infill for it. Tested through G-code: a bar
+  whose right half is under a 50 % modifier gets 2.7 times the infill there and the same on the left, the same walls; 0 % leaves
+  the right half hollow; a modifier beside the part changes nothing; a field it may not set is refused by `set_object_settings`
+  and by the slicer. Not done: walls, skins and speeds of their own inside a modifier (Cura's cutting mesh and PrusaSlicer's
+  perimeters by modifier), which need the walls planned for each piece.
 - **5.1 Process presets.** A third kind in `presets.rs`, setting only the layers and the strength (`PROCESS_FIELDS`): 0.12 mm Fine,
   0.20 mm Standard, 0.28 mm Draft and Strong. `slice` and `slice_check` take `process` (after the printer and the filament, before
   `profile`); `slicer_presets` lists them; the window has a Process picker and Save process, kept in the settings file and the
@@ -525,10 +535,6 @@ and one Klipper printer, measure with calipers, fill in the tables, and fix what
 ## 3. Modelling
 
 ## 4. Slicer
-
-**4.31 Modifier meshes with settings (P2).** PrusaSlicer's modifier and Cura's infill and cutting meshes give part of an object its
-own infill, walls or speed. How: 4.24's `modifier` with `kind: "settings"` and a profile; the plan splits each layer's region by the
-modifier's slice and plans each part with its settings.
 
 ## 5. Profiles and settings
 

@@ -16,6 +16,9 @@ pub enum Modifier {
     SupportEnforcer,
     /// No supports for the overhangs of a part inside it.
     SupportBlocker,
+    /// Settings of its own (the object's `settings`, a few infill fields the slicer names) for the sparse infill of every part inside
+    /// it.
+    Settings,
 }
 
 #[derive(Clone, Debug)]
