@@ -544,6 +544,10 @@ impl App {
             return None;
         }
         let result = self.session.execute(command, &params);
+        if result.is_ok() && lamina_core::bridge::REPLACES.contains(&command) {
+            // A new plate's ids start again: what was hidden on the old one is not hidden on it.
+            self.view.hidden.clear();
+        }
         self.prune();
         match result {
             Ok(v) => {
@@ -592,6 +596,7 @@ impl App {
     fn prune(&mut self) {
         let alive: Vec<u32> = self.session.scene.objects.iter().map(|o| o.id).collect();
         self.selected.retain(|id| alive.contains(id));
+        self.view.hidden.retain(|id| alive.contains(id));
     }
 
     /// Opens a project or imports a mesh, by its extension (the file named on the command line).
@@ -1034,6 +1039,11 @@ impl App {
                     self.context_pick(Some(id));
                 }
                 row.context_menu(|ui| self.object_menu(ui));
+                if self.view.hidden.contains(&id)
+                    && ui.small_button(t("Show")).on_hover_text(t("Hidden from the 3D view (H); it still prints")).clicked()
+                {
+                    self.view.hidden.retain(|&h| h != id);
+                }
                 if let Some(p) = problems {
                     ui.label(RichText::new("\u{26a0}").color(WARNING)).on_hover_text(tf(
                         "This mesh is not a clean solid: {}. Parts of it may not print; Repair mends what it can.",
@@ -1887,6 +1897,15 @@ impl App {
         }
         let scene = Arc::clone(&self.session.scene);
         let shown = self.view.show(ui, &scene, &self.selected, self.profile.bed);
+        if let Some(ids) = &shown.boxed {
+            // As Blender's B: what the box covers joins what is picked.
+            for &id in ids {
+                if !self.selected.contains(&id) {
+                    self.selected.push(id);
+                }
+            }
+            self.status = tf("{} picked.", &[&self.selected.len().to_string()]);
+        }
         if let Some((id, points)) = &shown.painted {
             // A stroke is one step to undo: each point painted round, in one transaction.
             let (kind, radius) = (self.view.brush.command_kind(), self.view.brush.radius);
@@ -2842,6 +2861,73 @@ mod tests {
     }
 
     #[test]
+    fn h_hides_the_picked_from_the_view_alt_h_shows_them_and_b_picks_what_a_box_covers() {
+        let mut h = window();
+        press(&mut h, "Add box");
+        press(&mut h, "Add cylinder");
+        press(&mut h, "Add sphere");
+        h.state_mut().view.camera.frame_all(([-15.0, -15.0, 0.0], [80.0, 15.0, 20.0]));
+        h.state_mut().view.card.cpu = true;
+        h.state_mut().selected = vec![2];
+        let rect = h.state().view.rect.unwrap();
+        h.hover_at(rect.center());
+        h.run();
+        let seen = |h: &Harness<App>| -> Vec<u32> {
+            let p = h.state().view.picture.as_ref().expect("the processor's picture");
+            let mut ids: Vec<u32> =
+                (0..p.size[1]).flat_map(|y| (0..p.size[0]).map(move |x| (x, y))).filter_map(|(x, y)| p.id_at(x, y)).collect();
+            ids.sort_unstable();
+            ids.dedup();
+            ids
+        };
+        assert_eq!(seen(&h), [1, 2, 3]);
+        // H: the cylinder leaves the picture and the pick, and the plate list offers to show it; it still prints.
+        h.key_press(Key::H);
+        h.run();
+        h.run();
+        assert_eq!((h.state().view.hidden.clone(), h.state().selected.clone()), (vec![2], vec![]));
+        assert_eq!(seen(&h), [1, 3]);
+        h.get_by_label("Show");
+        assert_eq!(h.state().session.scene.objects.len(), 3);
+        // B, then a drag over the whole view: what it sees is picked, the hidden cylinder not.
+        h.key_press(Key::B);
+        h.run();
+        assert!(h.state().view.boxing.is_some());
+        drag(&mut h, rect.left_top() + egui::vec2(2.0, 2.0), rect.right_bottom() - egui::vec2(2.0, 2.0));
+        assert_eq!(h.state().selected, [1, 3], "{}", h.state().status);
+        assert!(h.state().view.boxing.is_none());
+        // A box over empty plate picks nothing more; Escape gives one up.
+        h.state_mut().selected.clear();
+        h.hover_at(rect.center());
+        h.key_press(Key::B);
+        h.run();
+        drag(&mut h, rect.left_top() + egui::vec2(2.0, 2.0), rect.left_top() + egui::vec2(12.0, 12.0));
+        assert!(h.state().selected.is_empty());
+        h.hover_at(rect.center());
+        h.key_press(Key::B);
+        h.run();
+        h.key_press(Key::Escape);
+        h.run();
+        assert!(h.state().view.boxing.is_none());
+        // Alt+H: everything back.
+        h.key_press_modifiers(egui::Modifiers::ALT, Key::H);
+        h.run();
+        h.run();
+        assert!(h.state().view.hidden.is_empty());
+        assert_eq!(seen(&h), [1, 2, 3]);
+        // 5 over the view: orthographic, and still drawn and picked.
+        h.hover_at(rect.center());
+        h.key_press(Key::Num5);
+        h.run();
+        h.run();
+        assert!(h.state().view.camera.ortho);
+        assert_eq!(seen(&h), [1, 2, 3]);
+        h.key_press(Key::Num5);
+        h.run();
+        assert!(!h.state().view.camera.ortho);
+    }
+
+    #[test]
     fn the_calibration_menu_puts_a_tower_on_the_plate_and_says_what_to_look_for() {
         let mut h = window();
         press(&mut h, "More shapes");
@@ -3157,7 +3243,7 @@ fill_angle = 45
         // Lay flat: a click in the middle of the view, looking at the box, turns the face there down.
         press(&mut h, "Lay flat");
         let app = h.state_mut();
-        app.view.camera = view3d::Camera { target: [0.0, 0.0, 10.0], azimuth: -90.0, elevation: 0.0, distance: 200.0 };
+        app.view.camera = view3d::Camera { target: [0.0, 0.0, 10.0], azimuth: -90.0, elevation: 0.0, distance: 200.0, ortho: false };
         h.run();
         h.run();
         let middle = h.state().view.rect.unwrap().center();
@@ -3216,7 +3302,8 @@ fill_angle = 45
         press(&mut h, "Paint");
         assert_eq!(h.state().view.tool, view3d::Tool::Paint);
         // Looking at the box's front face (y = -10) square on, its middle in the middle of the view.
-        h.state_mut().view.camera = view3d::Camera { target: [0.0, 0.0, 10.0], azimuth: -90.0, elevation: 0.0, distance: 200.0 };
+        h.state_mut().view.camera =
+            view3d::Camera { target: [0.0, 0.0, 10.0], azimuth: -90.0, elevation: 0.0, distance: 200.0, ortho: false };
         h.run();
         h.run();
         let rect = h.state().view.rect.unwrap();
@@ -3269,7 +3356,8 @@ fill_angle = 45
         h.run();
         press(&mut h, "Add box");
         h.state_mut().selected.clear();
-        h.state_mut().view.camera = view3d::Camera { target: [0.0, 0.0, 10.0], azimuth: -90.0, elevation: 0.0, distance: 120.0 };
+        h.state_mut().view.camera =
+            view3d::Camera { target: [0.0, 0.0, 10.0], azimuth: -90.0, elevation: 0.0, distance: 120.0, ortho: false };
         h.run();
         h.run();
         let rect = h.state().view.rect.unwrap();
@@ -3487,7 +3575,8 @@ fill_angle = 45
         h.run();
         press(&mut h, "Add box");
         h.state_mut().selected.clear();
-        h.state_mut().view.camera = view3d::Camera { target: [0.0, 0.0, 10.0], azimuth: -60.0, elevation: 30.0, distance: 200.0 };
+        h.state_mut().view.camera =
+            view3d::Camera { target: [0.0, 0.0, 10.0], azimuth: -60.0, elevation: 30.0, distance: 200.0, ortho: false };
         h.run();
         assert!(h.state().view.on_card() && !h.state().failed, "{}", h.state().status);
         let middle = h.state().view.rect.unwrap().center();

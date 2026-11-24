@@ -455,6 +455,18 @@ Priorities:
   front, the right and the top, with Ctrl from the back, the left and the bottom, keeping the target and distance; Home frames
   everything and the period key the picked objects. An orthographic view (Blender's numpad 5) needs the renderer's projection and
   is not done. Tested with egui_kittest: each key's angles, Home and period framing.
+- **7.12 Hide, show, box select and an orthographic view.** As Blender's: H hides the picked objects from the 3D view and unpicks
+  them, Alt+H shows them all (View, Hide picked and Show all; Show beside a hidden one in the plate list). Hidden is the window's
+  (`View::hidden`), not the scene's, so they still print and a new plate starts with none hidden; the processor draws a copy of
+  the scene without them and the card skips their runs, so neither shows nor picks them. B over the view, then a drag, picks every
+  object whose pixels the box covers (from the processor's picture, or one drawn for it when the card drew the view), as well as
+  those picked; Escape, a click or a right click gives up. 5 (View, Orthographic) switches the camera (`Camera::ortho`): parallel
+  rays, the target as large as from the camera's distance, the eye far back, and a depth of `1 - z / ORTHO_FAR`, which runs
+  straight across a face in its picture, so the processor and the card interpolate it exactly as they do one over the distance
+  in perspective; picking, measuring, the gizmo and the G-code preview follow. Tested: the orthographic camera keeps sizes,
+  its rays are parallel and a depth gives its point back; the card against the processor in orthographic on lavapipe (0.06 % of
+  the objects' pixels differ, along edges); in the window H, the list's Show, B over everything and over nothing, Escape, Alt+H
+  and 5. Not done: hiding in the G-code preview, which shows what will print.
 - **8.2 Benchmarks.** Ignored tests that print their times: `crates/slicer/tests/bench.rs` (about 100,000 triangles, three ways)
   and `crates/csg/tests/bench.rs` (a 5,120-triangle sphere with a 384-triangle cylinder, each boolean), plus
   `simplify::tests::heavy`. First run, on the session's machine in a dev build: slicing 6.1 s with the defaults, 9.4 s with gyroid
@@ -544,10 +556,6 @@ and one Klipper printer, measure with calipers, fill in the tables, and fix what
 which Bambu's 2025 authorization keeps to Bambu Connect or a printer in Developer Mode. Its own module in `crates/printer` if done.
 
 ## 7. Desktop
-
-**7.12 Hide, show, box select and an orthographic view (P2).** Blender hides the picked objects with H and shows them with Alt+H, and B drags a box to
-pick. How: a hidden flag in the window (not the scene), skipped by the picture and the slice preview but not the slice; a box
-drag that picks every object whose picture pixels it covers.
 
 ## 8. Quality and infrastructure
 

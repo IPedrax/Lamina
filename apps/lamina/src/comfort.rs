@@ -38,6 +38,9 @@ pub const SHORTCUTS: &[(&str, &str)] = &[
     ("1, 3, 7", ui_msg!("Over the 3D view: look from the front, the right, the top; with Ctrl, the back, the left, the bottom")),
     ("Home, .", ui_msg!("Frame everything, or the picked objects")),
     ("Alt+G, Alt+R, Alt+S", ui_msg!("Clear the picked objects' place, turn or scale")),
+    ("H, Alt+H", ui_msg!("Hide the picked objects from the 3D view, or show every hidden one; they still print")),
+    ("B", ui_msg!("Over the 3D view: drag a box, and the objects seen in it join the picked ones")),
+    ("5", ui_msg!("Over the 3D view: orthographic or perspective")),
     ("G", ui_msg!("Move tool: pick and drag, turn with the rings, scale with the square")),
     ("L", ui_msg!("Lay flat tool: click a face to turn it down")),
     ("M", ui_msg!("Measure tool: click two points")),
@@ -62,6 +65,14 @@ impl App {
             return;
         }
         let plain = |k: Key| ctx.input(|i| i.modifiers.is_none() && i.key_pressed(k));
+        // H hides the picked objects from the view, Alt+H shows them all again, as Blender's do.
+        if ctx.input(|i| i.modifiers.alt && !i.modifiers.command && !i.modifiers.shift && i.key_pressed(Key::H)) {
+            self.view.hidden.clear();
+            return;
+        }
+        if plain(Key::H) {
+            self.hide_selected();
+        }
         // Alt+G, Alt+R and Alt+S clear the picked objects' place, turn or scale, as Blender's do.
         for (key, what) in [(Key::G, "location"), (Key::R, "rotation"), (Key::S, "scale")] {
             if ctx.input(|i| i.modifiers.alt && !i.modifiers.command && !i.modifiers.shift && i.key_pressed(key)) {
@@ -99,6 +110,13 @@ impl App {
         }
         // Blender's view keys (on the number row too, as Blender's numpad emulation has them): front, right and top, and with Ctrl
         // the other side; the camera keeps its target and distance.
+        if over.is_some() && plain(Key::B) {
+            self.view.boxing = Some(None);
+            self.status = t("Drag a box over the objects to pick; Escape gives up.").into();
+        }
+        if over.is_some() && plain(Key::Num5) {
+            self.view.camera.ortho = !self.view.camera.ortho;
+        }
         if over.is_some() {
             for (key, azimuth, elevation, opposite) in
                 [(Key::Num1, -90.0, 0.0, (90.0, 0.0)), (Key::Num3, 0.0, 0.0, (180.0, 0.0)), (Key::Num7, -90.0, 89.0, (-90.0, -89.0))]
@@ -249,10 +267,31 @@ impl App {
         });
     }
 
+    /// Hides the picked objects from the 3D view, and unpicks them.
+    pub(crate) fn hide_selected(&mut self) {
+        for id in std::mem::take(&mut self.selected) {
+            if !self.view.hidden.contains(&id) {
+                self.view.hidden.push(id);
+            }
+        }
+        if !self.view.hidden.is_empty() {
+            self.status = tf("{} hidden; Alt+H shows them.", &[&self.view.hidden.len().to_string()]);
+        }
+    }
+
     pub(crate) fn view_menu(&mut self, ui: &mut Ui) {
         ui.menu_button(t("View"), |ui| {
             if ui.add(egui::Button::new(t("Frame")).shortcut_text("F")).on_hover_text(t("The picked objects, or everything")).clicked() {
                 self.frame_selected();
+            }
+            ui.checkbox(&mut self.view.camera.ortho, t("Orthographic"))
+                .on_hover_text(t("Parallel lines stay parallel, as on a drawing (5)"));
+            let any = !self.selected.is_empty();
+            if ui.add_enabled(any, egui::Button::new(t("Hide picked")).shortcut_text("H")).clicked() {
+                self.hide_selected();
+            }
+            if ui.add_enabled(!self.view.hidden.is_empty(), egui::Button::new(t("Show all")).shortcut_text("Alt+H")).clicked() {
+                self.view.hidden.clear();
             }
             ui.checkbox(&mut self.strip.open, t("Layer heights by hand"))
                 .on_hover_text(t("A strip beside the 3D view to make layers thinner or thicker by height"));

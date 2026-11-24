@@ -93,7 +93,7 @@ Linux only). A change to a string the window shows needs `cargo i18n update` and
 - `apps/lamina`: the desktop app (`lamina`): `lib.rs` (the window: toolbar, plate panel, settings, tabs), `files.rs` (the File menu,
   recent projects, dropped files, the question before unsaved changes are lost), `autosave.rs` (the plate written every two minutes
   and offered back after an unclean exit), `view3d.rs` (the 3D view on
-  `lamina_core::render`, picking, the gizmo and the tools, and Blender's G, R and S as `Modal`), `gpu.rs` and `gpu.wgsl` (the same picture drawn on the graphics card with
+  `lamina_core::render`, picking, the gizmo and the tools, Blender's G, R and S as `Modal`, H to hide, B to box select, 5 for orthographic), `gpu.rs` and `gpu.wgsl` (the same picture drawn on the graphics card with
   wgpu: the scene uploaded once for each scene `Arc`, ids and depth read back only for a click; the processor draws when there is no
   card, it fails, or View says so; from BIMCraft), `preview.rs` (layers read back from the G-code with each extrusion's kind, drawn in 3D up to the
   chosen layer and coloured by kind, or one layer from above), `chat.rs` (the assistant panel, with Remember and a passphrase for the key), `printer.rs` (the printer connection and the Send

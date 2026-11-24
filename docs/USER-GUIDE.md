@@ -94,7 +94,11 @@ all, set the environment variable `LAMINA_NO_UPDATE_CHECK=1`: the menu items and
   turn along chooses the plate's axes or the picked object's own, for the gizmo and the G, R and X, Y, Z keys. A stretch along one
   axis (S then X, Y or Z) is always along the plate's.
 - Over the 3D view, **1**, **3** and **7** look from the front, the right and the top (with Ctrl, the back, the left and the
-  bottom), as Blender's numpad does; **Home** frames everything and **.** the picked objects.
+  bottom), as Blender's numpad does; **5** switches between perspective and orthographic (View, Orthographic), where parallel
+  edges stay parallel; **Home** frames everything and **.** the picked objects.
+- **H** hides the picked objects from the 3D view, to see or reach what is behind them, and **Alt+H** shows them all again (View,
+  Hide picked and Show all; Show beside one in the plate list). Hidden objects still print. **B** over the 3D view, then a drag,
+  picks every object seen inside the box, as well as those already picked.
 - Away from the 3D view, **R** turns the picked objects 90 degrees, **F** frames them, **A** arranges the plate, **Ctrl+D** duplicates, **Delete**
   deletes. View, Keyboard shortcuts lists them all.
 - With one object picked, the panel also has Move by, Rotate, Mirror, Scale, Cut into pieces, Duplicate and Drop to plate. With

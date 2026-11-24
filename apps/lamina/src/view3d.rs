@@ -35,6 +35,7 @@ struct Drawn {
     bed: [f64; 2],
     size: [usize; 2],
     moving: Option<(Vec<u32>, Change)>,
+    hidden: Vec<u32>,
     cpu: bool,
 }
 
@@ -313,9 +314,8 @@ impl Gizmo {
         let (w, h) = (f64::from(rect.width()), f64::from(rect.height()));
         let to = |p: [f64; 3]| pos2(rect.min.x + p[0] as f32, rect.min.y + p[1] as f32);
         let o = camera.project(at, w, h)?;
-        let f = (h / 2.0) / (FOV.to_radians() / 2.0).tan();
         // An arrow of `length` mm at that depth is ARROW points long on screen.
-        let length = ARROW / (f * o[2]);
+        let length = ARROW / camera.pixels_per_mm(o[2], h);
         let tip = |k: usize| camera.project(add(at, axes[k].map(|v| v * length)), w, h).map(to);
         let s = length * 0.35;
         let corner = |dx: f64, dy: f64| camera.project([at[0] + dx, at[1] + dy, at[2]], w, h).map(to);
@@ -489,6 +489,8 @@ pub struct Shown {
     pub context: Option<Pick>,
     /// A stroke of the paint brush that ended: the object and the points on it, each painted round.
     pub painted: Option<(u32, Vec<P3>)>,
+    /// A box select that ended (B): the objects it covers.
+    pub boxed: Option<Vec<u32>>,
 }
 
 /// Moves `camera` with the pointer over `response`: a primary drag orbits (when `orbit`), a secondary or middle drag pans, the wheel
@@ -533,6 +535,10 @@ pub struct View {
     pub brush: Brush,
     /// A stroke of the brush under way: the object it started on, and the points on it so far.
     stroke: Option<(u32, Vec<P3>)>,
+    /// Objects left out of the picture (H; Alt+H shows them): the window's, not the scene's, so they still print.
+    pub hidden: Vec<u32>,
+    /// A box select (B): waiting for the drag (`Some(None)`), or under way from where it started.
+    pub boxing: Option<Option<Pos2>>,
     /// Points measured, drawn joined over the picture.
     pub marks: Vec<P3>,
     /// The corners of a cut's plane, drawn translucent over the picture while the window shows the Cut tools; set each frame.
@@ -625,11 +631,32 @@ impl View {
         self.keyed(ui, rect, &response, &mut shown);
         let press = ui.input(|i| i.pointer.press_origin());
         if !keyed
+            && self.boxing.is_none()
             && response.drag_started_by(PointerButton::Primary)
             && let (Some(at), Some(start)) = (one, press)
             && let Some(handle) = Gizmo::at_in(&self.camera, rect, at, &self.axes).and_then(|g| g.handle_at(start))
         {
             self.moving = Some(Moving { ids: selected.to_vec(), handle, start, at, change: Change::Move([0.0; 3]) });
+        }
+        // A box select (B): the next drag draws a box, and every object seen inside it is picked; a click, Escape or a right click
+        // gives up.
+        if let Some(from) = self.boxing {
+            let (escape, now) = ui.input(|i| (i.key_pressed(Key::Escape), i.pointer.interact_pos()));
+            if escape || response.secondary_clicked() || response.clicked() {
+                self.boxing = None;
+            } else if response.drag_started_by(PointerButton::Primary) {
+                self.boxing = Some(press);
+            } else if let (Some(start), Some(end)) = (from, now) {
+                let area = Rect::from_two_pos(start, end);
+                if response.drag_stopped() || !response.dragged() {
+                    shown.boxed = Some(self.objects_in(scene, area, rect, bed));
+                    self.boxing = None;
+                } else {
+                    let painter = ui.painter_at(rect);
+                    painter.rect_filled(area, 0.0, Color32::from_rgba_unmultiplied(120, 200, 255, 30));
+                    painter.rect_stroke(area, 0.0, Stroke::new(1.0, Color32::from_rgb(120, 200, 255)), egui::StrokeKind::Inside);
+                }
+            }
         }
         // The paint brush: a drag that starts on an object paints along it, as one stroke, and one that starts off it turns the view.
         if !keyed && self.tool == Tool::Paint {
@@ -669,7 +696,7 @@ impl View {
                 self.moving = None;
             }
         } else if !keyed {
-            steer(&mut self.camera, &response, ui, self.stroke.is_none());
+            steer(&mut self.camera, &response, ui, self.stroke.is_none() && self.boxing.is_none());
         }
         if self.moving.is_some() {
             steer(&mut self.camera, &response, ui, false);
@@ -691,6 +718,7 @@ impl View {
             bed,
             size,
             moving: moving.clone(),
+            hidden: self.hidden.clone(),
             cpu: self.card.cpu,
         };
         if self.drawn.as_ref() != Some(&now) {
@@ -705,14 +733,14 @@ impl View {
                     })
                 })
                 .collect();
-            if let Some(id) = self.card.draw(scene, selected, &moved, &self.camera, bed, size) {
+            if let Some(id) = self.card.draw(scene, selected, &moved, &self.hidden, &self.camera, bed, size) {
                 (self.shown, self.picture, self.drawn) = (Some(id), None, Some(now.clone()));
             }
         }
         if self.drawn.as_ref() != Some(&now) {
             let picture = match &moving {
                 Some((ids, change)) => {
-                    let mut seen = Scene::clone(scene);
+                    let mut seen = self.visible(scene);
                     for &id in ids {
                         if let Ok(o) = seen.get_mut(id)
                             && let Some((lo, hi)) = o.bounds()
@@ -722,7 +750,8 @@ impl View {
                     }
                     draw(&seen, selected, &self.camera, bed, size)
                 }
-                None => draw(scene, selected, &self.camera, bed, size),
+                None if self.hidden.is_empty() => draw(scene, selected, &self.camera, bed, size),
+                None => draw(&self.visible(scene), selected, &self.camera, bed, size),
             };
             match &mut self.texture {
                 Some(t) => t.set(image(&picture), TextureOptions::LINEAR),
@@ -820,6 +849,47 @@ impl View {
         shown
     }
 
+    /// The scene without its hidden objects (the meshes are shared, so this is cheap).
+    fn visible(&self, scene: &Scene) -> Scene {
+        let mut seen = Scene::clone(scene);
+        seen.objects.retain(|o| !self.hidden.contains(&o.id));
+        seen
+    }
+
+    /// The objects seen inside `area` of the view drawn in `rect`: read from the processor's picture, or from one drawn for it when
+    /// the card drew the view.
+    fn objects_in(&self, scene: &Scene, area: Rect, rect: Rect, bed: [f64; 2]) -> Vec<u32> {
+        let size = self.drawn.as_ref().map_or([rect.width().max(1.0) as usize, rect.height().max(1.0) as usize], |d| d.size);
+        let drawn;
+        let picture = match &self.picture {
+            Some(p) => p,
+            None => {
+                drawn = draw(&self.visible(scene), &[], &self.camera, bed, size);
+                &drawn
+            }
+        };
+        // From the view's points to the picture's pixels, which may be more or fewer.
+        let (sx, sy) = (size[0] as f32 / rect.width().max(1.0), size[1] as f32 / rect.height().max(1.0));
+        let area = area.intersect(rect);
+        let px = |x: f32| (((x - rect.min.x) * sx).max(0.0) as usize).min(size[0].saturating_sub(1));
+        let py = |y: f32| (((y - rect.min.y) * sy).max(0.0) as usize).min(size[1].saturating_sub(1));
+        let mut ids: Vec<u32> = Vec::new();
+        if area.width() <= 0.0 || area.height() <= 0.0 {
+            return ids;
+        }
+        for y in py(area.min.y)..=py(area.max.y) {
+            for x in px(area.min.x)..=px(area.max.x) {
+                if let Some(id) = picture.id_at(x, y)
+                    && !ids.contains(&id)
+                {
+                    ids.push(id);
+                }
+            }
+        }
+        ids.sort_unstable();
+        ids
+    }
+
     /// Whether the picture shown is the card's.
     #[cfg(test)]
     pub(crate) fn on_card(&self) -> bool {
@@ -908,7 +978,7 @@ mod tests {
         // A second box straight behind the first, seen from the front: the first hides it.
         let id = s.add("behind", Mesh::cuboid([40.0, 40.0, 40.0])).unwrap();
         s.get_mut(id).unwrap().xf = lamina_core::Transform::translate([0.0, 200.0, 0.0]);
-        let front = Camera { target: [0.0, 0.0, 20.0], azimuth: -90.0, elevation: 0.0, distance: 300.0 };
+        let front = Camera { target: [0.0, 0.0, 20.0], azimuth: -90.0, elevation: 0.0, distance: 300.0, ortho: false };
         assert_eq!(draw(&s, &[], &front, [400.0, 400.0], [100, 100]).id_at(50, 50), Some(1));
         let inside = Camera { distance: 5.0, ..front };
         let _ = draw(&s, &[], &inside, [400.0, 400.0], [64, 64]); // must not panic with geometry around and behind the eye
@@ -954,7 +1024,7 @@ mod tests {
     fn a_click_gives_the_face_and_the_point_under_it() {
         let s = scene_with_box();
         // Looking straight down at the 40 mm box: the middle pixel is its top face, 40 mm up, at the middle of the plate.
-        let cam = Camera { target: [0.0, 0.0, 20.0], azimuth: 0.0, elevation: 89.0, distance: 300.0 };
+        let cam = Camera { target: [0.0, 0.0, 20.0], azimuth: 0.0, elevation: 89.0, distance: 300.0, ortho: false };
         let pic = draw(&s, &[], &cam, [220.0, 220.0], [201, 201]);
         let (id, face) = pic.face_at(100, 100).unwrap();
         let t = s.get(id).unwrap().world().tri(face).unwrap();
@@ -966,7 +1036,7 @@ mod tests {
 
     #[test]
     fn a_ring_turns_by_the_angle_swept_and_the_corner_square_scales() {
-        let cam = Camera { target: [0.0, 0.0, 10.0], azimuth: -60.0, elevation: 35.0, distance: 380.0 };
+        let cam = Camera { target: [0.0, 0.0, 10.0], azimuth: -60.0, elevation: 35.0, distance: 380.0, ortho: false };
         let at = [0.0, 0.0, 10.0];
         let g = Gizmo::at(&cam, rect(), at).unwrap();
         for k in 0..3 {

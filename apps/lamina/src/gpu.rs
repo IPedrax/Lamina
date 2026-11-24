@@ -83,9 +83,16 @@ pub fn pack(scene: &Scene) -> (Vec<u8>, Vec<Range<u32>>) {
 pub fn globals(camera: &Camera, size: [usize; 2]) -> [[f32; 4]; 6] {
     let (eye, right, up, forward) = camera.frame();
     let (w, h) = (size[0].max(1) as f64, size[1].max(1) as f64);
-    let f = (h / 2.0) / (render::FOV.to_radians() / 2.0).tan();
     let v = |p: [f64; 3], k: f64| [(p[0] * k) as f32, (p[1] * k) as f32, (p[2] * k) as f32, 0.0];
     let edges = [render::CREASE.to_radians().cos() as f32, render::STEP, render::EDGE_SHADE as f32, 0.0];
+    if camera.ortho {
+        // Orthographic: right and up give the picture's -1 to 1 straight, and the forward axis's w says so to the shader.
+        let k = camera.pixels_per_mm(0.0, h);
+        let mut ahead = v(forward, 1.0);
+        ahead[3] = 1.0;
+        return [v(eye, 1.0), v(right, k / (w / 2.0)), v(up, k / (h / 2.0)), ahead, v(camera.light(), 1.0), edges];
+    }
+    let f = (h / 2.0) / (render::FOV.to_radians() / 2.0).tan();
     [v(eye, 1.0), v(right, f / (w / 2.0)), v(up, f / (h / 2.0)), v(forward, 1.0), v(camera.light(), 1.0), edges]
 }
 
@@ -161,11 +168,13 @@ pub struct Card {
 impl Card {
     /// Draws the picture on the card, if it may: made the first time. One that fails is let go and says why in `note`, and is not
     /// tried again until the user asks for it ([`retry`](Self::retry)); none then, and the processor draws.
+    #[allow(clippy::too_many_arguments)]
     pub fn draw(
         &mut self,
         scene: &Arc<Scene>,
         selected: &[u32],
         moved: &[(u32, Transform)],
+        hidden: &[u32],
         camera: &Camera,
         bed: [f64; 2],
         size: [usize; 2],
@@ -181,7 +190,7 @@ impl Card {
             }
         }
         let gpu = self.gpu.as_mut()?;
-        let drawn = catch_unwind(AssertUnwindSafe(|| gpu.draw(scene, selected, moved, camera, bed, size)))
+        let drawn = catch_unwind(AssertUnwindSafe(|| gpu.draw(scene, selected, moved, hidden, camera, bed, size)))
             .unwrap_or_else(|_| Err("it stopped while drawing".into()))
             .and_then(|()| gpu.texture.ok_or_else(|| "egui has no texture of it".to_string()));
         drawn.map_err(|e| self.fail(e)).ok()
@@ -426,11 +435,13 @@ impl Gpu {
     /// Draws `scene` as `camera` sees it in a picture `size` pixels, the objects in `selected` in the highlight colour and those in
     /// `moved` where a drag shows them: the same picture as `render::draw`. The scene goes up only when it is another `Arc` than the
     /// last; the plate only when `bed` changes. An error leaves the card to be let go: the caller draws on the processor.
+    #[allow(clippy::too_many_arguments)]
     pub fn draw(
         &mut self,
         scene: &Arc<Scene>,
         selected: &[u32],
         moved: &[(u32, Transform)],
+        hidden: &[u32],
         camera: &Camera,
         bed: [f64; 2],
         size: [usize; 2],
@@ -494,7 +505,9 @@ impl Gpu {
             {
                 pass.set_pipeline(&self.scene);
                 pass.set_vertex_buffer(0, vertices.slice(..));
-                for (k, run) in m.runs.iter().enumerate().filter(|(_, r)| !r.is_empty()) {
+                // Hidden objects (the window's H) are left out.
+                let shown = |k: usize| scene.objects.get(k).is_some_and(|o| !hidden.contains(&o.id));
+                for (k, run) in m.runs.iter().enumerate().filter(|&(k, r)| !r.is_empty() && shown(k)) {
                     let k = GROUND + k as u32;
                     pass.draw(run.clone(), k..k + 1);
                 }
@@ -697,7 +710,7 @@ mod tests {
 
     #[test]
     fn the_globals_put_a_point_where_the_camera_projects_it_and_carry_the_edge_settings() {
-        let camera = Camera { target: [5.0, -3.0, 12.0], azimuth: -50.0, elevation: 25.0, distance: 240.0 };
+        let camera = Camera { target: [5.0, -3.0, 12.0], azimuth: -50.0, elevation: 25.0, distance: 240.0, ortho: false };
         let (w, h) = (640.0, 360.0);
         let g = globals(&camera, [640, 360]);
         for p in [[0.0, 0.0, 0.0], [40.0, -30.0, 20.0], [-100.0, 100.0, 0.01]] {
@@ -826,13 +839,15 @@ mod tests {
         let ids: Vec<u32> = scene.objects.iter().map(|o| o.id).collect();
         let (w, h) = (800, 600);
         for (camera, selected, moved) in [
-            (Camera { target: [0.0, -5.0, 10.0], azimuth: -60.0, elevation: 30.0, distance: 260.0 }, vec![], vec![]),
-            (Camera { target: [0.0, -5.0, 10.0], azimuth: 25.0, elevation: 55.0, distance: 200.0 }, vec![ids[1]], vec![]),
+            (Camera { target: [0.0, -5.0, 10.0], azimuth: -60.0, elevation: 30.0, distance: 260.0, ortho: false }, vec![], vec![]),
+            (Camera { target: [0.0, -5.0, 10.0], azimuth: 25.0, elevation: 55.0, distance: 200.0, ortho: false }, vec![ids[1]], vec![]),
             (
-                Camera { target: [0.0, -5.0, 10.0], azimuth: -120.0, elevation: 15.0, distance: 300.0 },
+                Camera { target: [0.0, -5.0, 10.0], azimuth: -120.0, elevation: 15.0, distance: 300.0, ortho: false },
                 vec![ids[0]],
                 vec![(ids[0], Transform::translate([0.0, 0.0, 6.0]))],
             ),
+            // Orthographic, from the side the last one saw.
+            (Camera { target: [0.0, -5.0, 10.0], azimuth: 150.0, elevation: 35.0, distance: 220.0, ortho: true }, vec![], vec![]),
         ] {
             let mut seen = Scene::clone(&scene);
             for (id, t) in &moved {
@@ -840,7 +855,7 @@ mod tests {
                 o.xf = o.xf.then(t);
             }
             let cpu = render::draw(&seen, &selected, &camera, [220.0, 220.0], [w, h]);
-            gpu.draw(&scene, &selected, &moved, &camera, [220.0, 220.0], [w, h]).unwrap();
+            gpu.draw(&scene, &selected, &moved, &[], &camera, [220.0, 220.0], [w, h]).unwrap();
             let pixels = read(&gpu);
             assert_eq!(pixels.len(), cpu.pixels.len());
             let far = |a: &Rgba, b: &Rgba| a[..3].iter().zip(&b[..3]).any(|(x, y)| x.abs_diff(*y) > 6);
@@ -911,7 +926,7 @@ mod tests {
         let size = [1600, 1000];
         let cameras: Vec<Camera> = (0..30).map(|i| Camera { azimuth: -60.0 + f64::from(i) * 3.0, ..Camera::default() }).collect();
         let t = Instant::now();
-        gpu.draw(&scene, &[], &[], &cameras[0], [220.0, 220.0], size).unwrap();
+        gpu.draw(&scene, &[], &[], &[], &cameras[0], [220.0, 220.0], size).unwrap();
         gpu.device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
         eprintln!("{triangles} triangles, {}x{} pixels", size[0], size[1]);
         eprintln!("card: first picture (packs and uploads the scene) {:.1} ms", ms(t));
@@ -919,7 +934,7 @@ mod tests {
             .iter()
             .map(|c| {
                 let t = Instant::now();
-                gpu.draw(&scene, &[], &[], c, [220.0, 220.0], size).unwrap();
+                gpu.draw(&scene, &[], &[], &[], c, [220.0, 220.0], size).unwrap();
                 gpu.device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
                 ms(t)
             })

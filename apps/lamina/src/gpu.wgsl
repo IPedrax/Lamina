@@ -13,7 +13,7 @@ struct Globals {
     // The eye, mm.
     eye: vec4<f32>,
     // The picture's right and up, each times the focal length over half the picture's width (or height): `dot(d, right) / ahead`
-    // is where a point `d` from the eye lands across the picture, -1 to 1.
+    // is where a point `d` from the eye lands across the picture, -1 to 1. In orthographic (`forward.w` 1), `dot(d, right)` is.
     right: vec4<f32>,
     up: vec4<f32>,
     forward: vec4<f32>,
@@ -30,6 +30,8 @@ struct Globals {
 
 // The nearest the eye sees, mm (`render::NEAR`): the card's depth is NEAR over the distance ahead, 1 at the near plane.
 const NEAR: f32 = 1.0;
+// The furthest an orthographic camera sees (`render::ORTHO_FAR`): its depth is 1 - ahead / ORTHO_FAR, as the processor's.
+const ORTHO_FAR: f32 = 20000.0;
 
 struct VertexIn {
     @location(0) position: vec3<f32>,
@@ -57,7 +59,12 @@ fn vs_scene(v: VertexIn) -> VertexOut {
     let world = vec3<f32>(dot(v.row0, p), dot(v.row1, p), dot(v.row2, p));
     let d = world - g.eye.xyz;
     var o: VertexOut;
-    o.clip = vec4<f32>(dot(d, g.right.xyz), dot(d, g.up.xyz), NEAR, dot(d, g.forward.xyz));
+    let ahead = dot(d, g.forward.xyz);
+    if g.forward.w > 0.5 {
+        o.clip = vec4<f32>(dot(d, g.right.xyz), dot(d, g.up.xyz), 1.0 - ahead / ORTHO_FAR, 1.0);
+    } else {
+        o.clip = vec4<f32>(dot(d, g.right.xyz), dot(d, g.up.xyz), NEAR, ahead);
+    }
     o.ids = vec2<u32>(v.object.x, v.tri & 0x3fffffffu);
     // Paint over the object's colour: `render::PAINT`, seam, support and block.
     let paint = v.tri >> 30u;
