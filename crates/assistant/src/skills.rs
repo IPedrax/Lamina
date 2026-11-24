@@ -99,6 +99,54 @@ mod tests {
         assert!(seen >= 4, "found only {seen} calls: has the way skills write them changed?");
     }
 
+    /// A skill that says a command is missing when it exists would have the model refuse what it can do (the modelling skill once
+    /// listed text after `text` was added). Each claim of something missing is its first sentence, from "missing:" or under a
+    /// "What is not there yet" heading; what it offers instead, in parentheses or a later sentence, may name commands.
+    #[test]
+    fn no_skill_calls_a_command_missing() {
+        let mut session = Session::new();
+        session.register(lamina_slicer::COMMANDS);
+        session.register(lamina_csg::COMMANDS);
+        let mut claims = 0;
+        for s in all() {
+            let mut lines = s.text.lines();
+            let mut found = Vec::new();
+            while let Some(line) = lines.next() {
+                if let Some((_, rest)) = line.split_once("missing:") {
+                    let next = lines.clone().take_while(|l| l.starts_with("  ")).collect::<Vec<_>>().join(" ");
+                    found.push(format!("{rest} {next}"));
+                } else if line.starts_with("## What is not there yet") {
+                    found.push(
+                        lines
+                            .clone()
+                            .skip_while(|l| l.trim().is_empty())
+                            .take_while(|l| !l.trim().is_empty())
+                            .collect::<Vec<_>>()
+                            .join(" "),
+                    );
+                }
+            }
+            for claim in found {
+                claims += 1;
+                let sentence = claim.split(". ").next().unwrap_or_default();
+                let mut plain = String::new();
+                let mut depth = 0;
+                for c in sentence.chars() {
+                    match c {
+                        '(' => depth += 1,
+                        ')' => depth -= 1,
+                        _ if depth == 0 => plain.push(c),
+                        _ => {}
+                    }
+                }
+                for word in plain.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_')) {
+                    assert!(session.find(word).is_none(), "{} says `{word}` is missing, but it is a command: {sentence}", s.name);
+                }
+            }
+        }
+        assert!(claims >= 3, "found only {claims} claims of something missing: has the way skills write them changed?");
+    }
+
     /// The slicing skill promises this split: the model checks a slice, the user writes the file.
     #[test]
     fn the_model_may_check_a_slice_but_never_write_one() {
