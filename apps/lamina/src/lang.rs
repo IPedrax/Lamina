@@ -85,6 +85,12 @@ pub fn t(english: &str) -> &str {
     lamina_i18n::translated(CATALOGS, get().code(), "", english).unwrap_or(english)
 }
 
+/// A collapsing section titled `english` in the window's language. Its id is the English, so which sections are open stays as it
+/// was when the language changes (egui keys a section by its title otherwise).
+pub fn section(english: &str) -> egui::CollapsingHeader {
+    egui::CollapsingHeader::new(t(english)).id_salt(english)
+}
+
 /// A message whose meaning a PO `msgctxt` tells apart.
 pub fn tc<'a>(context: &str, english: &'a str) -> &'a str {
     lamina_i18n::translated(CATALOGS, get().code(), context, english).unwrap_or(english)

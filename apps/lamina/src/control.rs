@@ -323,7 +323,7 @@ impl App {
 
     /// The Agents section of the plate panel: let agents in or not, on which port, whether they may change the plate, and how to connect.
     pub(crate) fn agents_ui(&mut self, ui: &mut Ui) {
-        egui::CollapsingHeader::new(t("Agents")).show(ui, |ui| {
+        crate::lang::section("Agents").show(ui, |ui| {
             let mut on = self.control.is_some();
             let tip = t("Lets an AI agent (Claude Code, Codex, any MCP client) work on this plate through lamina-cli mcp --connect. Only \
                        programs on this computer that can read your settings folder get in.");
