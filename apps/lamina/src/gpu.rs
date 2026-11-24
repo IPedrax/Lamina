@@ -194,7 +194,7 @@ impl Card {
 
     fn fail(&mut self, e: String) -> Option<TextureId> {
         (self.gpu, self.failed) = (None, true);
-        self.note = Some(format!("The 3D view is drawn on the processor: the graphics card failed ({e})."));
+        self.note = Some(crate::lang::tf("The 3D view is drawn on the processor: the graphics card failed ({}).", &[&e]));
         None
     }
 }

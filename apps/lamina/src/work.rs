@@ -16,6 +16,7 @@ use egui::{RichText, Ui};
 use lamina_core::{Scene, Session};
 use serde_json::Value;
 
+use crate::lang::{self, t, tf};
 use crate::{App, Sliced};
 
 /// What a job hands back: a command's answer, or a slice read back for the preview.
@@ -55,7 +56,7 @@ impl App {
         then: impl FnOnce(&mut App, Result<Done, String>) + 'static,
     ) {
         if let Some(job) = &self.job {
-            (self.failed, self.status) = (true, format!("Wait for {} to finish, or cancel it.", job.label));
+            (self.failed, self.status) = (true, tf("Wait for {} to finish, or cancel it.", &[t(&job.label)]));
             return;
         }
         let mut s = self.session.sibling();
@@ -65,7 +66,10 @@ impl App {
         let (tx, rx) = mpsc::channel();
         let watched = Arc::clone(&flag);
         // A panic on the thread drops `tx`, which the window reads as an error; a job the window has forgotten sends to no one.
+        // What the job says (a slice's summary) is in the window's language.
+        let language = lang::get();
         std::thread::spawn(move || {
+            lang::set(language);
             let done = lamina_core::cancel::watch(watched, || work(&mut s));
             let _ = tx.send(done.map(|d| (d, s.scene)));
         });
@@ -94,7 +98,7 @@ impl App {
     fn finish(&mut self, result: Result<Result<(Done, Arc<Scene>), String>, ()>) {
         let Some(job) = self.job.take() else { return };
         let result = match result {
-            Err(()) => Err(format!("internal error: {} stopped part way", job.label)),
+            Err(()) => Err(tf("internal error: {} stopped part way", &[t(&job.label)])),
             Ok(Err(e)) => Err(e),
             Ok(Ok((done, scene))) if Arc::ptr_eq(&scene, &job.from) => Ok(done),
             Ok(Ok((done, scene))) => self.session.adopt(&job.label, &job.from, scene).map(|()| done),
@@ -108,17 +112,17 @@ impl App {
     pub fn cancel(&mut self) {
         if let Some(job) = self.job.take() {
             job.flag.store(true, Ordering::Relaxed);
-            (self.failed, self.status) = (false, format!("Cancelled {}.", job.label));
+            (self.failed, self.status) = (false, tf("Cancelled {}.", &[t(&job.label)]));
         }
     }
 
     /// The running job on the status bar: a spinner, what it is, how long it has run, and Cancel.
     pub(crate) fn work_ui(&mut self, ui: &mut Ui) {
         let Some(job) = &self.job else { return };
-        let text = format!("{}... {:.0} s", job.label, job.started.elapsed().as_secs_f64());
+        let text = format!("{}... {:.0} s", t(&job.label), job.started.elapsed().as_secs_f64());
         ui.spinner();
         ui.label(RichText::new(text).strong());
-        if ui.button("Cancel").on_hover_text("Stop it; nothing it would have done is applied").clicked() {
+        if ui.button(t("Cancel")).on_hover_text(t("Stop it; nothing it would have done is applied")).clicked() {
             self.cancel();
         }
         ui.separator();

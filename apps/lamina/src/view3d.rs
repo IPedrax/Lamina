@@ -447,7 +447,7 @@ impl View {
             if let (Some(m), Some(p)) = (self.moving.as_ref(), response.interact_pointer_pos()) {
                 let text = match m.change {
                     Change::Move(by) => format!("{:+.1}, {:+.1}, {:+.1} mm", by[0], by[1], by[2]),
-                    Change::Turn(axis, d) => format!("{d:+.0} deg about {}", ["x", "y", "z"][axis.min(2)]),
+                    Change::Turn(axis, d) => crate::lang::tf("{} deg about {}", &[&format!("{d:+.0}"), ["x", "y", "z"][axis.min(2)]]),
                     Change::Scale(f) => format!("x {f:.2}"),
                 };
                 painter.text(p + vec2(16.0, -16.0), egui::Align2::LEFT_BOTTOM, text, FontId::proportional(13.0), Color32::WHITE);

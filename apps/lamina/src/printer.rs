@@ -5,11 +5,13 @@
 
 use egui::{RichText, Ui};
 use lamina_assistant::seal;
+use lamina_i18n::ui_msg;
 use lamina_printer::Kind;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::App;
+use crate::lang::{t, tf};
 use crate::work::Done;
 use lamina_core::Session;
 
@@ -54,7 +56,7 @@ impl PrinterPanel {
         if let Some(s) = sealed {
             match seal::open(&s) {
                 Ok(k) => (p.key, p.remember, p.sealed) = (k, true, Some(s)),
-                Err(e) => note = Some(format!("The saved printer key was left out: {e}")),
+                Err(e) => note = Some(tf("The saved printer key was left out: {}", &[&e])),
             }
         }
         (p, note)
@@ -78,7 +80,7 @@ impl App {
     pub fn send_to_printer(&mut self, print: bool) {
         let c = self.link.connection.clone();
         if c.address.trim().is_empty() {
-            (self.failed, self.status) = (true, "Give the printer's address in Printer connection first.".into());
+            (self.failed, self.status) = (true, t("Give the printer's address in Printer connection first.").into());
             return;
         }
         let stem = self.project.as_ref().and_then(|p| p.file_stem()).map_or("plate".into(), |n| n.to_string_lossy().into_owned());
@@ -97,14 +99,14 @@ impl App {
             let _ = std::fs::remove_file(&path);
             sent.map(Done::Value)
         };
-        let label = if c.kind == Kind::Serial { "Printing over the USB cable" } else { "Sending to the printer" };
+        let label = if c.kind == Kind::Serial { ui_msg!("Printing over the USB cable") } else { ui_msg!("Sending to the printer") };
         self.start(label, false, work, move |app, done| {
             if let Ok(Done::Value(v)) = done {
-                let name = v["name"].as_str().unwrap_or("the plate");
+                let name = v["name"].as_str().unwrap_or(t("the plate"));
                 app.status = match (c.kind, print) {
-                    (Kind::Serial, _) => format!("Sent all of {name} over the USB cable: the printer is finishing it."),
-                    (_, true) => format!("Sent {name} to {}: it is printing it.", c.kind.name()),
-                    (_, false) => format!("Sent {name} to {}: it has it.", c.kind.name()),
+                    (Kind::Serial, _) => tf("Sent all of {} over the USB cable: the printer is finishing it.", &[name]),
+                    (_, true) => tf("Sent {} to {}: it is printing it.", &[name, c.kind.name()]),
+                    (_, false) => tf("Sent {} to {}: it has it.", &[name, c.kind.name()]),
                 };
             }
         });
@@ -143,10 +145,10 @@ impl App {
     }
 
     pub(crate) fn printer_ui(&mut self, ui: &mut Ui) {
-        egui::CollapsingHeader::new("Printer connection").show(ui, |ui| {
+        egui::CollapsingHeader::new(t("Printer connection")).show(ui, |ui| {
             let p = &mut self.link;
             egui::Grid::new("printer").num_columns(2).show(ui, |ui| {
-                ui.label("Server");
+                ui.label(t("Server"));
                 egui::ComboBox::from_id_salt("printer kind").selected_text(p.connection.kind.name()).show_ui(ui, |ui| {
                     for k in Kind::ALL {
                         ui.selectable_value(&mut p.connection.kind, k, k.name());
@@ -154,13 +156,13 @@ impl App {
                 });
                 ui.end_row();
                 let serial = p.connection.kind == Kind::Serial;
-                ui.label(if serial { "Port" } else { "Address" });
-                let hint = if serial { "/dev/ttyUSB0, /dev/ttyACM0 or COM3" } else { "192.168.1.20 or http://printer.local:7125" };
+                ui.label(if serial { t("Port") } else { t("Address") });
+                let hint = if serial { t("/dev/ttyUSB0, /dev/ttyACM0 or COM3") } else { t("192.168.1.20 or http://printer.local:7125") };
                 ui.add(egui::TextEdit::singleline(&mut p.connection.address).hint_text(hint));
                 ui.end_row();
                 if serial {
                     let baud = p.connection.baud.unwrap_or(lamina_printer::serial::BAUD);
-                    ui.label("Baud");
+                    ui.label(t("Baud"));
                     egui::ComboBox::from_id_salt("printer baud").selected_text(baud.to_string()).show_ui(ui, |ui| {
                         for b in BAUDS {
                             ui.selectable_value(&mut p.connection.baud, Some(b), b.to_string());
@@ -169,50 +171,55 @@ impl App {
                     ui.end_row();
                 }
                 if p.connection.kind == Kind::PrusaLink {
-                    ui.label("User");
-                    ui.add(egui::TextEdit::singleline(&mut p.connection.user).hint_text("maker, or empty for an API key"))
-                        .on_hover_text("PrusaLink's user name, when it asks for a user name and password: the password goes below");
+                    ui.label(t("User"));
+                    ui.add(egui::TextEdit::singleline(&mut p.connection.user).hint_text(t("maker, or empty for an API key")))
+                        .on_hover_text(t("PrusaLink's user name, when it asks for a user name and password: the password goes below"));
                     ui.end_row();
                 }
                 if !serial {
-                    ui.label(if p.connection.kind == Kind::PrusaLink && !p.connection.user.trim().is_empty() { "Password" } else { "API key" });
+                    let user = p.connection.kind == Kind::PrusaLink && !p.connection.user.trim().is_empty();
+                    ui.label(if user { t("Password") } else { t("API key") });
                     ui.add(egui::TextEdit::singleline(&mut p.key).password(true).hint_text(match p.connection.kind {
-                        Kind::Octoprint => "OctoPrint's settings, Application Keys",
-                        Kind::PrusaLink => "the printer's Settings, Network, PrusaLink",
-                        Kind::Duet => "the board's password, if it has one",
-                        Kind::Moonraker | Kind::Serial => "only if Moonraker asks for one",
+                        Kind::Octoprint => t("OctoPrint's settings, Application Keys"),
+                        Kind::PrusaLink => t("the printer's Settings, Network, PrusaLink"),
+                        Kind::Duet => t("the board's password, if it has one"),
+                        Kind::Moonraker | Kind::Serial => t("only if Moonraker asks for one"),
                     }));
                     ui.end_row();
                 }
             });
-            ui.checkbox(&mut p.remember, "Remember the key").on_hover_text(
+            ui.checkbox(&mut p.remember, t("Remember the key")).on_hover_text(t(
                 "Kept in the settings file, sealed under a secret built into Lamina: scrambled, not protected from anyone who has Lamina.",
-            );
+            ));
             p.keep();
-            ui.checkbox(&mut p.watch, "Show what it is doing").on_hover_text("Asks the printer every 5 seconds while ticked");
+            ui.checkbox(&mut p.watch, t("Show what it is doing")).on_hover_text(t("Asks the printer every 5 seconds while ticked"));
             if p.watch {
                 match &p.status {
                     Some(Ok(s)) => ui.label(RichText::new(s.line()).small()),
                     Some(Err(e)) => ui.label(RichText::new(e).small().color(crate::WARNING)),
-                    None => ui.label(RichText::new("Asking...").small().weak()),
+                    None => ui.label(RichText::new(t("Asking...")).small().weak()),
                 };
             }
             let serial = p.connection.kind == Kind::Serial;
             ui.label(
                 RichText::new(if serial {
-                    "Lamina opens this port only to print: keep the window open until the print is done. Cancel stops it and turns the heaters off."
+                    t("Lamina opens this port only to print: keep the window open until the print is done. Cancel stops it and turns the heaters off.")
                 } else {
-                    "Lamina talks only to this address: when you press Send, or watch it."
+                    t("Lamina talks only to this address: when you press Send, or watch it.")
                 })
                 .small()
                 .weak(),
             );
             ui.horizontal(|ui| {
-                let upload = ui.add_enabled(!serial, egui::Button::new("Send to printer"));
-                if upload.on_hover_text("Slice the plate and upload it").on_disabled_hover_text("A printer on a USB cable has nowhere to keep a file: Send and print").clicked() {
+                let upload = ui.add_enabled(!serial, egui::Button::new(t("Send to printer")));
+                if upload
+                    .on_hover_text(t("Slice the plate and upload it"))
+                    .on_disabled_hover_text(t("A printer on a USB cable has nowhere to keep a file: Send and print"))
+                    .clicked()
+                {
                     self.send_to_printer(false);
                 }
-                if ui.button("Send and print").on_hover_text("Slice the plate, upload it and start printing").clicked() {
+                if ui.button(t("Send and print")).on_hover_text(t("Slice the plate, upload it and start printing")).clicked() {
                     self.send_to_printer(true);
                 }
             });

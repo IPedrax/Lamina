@@ -18,6 +18,8 @@ use std::time::Duration;
 use eframe::wgpu::Backends;
 use serde_json::{Value, json};
 
+use crate::lang::{t, tf};
+
 /// What a start asks of the graphics, in the order starts that didn't finish try it: wgpu's own choice (every backend the system
 /// has, the fastest adapter first), then each backend alone. DirectX 12 comes before Vulkan: wgpu lists Vulkan's adapters first
 /// and keeps that order among adapters of the same kind, so on most Windows machines its own choice already was Vulkan, and
@@ -132,11 +134,11 @@ fn trimmed(path: &Path) {
 /// What a start tells the user: a message box on Windows, where a release build has no console to print to.
 pub fn tell(what: &str, files: Option<&Files>) {
     let body = match files {
-        Some(f) => format!("{what}\n\nThe details are in {}.", f.log.display()),
+        Some(f) => format!("{what}\n\n{}", tf("The details are in {}.", &[&f.log.display().to_string()])),
         None => what.to_string(),
     };
     if cfg!(windows) {
-        rfd::MessageDialog::new().set_level(rfd::MessageLevel::Error).set_title("Lamina couldn't start").set_description(body).show();
+        rfd::MessageDialog::new().set_level(rfd::MessageLevel::Error).set_title(t("Lamina couldn't start")).set_description(body).show();
     }
 }
 

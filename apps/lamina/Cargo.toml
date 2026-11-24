@@ -34,6 +34,12 @@ egui = "0.36"
 # Waits on wgpu's futures (an error scope, a pixel read back) for the 3D view on the graphics card; eframe already builds it.
 pollster = "1"
 rfd = "0.17"
+# The window's language: its catalogs, compiled by build.rs, and the system's locale for the first start.
+lamina-i18n = { path = "../../crates/i18n" }
+sys-locale = "0.3"
+
+[build-dependencies]
+lamina-i18n = { path = "../../crates/i18n", features = ["catalog"] }
 
 [dev-dependencies]
 lamina-assistant = { path = "../../crates/assistant", features = ["testing"] }

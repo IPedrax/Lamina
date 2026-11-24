@@ -12,6 +12,8 @@ use lamina_slicer::profile::Profile;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+use crate::lang::{Lang, t, tf};
+
 /// The largest settings file read, bytes.
 pub const MAX_FILE: u64 = 1 << 20;
 
@@ -48,6 +50,9 @@ pub struct Settings {
     /// The theme, when it is not the default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub look: Option<crate::comfort::Look>,
+    /// The interface's language, by its code; none until the window first writes the file (it then takes the system's).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<Lang>,
     /// The assistant's local model server and model, when they are not the defaults.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub local_url: Option<String>,
@@ -77,20 +82,27 @@ impl Settings {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return (Settings::default(), notes),
             Err(e) => return (Settings::default(), vec![format!("{}: {e}", path.display())]),
             Ok(m) if m.len() > MAX_FILE => {
-                return (Settings::default(), vec![format!("{} is too big to be settings: left alone", path.display())]);
+                return (Settings::default(), vec![tf("{} is too big to be settings: left alone", &[&path.display().to_string()])]);
             }
             Ok(_) => std::fs::read_to_string(path),
         };
         let all = match text.map_err(|e| e.to_string()).and_then(|t| serde_json::from_str::<Value>(&t).map_err(|e| e.to_string())) {
             Ok(Value::Object(m)) => m,
-            Ok(_) => return (Settings::default(), vec![format!("{} is not a settings file: left alone", path.display())]),
-            Err(e) => return (Settings::default(), vec![format!("{} does not read ({e}): started from the defaults", path.display())]),
+            Ok(_) => return (Settings::default(), vec![tf("{} is not a settings file: left alone", &[&path.display().to_string()])]),
+            Err(e) => {
+                return (
+                    Settings::default(),
+                    vec![tf("{} does not read ({}): started from the defaults", &[&path.display().to_string(), &e])],
+                );
+            }
         };
-        let mut s = Settings::default();
+        // A language code this version does not know (a later one's, a hand edit) is English: never a reason to drop the file.
+        let language = all.get("language").map(|v| v.as_str().and_then(Lang::from_code).unwrap_or_default());
+        let mut s = Settings { language, ..Settings::default() };
         if let Some(v) = all.get("profile") {
             match Profile::from_json(v) {
                 Ok(p) => s.profile = Some(p),
-                Err(e) => notes.push(format!("The saved print settings were left out: {e}")),
+                Err(e) => notes.push(tf("The saved print settings were left out: {}", &[&e])),
             }
         }
         let text = |k: &str| all.get(k).and_then(Value::as_str).filter(|t| t.len() <= 200).map(str::to_string);
@@ -109,7 +121,7 @@ impl Settings {
                     Some(f) => {
                         into.insert(name.clone(), f.clone());
                     }
-                    None => notes.push(format!("The preset \"{name}\" was left out: its settings are not valid")),
+                    None => notes.push(tf("The preset \"{}\" was left out: its settings are not valid", &[name])),
                 }
             }
         }
@@ -126,49 +138,49 @@ impl Settings {
         if let Some(v) = all.get("connection") {
             match serde_json::from_value::<crate::printer::Connection>(v.clone()) {
                 Ok(c) if c.address.len() <= 500 && c.user.len() <= 200 => s.connection = Some(c),
-                _ => notes.push("The printer connection was left out: it does not read".into()),
+                _ => notes.push(t("The printer connection was left out: it does not read").into()),
             }
         }
         if let Some(v) = all.get("connection_key") {
             match v.as_str().filter(|t| seal::well_formed(t)) {
                 Some(t) => s.connection_key = Some(t.to_string()),
-                None => notes.push("The saved printer key was left out: it is not a sealed key".into()),
+                None => notes.push(t("The saved printer key was left out: it is not a sealed key").into()),
             }
         }
         if let Some(v) = all.get("local_url") {
             match v.as_str().filter(|u| lamina_assistant::local::endpoint(u).is_ok()) {
                 Some(u) => s.local_url = Some(u.to_string()),
-                None => notes.push("The local model's address was left out: it is not on this computer".into()),
+                None => notes.push(t("The local model's address was left out: it is not on this computer").into()),
             }
         }
         if let Some(v) = all.get("local_model") {
             match v.as_str().filter(|m| lamina_assistant::model_ok_for(Provider::Local, m)) {
                 Some(m) => s.local_model = Some(m.to_string()),
-                None => notes.push("The local model's name was left out: it is not a model id".into()),
+                None => notes.push(t("The local model's name was left out: it is not a model id").into()),
             }
         }
         if let Some(v) = all.get("agents") {
             match serde_json::from_value::<crate::control::Agents>(v.clone()) {
                 Ok(a) => s.agents = Some(a),
-                Err(_) => notes.push("The Agents settings were left out: they do not read".into()),
+                Err(_) => notes.push(t("The Agents settings were left out: they do not read").into()),
             }
         }
         if let Some(v) = all.get("cpu_view") {
             match v.as_bool() {
                 Some(b) => s.cpu_view = b,
-                None => notes.push("The 3D view's processor setting was left out: it is not true or false".into()),
+                None => notes.push(t("The 3D view's processor setting was left out: it is not true or false").into()),
             }
         }
         if let Some(v) = all.get("no_update_check") {
             match v.as_bool() {
                 Some(b) => s.no_update_check = b,
-                None => notes.push("The update check's setting was left out: it is not true or false".into()),
+                None => notes.push(t("The update check's setting was left out: it is not true or false").into()),
             }
         }
         if let Some(v) = all.get("look") {
             match serde_json::from_value::<crate::comfort::Look>(v.clone()) {
                 Ok(l) => s.look = Some(l),
-                Err(_) => notes.push("The theme was left out: it is not dark, light or system".into()),
+                Err(_) => notes.push(t("The theme was left out: it is not dark, light or system").into()),
             }
         }
         for (provider, sealed) in all.get("keys").and_then(Value::as_object).into_iter().flatten() {
@@ -176,7 +188,7 @@ impl Settings {
                 Some(t) => {
                     s.keys.insert(provider.clone(), t.to_string());
                 }
-                None => notes.push(format!("The saved {provider} key was left out: it is not a sealed key")),
+                None => notes.push(tf("The saved {} key was left out: it is not a sealed key", &[provider])),
             }
         }
         (s, notes)
@@ -184,7 +196,7 @@ impl Settings {
 
     /// Writes the settings to `path`, whole: to a file beside it that only the user may read, then over the old one.
     pub fn write(&self, path: &Path) -> Result<(), String> {
-        let fail = |e: std::io::Error| format!("could not save the settings to {}: {e}", path.display());
+        let fail = |e: std::io::Error| tf("could not save the settings to {}: {}", &[&path.display().to_string(), &e.to_string()]);
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir).map_err(fail)?;
         }
@@ -260,6 +272,12 @@ mod tests {
         assert_eq!(notes.len(), 4, "{notes:?}");
         std::fs::write(&path, "not json").unwrap();
         assert_eq!(Settings::read(&path).0, Settings::default());
+        // A language this version has no catalog for (or no code at all) is English, and nothing else is lost over it.
+        for (language, read) in [(r#""es""#, Lang::Spanish), (r#""fr""#, Lang::English), ("7", Lang::English)] {
+            std::fs::write(&path, format!(r#"{{"language": {language}, "printer": "Mine"}}"#)).unwrap();
+            let (s, notes) = Settings::read(&path);
+            assert_eq!((s.language, s.printer.as_deref(), notes.len()), (Some(read), Some("Mine"), 0), "{language}");
+        }
         assert_eq!(Settings::read(&dir.path().join("none.json")), (Settings::default(), vec![]));
     }
 

@@ -6,7 +6,7 @@
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use lamina_desktop::{App, session, startup};
+use lamina_desktop::{App, lang, session, startup};
 
 const USAGE: &str = "USAGE: lamina [FILE]... [--control PORT]
   FILE       a .lamina project to open, or a mesh to put on the plate: .stl, .3mf, .obj, .gltf or .glb
@@ -69,12 +69,18 @@ fn main() -> ExitCode {
     // The settings (print settings, presets, a remembered key) live in the user's settings folder, or where LAMINA_SETTINGS says;
     // the log, and the mark that makes a start after one that died try other graphics, beside them.
     let settings = lamina_desktop::settings::default_path();
+    // The window's language: the one chosen last time, else the system's, else English. Set before the settings are read, so
+    // what they say about themselves (and a start that fails) is in it too.
+    let saved = settings.as_deref().and_then(|p| lamina_desktop::settings::Settings::read(p).0.language);
+    let language = saved.unwrap_or_else(lang::from_env);
+    lang::set(language);
     let files = settings.as_deref().map(startup::Files::beside);
     let graphics = startup::begin(files.as_ref());
     let mut app = match settings {
         Some(path) => App::with_settings(session(), net, path),
         None => App::new(session(), net),
     };
+    app.lang = language;
     // `--control PORT` lets agents work on this window's plate (0: any free port), as the Agents section does; any other argument is
     // a file to open.
     let mut rest = args.iter();

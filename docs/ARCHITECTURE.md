@@ -353,7 +353,8 @@ BIMCraft is `/mnt/ai/RevCraft` (github.com/IPedrax/BIMCraft), same author, MIT O
 | `apps/bimcraft-cli/src/window.rs`, `crates/ui-egui/src/control.rs` (the control port) | `apps/lamina-cli/src/window.rs`, `apps/lamina/src/control.rs` | lifted; the Agents section in the plate panel instead of a settings page and app bar button |
 | `crates/core/src/mesh_in.rs` (OBJ and glTF readers, "knows no element") | `core/mesh_in.rs` | lifted with its reader tests; `import_mesh` makes objects of what it reads |
 | `crates/core/src/autosave.rs` | `apps/lamina/src/autosave.rs` | simpler: one window, one file |
-| `apps/bimcraft/src/startup.rs` (log, graphics fallback) | `apps/lamina/src/startup.rs` | lifted; no translations, no old-mark reading |
+| `apps/bimcraft/src/startup.rs` (log, graphics fallback) | `apps/lamina/src/startup.rs` | lifted; no old-mark reading |
+| `crates/i18n`, `crates/ui-egui/src/lang.rs`, `build.rs`, the `cargo i18n` alias | `crates/i18n`, `apps/lamina/src/lang.rs`, `apps/lamina/build.rs`, `.cargo/config.toml` | lifted with its tests; one domain (the interface) and one marker (`ui_msg!`), three languages, no fonts for other scripts |
 | `crates/dwg` (`in_child`, `child_main`, `run_child`) | `crates/csg/src/child.rs` | the same pattern, for booleans |
 | `packaging/` (env, Linux, Windows WiX, macOS), `.github/workflows/release.yml` | the same paths | AppImage, tarball, MSI and DMG only: no deb, rpm, Flatpak, Arch, riscv64, APT or Discord; the icon is drawn in Rust (`apps/lamina/src/icon.rs`) |
 | `crates/update`, `crates/ui-egui/src/updates.rs`, the `--finish-update` step in `apps/bimcraft/src/main.rs` | `crates/update`, `apps/lamina/src/updates.rs`, `apps/lamina/src/main.rs` | lifted with its tests; no preferences file (the switch is in Lamina's settings file), no Skip this version, no SHA256SUMS cross-check, no Flatpak; ureq 3.5's exact body limit |

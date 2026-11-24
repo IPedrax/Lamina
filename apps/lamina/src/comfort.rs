@@ -1,11 +1,13 @@
 //! Comfort: the keyboard shortcuts, the right-click menu on objects (in the 3D view and the plate list), the Edit menu with the undo
-//! history, and the View menu with the theme. Each runs the commands a button would.
+//! history, and the View menu with the theme and the language. Each runs the commands a button would.
 
 use egui::{Key, KeyboardShortcut, Modifiers, Ui};
+use lamina_i18n::ui_msg;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::App;
+use crate::lang::{Lang, t, tf};
 use crate::view3d::Tool;
 
 /// The window's theme: dark (the default), light, or whichever the system uses.
@@ -28,18 +30,18 @@ impl Look {
     }
 }
 
-/// The single-key shortcuts, as the View menu lists them.
+/// The single-key shortcuts, as the View menu lists them (the keys as the keyboard names them, what they do translated).
 pub const SHORTCUTS: &[(&str, &str)] = &[
-    ("G", "Move tool: pick and drag, turn with the rings, scale with the square"),
-    ("L", "Lay flat tool: click a face to turn it down"),
-    ("M", "Measure tool: click two points"),
-    ("R", "Turn the picked objects 90 degrees about z"),
-    ("F", "Frame the picked objects, or everything"),
-    ("A", "Arrange the plate"),
-    ("Ctrl+D", "Duplicate the picked objects"),
-    ("Ctrl+A", "Pick every object"),
-    ("Delete", "Delete the picked objects"),
-    ("Ctrl+Z, Ctrl+Y", "Undo, redo"),
+    ("G", ui_msg!("Move tool: pick and drag, turn with the rings, scale with the square")),
+    ("L", ui_msg!("Lay flat tool: click a face to turn it down")),
+    ("M", ui_msg!("Measure tool: click two points")),
+    ("R", ui_msg!("Turn the picked objects 90 degrees about z")),
+    ("F", ui_msg!("Frame the picked objects, or everything")),
+    ("A", ui_msg!("Arrange the plate")),
+    ("Ctrl+D", ui_msg!("Duplicate the picked objects")),
+    ("Ctrl+A", ui_msg!("Pick every object")),
+    ("Delete", ui_msg!("Delete the picked objects")),
+    ("Ctrl+Z, Ctrl+Y", ui_msg!("Undo, redo")),
 ];
 
 const DUPLICATE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::D);
@@ -119,7 +121,7 @@ impl App {
         let bed = self.profile.bed;
         if let Some(v) = self.run("arrange", json!({ "bed": bed })) {
             if v["fits"] == false {
-                (self.failed, self.status) = (true, "They do not all fit the plate: some stand off it.".into());
+                (self.failed, self.status) = (true, t("They do not all fit the plate: some stand off it.").into());
             }
             self.frame_all();
         }
@@ -135,29 +137,29 @@ impl App {
     }
 
     pub(crate) fn edit_menu(&mut self, ui: &mut Ui) {
-        ui.menu_button("Edit", |ui| {
+        ui.menu_button(t("Edit"), |ui| {
             let (undo, redo) = self.session.history();
             let (undo, redo): (Vec<String>, Vec<String>) =
                 (undo.into_iter().map(str::to_string).collect(), redo.into_iter().map(str::to_string).collect());
-            let undo_text = undo.first().map_or("Undo".to_string(), |l| format!("Undo {l}"));
+            let undo_text = undo.first().map_or(t("Undo").to_string(), |l| tf("Undo {}", &[l]));
             if ui.add_enabled(!undo.is_empty(), egui::Button::new(undo_text).shortcut_text("Ctrl+Z")).clicked() {
                 self.step_history(1, false);
             }
-            let redo_text = redo.first().map_or("Redo".to_string(), |l| format!("Redo {l}"));
+            let redo_text = redo.first().map_or(t("Redo").to_string(), |l| tf("Redo {}", &[l]));
             if ui.add_enabled(!redo.is_empty(), egui::Button::new(redo_text).shortcut_text("Ctrl+Y")).clicked() {
                 self.step_history(1, true);
             }
             ui.add_enabled_ui(!undo.is_empty() || !redo.is_empty(), |ui| {
-                ui.menu_button("History", |ui| {
+                ui.menu_button(t("History"), |ui| {
                     // Newest at the top: what redo would bring back, then the steps undo would take back.
                     for (k, label) in redo.iter().enumerate().rev() {
-                        if ui.button(format!("\u{21b7} {label}")).on_hover_text("Bring back up to this step").clicked() {
+                        if ui.button(format!("\u{21b7} {label}")).on_hover_text(t("Bring back up to this step")).clicked() {
                             self.step_history(k + 1, true);
                         }
                     }
-                    ui.label(egui::RichText::new("now").weak());
+                    ui.label(egui::RichText::new(t("now")).weak());
                     for (k, label) in undo.iter().enumerate() {
-                        if ui.button(format!("\u{21b6} {label}")).on_hover_text("Take back this step and those after it").clicked() {
+                        if ui.button(format!("\u{21b6} {label}")).on_hover_text(t("Take back this step and those after it")).clicked() {
                             self.step_history(k + 1, false);
                         }
                     }
@@ -165,41 +167,47 @@ impl App {
             });
             ui.separator();
             let any = !self.selected.is_empty();
-            if ui.add_enabled(any, egui::Button::new("Duplicate").shortcut_text(ui.ctx().format_shortcut(&DUPLICATE))).clicked() {
+            if ui.add_enabled(any, egui::Button::new(t("Duplicate")).shortcut_text(ui.ctx().format_shortcut(&DUPLICATE))).clicked() {
                 self.duplicate_selected();
             }
-            if ui.add_enabled(any, egui::Button::new("Delete").shortcut_text("Delete")).clicked() {
+            if ui.add_enabled(any, egui::Button::new(t("Delete")).shortcut_text("Delete")).clicked() {
                 self.delete_selected();
             }
-            if ui.add(egui::Button::new("Pick all").shortcut_text(ui.ctx().format_shortcut(&SELECT_ALL))).clicked() {
+            if ui.add(egui::Button::new(t("Pick all")).shortcut_text(ui.ctx().format_shortcut(&SELECT_ALL))).clicked() {
                 self.selected = self.session.scene.objects.iter().map(|o| o.id).collect();
             }
         });
     }
 
     pub(crate) fn view_menu(&mut self, ui: &mut Ui) {
-        ui.menu_button("View", |ui| {
-            if ui.add(egui::Button::new("Frame").shortcut_text("F")).on_hover_text("The picked objects, or everything").clicked() {
+        ui.menu_button(t("View"), |ui| {
+            if ui.add(egui::Button::new(t("Frame")).shortcut_text("F")).on_hover_text(t("The picked objects, or everything")).clicked() {
                 self.frame_selected();
             }
             ui.separator();
-            ui.label("Theme");
-            for (look, name) in [(Look::Dark, "Dark"), (Look::Light, "Light"), (Look::System, "As the system")] {
+            ui.label(t("Theme"));
+            for (look, name) in [(Look::Dark, t("Dark")), (Look::Light, t("Light")), (Look::System, t("As the system"))] {
                 ui.radio_value(&mut self.look, look, name);
             }
             ui.separator();
+            // Each language by its own name, so whoever reads it finds theirs.
+            ui.label(t("Language"));
+            for language in Lang::ALL {
+                ui.radio_value(&mut self.lang, language, language.label());
+            }
+            ui.separator();
             let processor = ui
-                .checkbox(&mut self.view.card.cpu, "Draw the 3D view on the processor")
-                .on_hover_text("Slower with large meshes. The graphics card draws it otherwise, where the window has one.");
+                .checkbox(&mut self.view.card.cpu, t("Draw the 3D view on the processor"))
+                .on_hover_text(t("Slower with large meshes. The graphics card draws it otherwise, where the window has one."));
             if processor.changed() {
                 self.view.card.retry();
             }
             ui.separator();
-            ui.menu_button("Keyboard shortcuts", |ui| {
+            ui.menu_button(t("Keyboard shortcuts"), |ui| {
                 egui::Grid::new("shortcuts").num_columns(2).show(ui, |ui| {
                     for (keys, what) in SHORTCUTS {
                         ui.label(egui::RichText::new(*keys).strong());
-                        ui.label(*what);
+                        ui.label(t(what));
                         ui.end_row();
                     }
                 });
@@ -218,15 +226,15 @@ impl App {
     /// The right-click menu: what can be done to the picked objects, or to the plate when none is picked.
     pub(crate) fn object_menu(&mut self, ui: &mut Ui) {
         if self.selected.is_empty() {
-            if ui.button("Add box").clicked() {
+            if ui.button(t("Add box")).clicked() {
                 self.add_box();
                 ui.close();
             }
-            if ui.add(egui::Button::new("Arrange").shortcut_text("A")).clicked() {
+            if ui.add(egui::Button::new(t("Arrange")).shortcut_text("A")).clicked() {
                 self.arrange();
                 ui.close();
             }
-            if ui.add(egui::Button::new("Frame all").shortcut_text("F")).clicked() {
+            if ui.add(egui::Button::new(t("Frame all")).shortcut_text("F")).clicked() {
                 self.frame_all();
                 ui.close();
             }
@@ -239,26 +247,26 @@ impl App {
                 ui.close();
             }
         };
-        did(ui, self, "Duplicate", "Ctrl+D", &|app| app.duplicate_selected());
-        did(ui, self, "Turn 90 degrees", "R", &|app| app.turn_selected(90.0));
-        did(ui, self, "Mirror left to right", "", &|app| {
+        did(ui, self, t("Duplicate"), "Ctrl+D", &|app| app.duplicate_selected());
+        did(ui, self, t("Turn 90 degrees"), "R", &|app| app.turn_selected(90.0));
+        did(ui, self, t("Mirror left to right"), "", &|app| {
             let commands = app.selected.iter().map(|&id| ("mirror", json!({ "id": id, "axis": "x" }))).collect();
             app.run_all("mirror", commands);
         });
-        did(ui, self, "Drop to plate", "", &|app| {
+        did(ui, self, t("Drop to plate"), "", &|app| {
             let commands = app.selected.iter().map(|&id| ("drop_to_bed", json!({ "id": id }))).collect();
             app.run_all("drop_to_bed", commands);
         });
-        did(ui, self, "Lay flat on a face...", "L", &|app| app.view.tool = Tool::LayFlat);
-        did(ui, self, "Frame", "F", &|app| app.frame_selected());
+        did(ui, self, t("Lay flat on a face..."), "L", &|app| app.view.tool = Tool::LayFlat);
+        did(ui, self, t("Frame"), "F", &|app| app.frame_selected());
         if ids.iter().any(|&id| self.problems_of(id).is_some()) {
-            did(ui, self, "Repair", "", &|app| {
+            did(ui, self, t("Repair"), "", &|app| {
                 let commands = app.selected.iter().map(|&id| ("repair", json!({ "id": id }))).collect();
                 app.run_all("repair", commands);
             });
         }
         ui.separator();
-        did(ui, self, "Delete", "Delete", &|app| app.delete_selected());
+        did(ui, self, t("Delete"), "Delete", &|app| app.delete_selected());
     }
 
     /// A right click on object `id` (in the view or the list) picks it, unless it is picked already with others.

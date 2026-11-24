@@ -11,6 +11,7 @@ use lamina_slicer::profile::Profile;
 use serde_json::{Value, json};
 
 use crate::App;
+use crate::lang::{t, tf};
 
 /// How many recent projects the menu keeps.
 pub const MAX_RECENT: usize = 8;
@@ -82,7 +83,7 @@ impl App {
     /// The window's title: the project's name, and a star when it has changes not saved.
     pub fn title(&self) -> String {
         let name = self.project.as_ref().and_then(|p| p.file_stem()).map(|n| n.to_string_lossy().into_owned());
-        format!("{}{} - Lamina", name.unwrap_or_else(|| "Untitled".into()), if self.dirty() { " *" } else { "" })
+        format!("{}{} - Lamina", name.unwrap_or_else(|| t("Untitled").into()), if self.dirty() { " *" } else { "" })
     }
 
     fn remember(&mut self, path: &Path) {
@@ -102,7 +103,7 @@ impl App {
             Pending::New => self.new_project(),
             Pending::Open(path) => self.open_project(&path),
             Pending::Choose => {
-                if let Some(path) = rfd::FileDialog::new().add_filter("Lamina project", &[EXTENSION]).pick_file() {
+                if let Some(path) = rfd::FileDialog::new().add_filter(t("Lamina project"), &[EXTENSION]).pick_file() {
                     self.open_project(&path);
                 }
             }
@@ -121,7 +122,7 @@ impl App {
             self.chat_for(None);
             (self.selected, self.sliced) = (Vec::new(), None);
             self.mark_saved();
-            self.status = "New project.".into();
+            self.status = t("New project.").into();
         }
     }
 
@@ -132,14 +133,14 @@ impl App {
         let mut notes = Vec::new();
         match print.get("profile").map(Profile::from_json) {
             Some(Ok(p)) => self.profile = p,
-            Some(Err(e)) => notes.push(format!("its print settings were left out ({e}), so the ones shown stay")),
+            Some(Err(e)) => notes.push(tf("its print settings were left out ({}), so the ones shown stay", &[&e])),
             None => {}
         }
         let label = |k: &str| print.get(k).and_then(Value::as_str).filter(|t| t.len() <= 200).map(str::to_string);
         (self.printer, self.filament, self.process) = (label("printer"), label("filament"), label("process"));
         let ignored: Vec<&str> = r["ignored"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
         if !ignored.is_empty() {
-            notes.push(format!("this version left out {}", ignored.join(", ")));
+            notes.push(tf("this version left out {}", &[&ignored.join(", ")]));
         }
         self.project = Some(path.to_path_buf());
         self.chat_for(Some(path));
@@ -147,9 +148,9 @@ impl App {
         (self.selected, self.sliced) = (Vec::new(), None);
         self.mark_saved();
         self.frame_all();
-        self.status = format!("Opened {}.", path.display());
+        self.status = tf("Opened {}.", &[&path.display().to_string()]);
         if !notes.is_empty() {
-            self.status = format!("{} Note: {}.", self.status, notes.join("; "));
+            self.status = format!("{} {}", self.status, tf("Note: {}.", &[&notes.join("; ")]));
         }
     }
 
@@ -169,7 +170,7 @@ impl App {
         {
             a.remove();
         }
-        self.status = format!("Saved {}.", path.display());
+        self.status = tf("Saved {}.", &[&path.display().to_string()]);
         true
     }
 
@@ -183,7 +184,8 @@ impl App {
 
     fn save_as(&mut self) -> bool {
         let name = self.project.as_ref().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned());
-        let dialog = rfd::FileDialog::new().add_filter("Lamina project", &[EXTENSION]).set_file_name(name.unwrap_or("plate.lamina".into()));
+        let dialog =
+            rfd::FileDialog::new().add_filter(t("Lamina project"), &[EXTENSION]).set_file_name(name.unwrap_or("plate.lamina".into()));
         match dialog.save_file() {
             Some(path) => self.save_project(&path),
             None => false,
@@ -199,13 +201,13 @@ impl App {
         } else if lamina_assistant::attach::image_mime(&path.to_string_lossy()).is_some() {
             // A picture goes to the assistant, with the next message.
             self.chat.chat.attach(path);
-            self.status = "The picture goes to the assistant with your next message.".into();
+            self.status = t("The picture goes to the assistant with your next message.").into();
         } else {
             (self.failed, self.status) = (
                 true,
-                format!(
+                tf(
                     "{}: Lamina opens .lamina projects, imports .stl, .3mf, .obj, .gltf and .glb meshes, and gives pictures to the assistant",
-                    path.display()
+                    &[&path.display().to_string()],
                 ),
             );
         }
@@ -217,9 +219,10 @@ impl App {
             self.selected = v["ids"].as_array().into_iter().flatten().filter_map(Value::as_u64).map(|id| id as u32).collect();
             self.frame_all();
             if let Some(r) = v.get("repaired") {
-                self.status = format!(
+                let n = |k: &str| r[k].to_string();
+                self.status = tf(
                     "Imported and repaired: {} faces dropped, {} turned, {} holes filled.",
-                    r["dropped"], r["flipped"], r["holes_filled"]
+                    &[&n("dropped"), &n("flipped"), &n("holes_filled")],
                 );
             }
         }
@@ -234,7 +237,7 @@ impl App {
         let Some(path) = dialog.save_file() else { return };
         let path = if path.extension().is_none() { path.with_extension("3mf") } else { path };
         if let Some(v) = self.run("export_mesh", json!({ "path": path })) {
-            self.status = format!("Wrote {} ({} triangles).", path.display(), v["triangles"]);
+            self.status = tf("Wrote {} ({} triangles).", &[&path.display().to_string(), &v["triangles"].to_string()]);
         }
     }
 
@@ -264,48 +267,49 @@ impl App {
     }
 
     pub(crate) fn file_menu(&mut self, ui: &mut Ui) {
-        ui.menu_button("File", |ui| {
+        ui.menu_button(t("File"), |ui| {
             let ctx = ui.ctx().clone();
-            if ui.add(egui::Button::new("New").shortcut_text(ctx.format_shortcut(&NEW))).clicked() {
+            if ui.add(egui::Button::new(t("New")).shortcut_text(ctx.format_shortcut(&NEW))).clicked() {
                 self.request(Pending::New);
             }
-            if ui.add(egui::Button::new("Open...").shortcut_text(ctx.format_shortcut(&OPEN))).clicked() {
+            if ui.add(egui::Button::new(t("Open...")).shortcut_text(ctx.format_shortcut(&OPEN))).clicked() {
                 self.request(Pending::Choose);
             }
             ui.add_enabled_ui(!self.recent.is_empty(), |ui| {
-                ui.menu_button("Open recent", |ui| {
+                ui.menu_button(t("Open recent"), |ui| {
                     for path in self.recent.clone() {
                         if ui.button(&path).clicked() {
                             self.request(Pending::Open(PathBuf::from(path)));
                         }
                     }
                     ui.separator();
-                    if ui.button("Clear the list").clicked() {
+                    if ui.button(t("Clear the list")).clicked() {
                         self.recent.clear();
                     }
                 });
             });
-            if ui.add(egui::Button::new("Save").shortcut_text(ctx.format_shortcut(&SAVE))).clicked() {
+            if ui.add(egui::Button::new(t("Save")).shortcut_text(ctx.format_shortcut(&SAVE))).clicked() {
                 self.save();
             }
-            if ui.add(egui::Button::new("Save as...").shortcut_text(ctx.format_shortcut(&SAVE_AS))).clicked() {
+            if ui.add(egui::Button::new(t("Save as...")).shortcut_text(ctx.format_shortcut(&SAVE_AS))).clicked() {
                 self.save_as();
             }
             ui.separator();
-            if ui.button("Import mesh...").clicked()
-                && let Some(p) = rfd::FileDialog::new().add_filter("Mesh", MESHES).pick_file()
+            if ui.button(t("Import mesh...")).clicked()
+                && let Some(p) = rfd::FileDialog::new().add_filter(t("Mesh"), MESHES).pick_file()
             {
                 self.import(&p);
             }
-            if ui.button("Export mesh...").on_hover_text("The plate as a 3MF or an OBJ, each object its own, or as one STL").clicked() {
+            if ui.button(t("Export mesh...")).on_hover_text(t("The plate as a 3MF or an OBJ, each object its own, or as one STL")).clicked()
+            {
                 self.export_mesh();
             }
-            if ui.button("Export G-code...").clicked() {
+            if ui.button(t("Export G-code...")).clicked() {
                 self.export();
             }
             self.update_menu(ui);
             ui.separator();
-            if ui.button("Quit").clicked() {
+            if ui.button(t("Quit")).clicked() {
                 self.request(Pending::Close);
             }
         });
@@ -321,19 +325,19 @@ impl App {
             ctx.send_viewport_cmd(ViewportCommand::Close);
         }
         let Some(action) = self.ask.clone() else { return };
-        let name = self.project.as_ref().and_then(|p| p.file_name()).map_or("Untitled".into(), |n| n.to_string_lossy().into_owned());
+        let name = self.project.as_ref().and_then(|p| p.file_name()).map_or(t("Untitled").into(), |n| n.to_string_lossy().into_owned());
         let mut answer = None;
         egui::Modal::new(egui::Id::new("unsaved")).show(ctx, |ui| {
-            ui.heading("Save the changes?");
-            ui.label(format!("{name} has changes that are not saved. They are lost unless you save them."));
+            ui.heading(t("Save the changes?"));
+            ui.label(tf("{} has changes that are not saved. They are lost unless you save them.", &[&name]));
             ui.horizontal(|ui| {
-                if ui.button("Save").clicked() {
+                if ui.button(t("Save")).clicked() {
                     answer = Some(true);
                 }
-                if ui.button("Don't save").clicked() {
+                if ui.button(t("Don't save")).clicked() {
                     answer = Some(false);
                 }
-                if ui.button("Cancel").clicked() {
+                if ui.button(t("Cancel")).clicked() {
                     self.ask = None;
                 }
             });

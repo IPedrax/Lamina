@@ -11,6 +11,7 @@ use lamina_update::{Note, State};
 
 use crate::App;
 use crate::files::Pending;
+use crate::lang::{t, tf};
 
 /// What a click on the banner asks for, done once it is drawn.
 enum Click {
@@ -33,10 +34,10 @@ impl App {
         let current = updates.current().to_string();
         match note {
             None => {}
-            Some(Note::UpToDate) => (self.failed, self.status) = (false, format!("Lamina {current} is up to date.")),
-            Some(Note::CheckFailed(e)) => (self.failed, self.status) = (true, format!("Could not check for updates: {e}")),
-            Some(Note::DownloadFailed(e)) => (self.failed, self.status) = (true, format!("Could not download the update: {e}")),
-            Some(Note::InstallFailed(e)) => (self.failed, self.status) = (true, format!("Could not install the update: {e}")),
+            Some(Note::UpToDate) => (self.failed, self.status) = (false, tf("Lamina {} is up to date.", &[&current])),
+            Some(Note::CheckFailed(e)) => (self.failed, self.status) = (true, tf("Could not check for updates: {}", &[&e])),
+            Some(Note::DownloadFailed(e)) => (self.failed, self.status) = (true, tf("Could not download the update: {}", &[&e])),
+            Some(Note::InstallFailed(e)) => (self.failed, self.status) = (true, tf("Could not install the update: {}", &[&e])),
             // It is in, and this window has to go for the new version to take its place: the plate was saved or given up before.
             Some(Note::Installed) => {
                 self.may_close = true;
@@ -47,7 +48,7 @@ impl App {
         if ctx.input(|i| i.viewport().close_requested()) {
             ctx.send_viewport_cmd(ViewportCommand::CancelClose);
         }
-        let text = format!("Installing Lamina {}...", release.version);
+        let text = tf("Installing Lamina {}...", &[&release.version.to_string()]);
         egui::Modal::new(egui::Id::new("installing")).show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.spinner();
@@ -70,36 +71,43 @@ impl App {
         ui.horizontal(|ui| match updates.state() {
             State::Idle | State::Installing { .. } => {}
             State::Available(release) => {
-                ui.label(RichText::new(format!("Lamina {} is available. You have {current}.", release.version)).strong());
+                ui.label(RichText::new(tf("Lamina {} is available. You have {}.", &[&release.version.to_string(), &current])).strong());
                 if release.installer.is_some() {
-                    let tip = "Downloads the update and checks it; Lamina then closes, updates and starts again.";
-                    if ui.button("Update now").on_hover_text(tip).clicked() {
+                    let tip = t("Downloads the update and checks it; Lamina then closes, updates and starts again.");
+                    if ui.button(t("Update now")).on_hover_text(tip).clicked() {
                         click = Some(Click::Update);
                     }
-                } else if ui.button("Download").on_hover_text("Opens the release page on GitHub. This copy cannot update itself.").clicked()
+                } else if ui
+                    .button(t("Download"))
+                    .on_hover_text(t("Opens the release page on GitHub. This copy cannot update itself."))
+                    .clicked()
                 {
                     click = Some(Click::Page(release.page.clone()));
                 }
-                if ui.button("Later").clicked() {
+                if ui.button(t("Later")).clicked() {
                     click = Some(Click::Later);
                 }
-                if ui.link("What's new").clicked() {
+                if ui.link(t("What's new")).clicked() {
                     click = Some(Click::Page(release.page.clone()));
                 }
             }
             State::Downloading { release, done } => {
-                ui.label(format!("Downloading Lamina {}...", release.version));
+                ui.label(tf("Downloading Lamina {}...", &[&release.version.to_string()]));
                 let size = release.installer.as_ref().map_or(1, |i| i.size).max(1);
                 let fraction = (done.load(Ordering::Relaxed) as f32 / size as f32).clamp(0.0, 1.0);
                 ui.add(ProgressBar::new(fraction).desired_width(220.0).show_percentage());
             }
             State::Ready { release, .. } => {
-                ui.label(RichText::new(format!("Lamina {} is ready. It will close, update and start again.", release.version)).strong());
-                let tip = "Asks to save first if there are unsaved changes, then closes Lamina, installs the update and starts it again.";
-                if ui.button("Restart and install").on_hover_text(tip).clicked() {
+                ui.label(
+                    RichText::new(tf("Lamina {} is ready. It will close, update and start again.", &[&release.version.to_string()]))
+                        .strong(),
+                );
+                let tip =
+                    t("Asks to save first if there are unsaved changes, then closes Lamina, installs the update and starts it again.");
+                if ui.button(t("Restart and install")).on_hover_text(tip).clicked() {
                     click = Some(Click::Restart);
                 }
-                if ui.button("Later").clicked() {
+                if ui.button(t("Later")).clicked() {
                     click = Some(Click::Later);
                 }
             }
@@ -118,10 +126,10 @@ impl App {
     pub(crate) fn update_menu(&mut self, ui: &mut Ui) {
         let Some(updates) = self.updates.as_mut() else { return };
         ui.separator();
-        ui.checkbox(&mut self.update_check, "Check for updates at start").on_hover_text(
+        ui.checkbox(&mut self.update_check, t("Check for updates at start")).on_hover_text(t(
             "Asks GitHub for the latest release when Lamina starts. LAMINA_NO_UPDATE_CHECK=1 in the environment turns updates off altogether.",
-        );
-        if ui.button("Check for updates now").clicked() {
+        ));
+        if ui.button(t("Check for updates now")).clicked() {
             updates.check_now();
         }
     }

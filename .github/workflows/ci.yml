@@ -1,4 +1,4 @@
-# The three checks CLAUDE.md asks for before anything is finished, on the three systems the desktop runs on, for every push and pull
+# The checks CLAUDE.md asks for before anything is finished, on the three systems the desktop runs on, for every push and pull
 # request. Adapted from BIMCraft's CI (same author, MIT OR Apache-2.0). Pull requests from forks run with a read-only token and no
 # secrets: `pull_request`, never `pull_request_target`.
 #
@@ -57,6 +57,11 @@ jobs:
 
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+
+      # The translation template is in step with the code and every catalog reads (docs/TRANSLATING.md).
+      - name: Translations
+        if: runner.os == 'Linux'
+        run: cargo i18n check
 
       # Every crate's tests run even after one fails, so a run shows all that is wrong on a system, not only its first crate.
       - name: Test

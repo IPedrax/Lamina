@@ -36,9 +36,11 @@ Lamina is a 3D slicer and modelling tool with a built-in AI chat, a CLI and an M
 cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+cargo i18n check
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same three on Linux, Windows and macOS for every push and pull request.
+CI (`.github/workflows/ci.yml`) runs the same on Linux, Windows and macOS for every push and pull request (format and translations on
+Linux only). A change to a string the window shows needs `cargo i18n update` and its translations (docs/TRANSLATING.md).
 
 ## Module map
 
@@ -81,6 +83,11 @@ CI (`.github/workflows/ci.yml`) runs the same three on Linux, Windows and macOS 
   runs the MSI after the window exits, `--finish-update`), `appimage.rs` and `macos.rs` (the new file or bundle tried with
   `--version`, then renamed in), `updater.rs` (the state the window draws, work on threads), `testing` (a feature: `Fake`, a
   table of answers). Notes: [crates/update/CLAUDE.md](crates/update/CLAUDE.md). Only `apps/lamina` depends on it.
+- `crates/i18n` (`lamina-i18n`): the window's translations, lifted from BIMCraft's. `lib.rs` (`translated`, the lookup in the
+  compiled tables, and `ui_msg!`, which marks English chosen indirectly and is the literal itself, so the slicer can mark its
+  setting help with no other dependency), `catalog.rs` (the PO reader, merge and the compiler `apps/lamina/build.rs` runs, the
+  `catalog` feature), `catalog/extract.rs` and `main.rs` (`cargo i18n extract|update|check|stats`, the `tooling` feature, the only
+  one with syn). The catalogs are `translations/ui/*.po`; how to translate: [docs/TRANSLATING.md](docs/TRANSLATING.md).
 - `apps/lamina`: the desktop app (`lamina`): `lib.rs` (the window: toolbar, plate panel, settings, tabs), `files.rs` (the File menu,
   recent projects, dropped files, the question before unsaved changes are lost), `autosave.rs` (the plate written every two minutes
   and offered back after an unclean exit), `view3d.rs` (the 3D view on
@@ -94,7 +101,11 @@ CI (`.github/workflows/ci.yml`) runs the same three on Linux, Windows and macOS 
   and failed starts, and another graphics backend after a start that died; from BIMCraft), `updates.rs` (the update banner, the box
   that holds the window while one installs, and the File menu's Check for updates at start and Check for updates now; `main`
   attaches the updater, so a window in a test has `updates: None`; from BIMCraft), `settings.rs` (the settings file: print settings,
-  presets, sealed keys, the update check's switch; read hostilely, written whole and owner-only). Thin: it changes the scene only through `Session::execute`. UI behaviour is tested with
+  presets, sealed keys, the update check's switch, the language; read hostilely, written whole and owner-only), `lang.rs` (the
+  interface's language: `t`, `tf` and `tc` look up the catalogs `build.rs` compiles, English the key and the fallback; set each
+  frame on the window's thread, so a test's window is English; View, Language picks it, `main` takes the system's at the first
+  start; from BIMCraft). Every string the window shows goes through `t`, `tf` or `tc`, or `ui_msg!` where a table or enum holds
+  it; command errors, G-code, the log and what agents read stay English. Thin: it changes the scene only through `Session::execute`. UI behaviour is tested with
   egui_kittest; `picture_of_the_window` (ignored, needs a GPU) renders it to a PNG to look at.
 - `apps/lamina-cli`: the `lamina-cli` binary, `mcp.rs` (the MCP server) and `window.rs` (`mcp --connect`: the tools run on an
   open window's plate through its control port).

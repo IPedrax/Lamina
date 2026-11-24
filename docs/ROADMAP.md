@@ -282,6 +282,15 @@ Priorities:
   objects in the 3D view and the plate list. Edit, History lists the undo and redo steps (`Session::history`). Every setting has a
   tooltip from `profile::ABOUT` (a sentence for each field, checked by a test) and its range. A light theme, or the system's, in the
   View menu, kept in the settings file. Vase mode is in the window now.
+- **7.6 Translations.** `crates/i18n` (`lamina-i18n`) and `apps/lamina/src/lang.rs`, lifted from BIMCraft's: the window in English,
+  Brazilian Portuguese or Spanish, chosen in View, Language and kept in the settings file; the first start takes the system's
+  language, else English. Every interface string goes through `t`, `tf` or `tc`, the slicer's setting and preset help is marked with
+  `ui_msg!`, and `translations/ui/*.po` are compiled in by the app's build script; a missing or unfinished translation shows the
+  English, and a finished one that drops a `{}` stops the build. `cargo i18n check` runs in CI. What stays English, because agents
+  read it or it is not the interface's: command parameters and errors (the status bar shows an error from a command as the command
+  gave it), the CLI, the MCP server, the assistant's skills, prompt and notes, the printer's own status line, preset and firmware
+  names, G-code, and the log's own lines. Object, file and preset names the user gave are never translated. How to add or change a
+  language: [TRANSLATING.md](TRANSLATING.md).
 - **7.7 Packaging and releases.** `packaging/` and `.github/workflows/release.yml`, lifted from BIMCraft's: on a `v*` tag, an
   MSI (WiX 5, installed and removed again in the job), an AppImage and a tarball for x86_64 and aarch64 Linux, and a universal
   DMG with the CLI zipped beside it (signed and notarized when the Apple secrets are set, else ad hoc), all tested first and
@@ -388,9 +397,6 @@ what is wrong before adding features.
 which Bambu's 2025 authorization keeps to Bambu Connect or a printer in Developer Mode. Its own module in `crates/printer` if done.
 
 ## 7. Desktop
-
-**7.6 Translations (P2).** How: lift BIMCraft's `crates/i18n` (PO files compiled in, English fallback) and pass every interface string
-through it.
 
 ## 8. Quality and infrastructure
 

@@ -5,6 +5,7 @@
 
 use egui::{Color32, Pos2, Rect, RichText, Sense, Stroke, TextureHandle, TextureOptions, Ui, pos2};
 use lamina_core::render::{Camera, Path, draw_paths};
+use lamina_i18n::ui_msg;
 use lamina_slicer::print::Feature;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -21,25 +22,25 @@ fn kind_of(name: &str) -> u8 {
     Feature::ALL.iter().position(|f| f.name() == name.trim()).map_or(0, |i| i as u8 + 1)
 }
 
-/// The colour each kind is drawn in, and its name for the legend.
+/// The colour each kind is drawn in, and its name for the legend, in English.
 pub fn colour(kind: u8) -> (Color32, &'static str) {
     let feature = kind.checked_sub(1).and_then(|i| Feature::ALL.get(usize::from(i))).copied();
     match feature {
-        Some(Feature::OuterWall) => (Color32::from_rgb(245, 150, 50), "outer wall"),
-        Some(Feature::InnerWall) => (Color32::from_rgb(235, 215, 95), "inner wall"),
-        Some(Feature::SolidInfill) => (Color32::from_rgb(190, 90, 210), "solid infill"),
-        Some(Feature::SparseInfill) => (Color32::from_rgb(200, 70, 70), "sparse infill"),
-        Some(Feature::Skirt) => (Color32::from_rgb(110, 200, 200), "skirt"),
-        Some(Feature::Brim) => (Color32::from_rgb(80, 165, 210), "brim"),
-        Some(Feature::Support) => (Color32::from_rgb(120, 195, 110), "support"),
-        Some(Feature::SupportInterface) => (Color32::from_rgb(60, 140, 75), "support interface"),
-        Some(Feature::Raft) => (Color32::from_rgb(160, 160, 160), "raft"),
-        Some(Feature::Bridge) => (Color32::from_rgb(70, 125, 235), "bridge"),
-        Some(Feature::GapFill) => (Color32::from_rgb(240, 240, 240), "gap fill"),
-        Some(Feature::Ironing) => (Color32::from_rgb(150, 230, 120), "ironing"),
-        Some(Feature::Tower) => (Color32::from_rgb(175, 140, 110), "purge tower"),
-        Some(Feature::Purge) => (Color32::from_rgb(220, 120, 170), "purge"),
-        None => (EXTRUDE, "extrusion"),
+        Some(Feature::OuterWall) => (Color32::from_rgb(245, 150, 50), ui_msg!("outer wall")),
+        Some(Feature::InnerWall) => (Color32::from_rgb(235, 215, 95), ui_msg!("inner wall")),
+        Some(Feature::SolidInfill) => (Color32::from_rgb(190, 90, 210), ui_msg!("solid infill")),
+        Some(Feature::SparseInfill) => (Color32::from_rgb(200, 70, 70), ui_msg!("sparse infill")),
+        Some(Feature::Skirt) => (Color32::from_rgb(110, 200, 200), ui_msg!("skirt")),
+        Some(Feature::Brim) => (Color32::from_rgb(80, 165, 210), ui_msg!("brim")),
+        Some(Feature::Support) => (Color32::from_rgb(120, 195, 110), ui_msg!("support")),
+        Some(Feature::SupportInterface) => (Color32::from_rgb(60, 140, 75), ui_msg!("support interface")),
+        Some(Feature::Raft) => (Color32::from_rgb(160, 160, 160), ui_msg!("raft")),
+        Some(Feature::Bridge) => (Color32::from_rgb(70, 125, 235), ui_msg!("bridge")),
+        Some(Feature::GapFill) => (Color32::from_rgb(240, 240, 240), ui_msg!("gap fill")),
+        Some(Feature::Ironing) => (Color32::from_rgb(150, 230, 120), ui_msg!("ironing")),
+        Some(Feature::Tower) => (Color32::from_rgb(175, 140, 110), ui_msg!("purge tower")),
+        Some(Feature::Purge) => (Color32::from_rgb(220, 120, 170), ui_msg!("purge")),
+        None => (EXTRUDE, ui_msg!("extrusion")),
     }
 }
 
@@ -221,7 +222,7 @@ pub fn show_3d(ui: &mut Ui, state: &mut Preview3d, layers: &[Layer], at: usize, 
         for &k in &state.kinds {
             let (c, name) = colour(k);
             ui.label(RichText::new("\u{25a0}").color(c));
-            ui.label(name);
+            ui.label(crate::lang::t(name));
         }
     });
 }

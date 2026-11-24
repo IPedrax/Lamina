@@ -12,5 +12,7 @@ workspace = true
 [dependencies]
 i_overlay = "9.2.0"
 lamina-core = { workspace = true }
+# `ui_msg!` marks the setting help the window translates; the macro is the text itself, and the crate has no dependencies.
+lamina-i18n = { path = "../i18n" }
 serde = { workspace = true }
 serde_json = { workspace = true }

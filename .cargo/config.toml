@@ -1,0 +1,3 @@
+# `cargo i18n extract|update|check|stats`: the translation template and catalogs in translations/ui (docs/TRANSLATING.md).
+[alias]
+i18n = "run --quiet -p lamina-i18n --features tooling --"

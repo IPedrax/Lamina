@@ -12,6 +12,7 @@ use lamina_core::{Scene, project};
 use serde_json::{Value, json};
 
 use crate::App;
+use crate::lang::{t, tf};
 
 /// How often the plate is written while it has changes.
 pub const INTERVAL: Duration = Duration::from_secs(120);
@@ -77,7 +78,7 @@ impl App {
         if let Some(a) = self.autosave.as_mut()
             && let Some(e) = a.write(&self.session.scene, &print)
         {
-            (self.failed, self.status) = (true, format!("Autosave failed: {e}"));
+            (self.failed, self.status) = (true, tf("Autosave failed: {}", &[&e]));
         }
     }
 
@@ -100,7 +101,7 @@ impl App {
             self.project = None;
             // Nothing of it is saved: the window asks before it is lost again.
             self.saved_scene = Arc::new(Scene::default());
-            self.status = "Brought back the plate from before Lamina closed. Save it to keep it.".into();
+            self.status = t("Brought back the plate from before Lamina closed. Save it to keep it.").into();
             self.frame_all();
         }
     }
@@ -120,13 +121,13 @@ impl App {
         }
         let mut answer = None;
         egui::Modal::new(egui::Id::new("recover")).show(ctx, |ui| {
-            ui.heading("Bring back the last plate?");
-            ui.label("Lamina did not close cleanly last time. The plate it was working on was saved a few minutes before.");
+            ui.heading(t("Bring back the last plate?"));
+            ui.label(t("Lamina did not close cleanly last time. The plate it was working on was saved a few minutes before."));
             ui.horizontal(|ui| {
-                if ui.button("Bring it back").clicked() {
+                if ui.button(t("Bring it back")).clicked() {
                     answer = Some(true);
                 }
-                if ui.button("Discard it").clicked() {
+                if ui.button(t("Discard it")).clicked() {
                     answer = Some(false);
                 }
             });

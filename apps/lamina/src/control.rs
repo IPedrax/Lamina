@@ -23,6 +23,7 @@ use lamina_core::bridge::{self, Access, Entry, Error, MAX_LINE, Request};
 use serde::{Deserialize, Serialize};
 
 use crate::App;
+use crate::lang::{t, tf};
 
 /// The most agents connected at once.
 const MAX_CONNECTIONS: usize = 8;
@@ -276,7 +277,10 @@ impl App {
     pub fn open_control(&mut self) {
         match Control::start(self.agents.port, self.bridge_file.clone()) {
             Ok(control) => (self.control, self.agents_failed) = (Some(control), None),
-            Err(e) => self.agents_failed = Some(format!("Could not listen on port {} for agents: {e}", self.agents.port)),
+            Err(e) => {
+                self.agents_failed =
+                    Some(tf("Could not listen on port {} for agents: {}", &[&self.agents.port.to_string(), &e.to_string()]));
+            }
         }
     }
 
@@ -319,31 +323,31 @@ impl App {
 
     /// The Agents section of the plate panel: let agents in or not, on which port, whether they may change the plate, and how to connect.
     pub(crate) fn agents_ui(&mut self, ui: &mut Ui) {
-        egui::CollapsingHeader::new("Agents").show(ui, |ui| {
+        egui::CollapsingHeader::new(t("Agents")).show(ui, |ui| {
             let mut on = self.control.is_some();
-            let tip = "Lets an AI agent (Claude Code, Codex, any MCP client) work on this plate through lamina-cli mcp --connect. Only \
-                       programs on this computer that can read your settings folder get in.";
-            if ui.checkbox(&mut on, "Let agents work on this plate").on_hover_text(tip).changed() {
+            let tip = t("Lets an AI agent (Claude Code, Codex, any MCP client) work on this plate through lamina-cli mcp --connect. Only \
+                       programs on this computer that can read your settings folder get in.");
+            if ui.checkbox(&mut on, t("Let agents work on this plate")).on_hover_text(tip).changed() {
                 self.agents.listen = on;
                 if on { self.open_control() } else { self.close_control() }
             }
             ui.horizontal(|ui| {
-                ui.label("Port");
-                let port = ui.add(egui::DragValue::new(&mut self.agents.port).range(0..=65535)).on_hover_text("0: any free port");
+                ui.label(t("Port"));
+                let port = ui.add(egui::DragValue::new(&mut self.agents.port).range(0..=65535)).on_hover_text(t("0: any free port"));
                 if port.changed() && self.control.as_ref().is_some_and(|c| self.agents.port != 0 && c.entry.port != self.agents.port) {
                     self.open_control();
                 }
             });
-            ui.checkbox(&mut self.agents.edit, "Agents may change the plate").on_hover_text("Untick to let them only look");
+            ui.checkbox(&mut self.agents.edit, t("Agents may change the plate")).on_hover_text(t("Untick to let them only look"));
             match &self.control {
                 Some(c) => {
                     let n = c.agents();
-                    let who = if n == 0 { "no agent yet".to_string() } else { format!("{n} connected") };
-                    ui.label(RichText::new(format!("Listening on port {}: {who}.", c.entry.port)).small());
+                    let who = if n == 0 { t("no agent yet").to_string() } else { tf("{} connected", &[&n.to_string()]) };
+                    ui.label(RichText::new(tf("Listening on port {}: {}.", &[&c.entry.port.to_string(), &who])).small());
                     ui.label(RichText::new("lamina-cli mcp --connect").monospace().small());
                 }
                 None => {
-                    ui.label(RichText::new("Off: agents cannot reach this plate.").small().weak());
+                    ui.label(RichText::new(t("Off: agents cannot reach this plate.")).small().weak());
                 }
             }
             if let Some(why) = &self.agents_failed {

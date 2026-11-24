@@ -1,0 +1,33 @@
+[package]
+name = "lamina-i18n"
+description = "The window's translation catalogs: a lookup with no dependencies, the PO compiler build scripts use, and the cargo i18n tools"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+# The default library has no dependencies, so the slicer can mark its texts. `catalog` is the compiler apps/lamina/build.rs runs;
+# `tooling` adds the extractor and `cargo i18n`, which need syn.
+[features]
+default = []
+catalog = []
+tooling = ["catalog", "dep:syn", "dep:proc-macro2"]
+
+[dependencies]
+syn = { version = "2", features = ["full", "visit"], optional = true }
+proc-macro2 = { version = "1", features = ["span-locations"], optional = true }
+
+[dev-dependencies]
+lamina-core = { workspace = true }
+tempfile = "3"
+syn = { version = "2", features = ["full", "visit"] }
+proc-macro2 = { version = "1", features = ["span-locations"] }
+
+[[bin]]
+name = "lamina-i18n"
+path = "src/main.rs"
+required-features = ["tooling"]

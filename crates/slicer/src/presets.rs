@@ -5,6 +5,7 @@
 //! The values are ours, typical figures and not any maker's profile: printers are named by plate and firmware, not by brand, and a
 //! filament's own label is the authority on its temperatures.
 
+use lamina_i18n::ui_msg;
 use serde_json::{Map, Value};
 
 use crate::profile::Profile;
@@ -67,36 +68,38 @@ const KLIPPER_START: &str = "PRINT_START BED=[first_layer_bed_temp] EXTRUDER=[fi
 pub static PRINTERS: &[Preset] = &[
     Preset {
         name: "Generic 220 mm, Marlin",
-        about: "220 x 220 x 250 mm, 0.4 mm nozzle, direct drive: the defaults",
+        about: ui_msg!("220 x 220 x 250 mm, 0.4 mm nozzle, direct drive: the defaults"),
         fields: r#"{"bed": [220, 220], "max_height": 250, "nozzle": 0.4, "retract_length": 0.8, "retract_speed": 35, "travel_speed": 150}"#,
     },
     Preset {
         name: "Generic 220 mm, Marlin, Bowden",
-        about: "220 x 220 x 250 mm, 0.4 mm nozzle, a Bowden tube, which needs a longer retraction",
+        about: ui_msg!("220 x 220 x 250 mm, 0.4 mm nozzle, a Bowden tube, which needs a longer retraction"),
         fields: r#"{"bed": [220, 220], "max_height": 250, "nozzle": 0.4, "retract_length": 5.0, "retract_speed": 40, "travel_speed": 150}"#,
     },
     Preset {
         name: "Generic 250 x 210 mm, Marlin",
-        about: "250 x 210 x 210 mm, 0.4 mm nozzle, direct drive",
+        about: ui_msg!("250 x 210 x 210 mm, 0.4 mm nozzle, direct drive"),
         fields: r#"{"bed": [250, 210], "max_height": 210, "nozzle": 0.4, "retract_length": 0.8, "retract_speed": 35, "travel_speed": 180}"#,
     },
     Preset {
         name: "Generic 300 mm, Klipper",
-        about: "300 x 300 x 300 mm, 0.4 mm nozzle; the printer's config must define PRINT_START and PRINT_END macros",
+        about: ui_msg!("300 x 300 x 300 mm, 0.4 mm nozzle; the printer's config must define PRINT_START and PRINT_END macros"),
         fields: r#"{"bed": [300, 300], "max_height": 300, "nozzle": 0.4, "retract_length": 0.6, "retract_speed": 40, "travel_speed": 250,
                    "max_acceleration": 3000, "junction_deviation": 0.0035, "firmware": "klipper", "thumbnail": 300,
                    "start_gcode": "KLIPPER_START", "end_gcode": "PRINT_END"}"#,
     },
     Preset {
         name: "Generic 350 mm, Klipper",
-        about: "350 x 350 x 340 mm, 0.4 mm nozzle; the printer's config must define PRINT_START and PRINT_END macros",
+        about: ui_msg!("350 x 350 x 340 mm, 0.4 mm nozzle; the printer's config must define PRINT_START and PRINT_END macros"),
         fields: r#"{"bed": [350, 350], "max_height": 340, "nozzle": 0.4, "retract_length": 0.6, "retract_speed": 40, "travel_speed": 250,
                    "max_acceleration": 3000, "junction_deviation": 0.0035, "firmware": "klipper", "thumbnail": 300,
                    "start_gcode": "KLIPPER_START", "end_gcode": "PRINT_END"}"#,
     },
     Preset {
         name: "Delta 200 mm, centred",
-        about: "a round 200 mm plate, 300 mm tall, with the machine's zero in the middle; the slicer still treats the plate as its square",
+        about: ui_msg!(
+            "a round 200 mm plate, 300 mm tall, with the machine's zero in the middle; the slicer still treats the plate as its square"
+        ),
         fields: r#"{"bed": [200, 200], "max_height": 300, "origin_center": true, "nozzle": 0.4, "retract_length": 4.0, "retract_speed": 40, "travel_speed": 200}"#,
     },
 ];
@@ -104,27 +107,27 @@ pub static PRINTERS: &[Preset] = &[
 pub static FILAMENTS: &[Preset] = &[
     Preset {
         name: "PLA",
-        about: "nozzle 210, first layer 215, bed 60, fan full",
+        about: ui_msg!("nozzle 210, first layer 215, bed 60, fan full"),
         fields: r#"{"nozzle_temp": 210, "first_layer_nozzle_temp": 215, "bed_temp": 60, "first_layer_bed_temp": 60, "fan_speed": 255}"#,
     },
     Preset {
         name: "PETG",
-        about: "nozzle 240, first layer 245, bed 80, fan half",
+        about: ui_msg!("nozzle 240, first layer 245, bed 80, fan half"),
         fields: r#"{"nozzle_temp": 240, "first_layer_nozzle_temp": 245, "bed_temp": 80, "first_layer_bed_temp": 80, "fan_speed": 128}"#,
     },
     Preset {
         name: "ABS",
-        about: "nozzle 250, first layer 255, bed 100, fan off; print enclosed",
+        about: ui_msg!("nozzle 250, first layer 255, bed 100, fan off; print enclosed"),
         fields: r#"{"nozzle_temp": 250, "first_layer_nozzle_temp": 255, "bed_temp": 100, "first_layer_bed_temp": 100, "fan_speed": 0}"#,
     },
     Preset {
         name: "ASA",
-        about: "nozzle 255, first layer 260, bed 100, fan off; print enclosed",
+        about: ui_msg!("nozzle 255, first layer 260, bed 100, fan off; print enclosed"),
         fields: r#"{"nozzle_temp": 255, "first_layer_nozzle_temp": 260, "bed_temp": 100, "first_layer_bed_temp": 100, "fan_speed": 0}"#,
     },
     Preset {
         name: "TPU 95A",
-        about: "nozzle 225, first layer 230, bed 50, fan half; print slowly",
+        about: ui_msg!("nozzle 225, first layer 230, bed 50, fan half; print slowly"),
         fields: r#"{"nozzle_temp": 225, "first_layer_nozzle_temp": 230, "bed_temp": 50, "first_layer_bed_temp": 50, "fan_speed": 128}"#,
     },
 ];
@@ -132,22 +135,22 @@ pub static FILAMENTS: &[Preset] = &[
 pub static PROCESSES: &[Preset] = &[
     Preset {
         name: "0.12 mm Fine",
-        about: "thin layers for detail and smooth curves; about half again as long to print",
+        about: ui_msg!("thin layers for detail and smooth curves; about half again as long to print"),
         fields: r#"{"layer_height": 0.12, "first_layer_height": 0.2, "top_layers": 7, "bottom_layers": 5}"#,
     },
     Preset {
         name: "0.20 mm Standard",
-        about: "the everyday balance of look and time: two walls, 15 % infill",
+        about: ui_msg!("the everyday balance of look and time: two walls, 15 % infill"),
         fields: r#"{"layer_height": 0.2, "first_layer_height": 0.2, "perimeters": 2, "top_layers": 4, "bottom_layers": 4, "infill_density": 0.15}"#,
     },
     Preset {
         name: "0.28 mm Draft",
-        about: "thick layers for a quick test fit; visible lines",
+        about: ui_msg!("thick layers for a quick test fit; visible lines"),
         fields: r#"{"layer_height": 0.28, "first_layer_height": 0.28, "top_layers": 3, "bottom_layers": 3, "infill_density": 0.1}"#,
     },
     Preset {
         name: "Strong",
-        about: "four walls, thick skins and 40 % gyroid infill for parts that bear load; keeps the layer height",
+        about: ui_msg!("four walls, thick skins and 40 % gyroid infill for parts that bear load; keeps the layer height"),
         fields: r#"{"perimeters": 4, "top_layers": 6, "bottom_layers": 6, "infill_density": 0.4, "infill_pattern": "gyroid"}"#,
     },
 ];

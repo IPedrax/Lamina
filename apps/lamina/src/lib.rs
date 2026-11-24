@@ -10,6 +10,7 @@ pub mod control;
 pub mod files;
 pub mod gpu;
 pub mod icon;
+pub mod lang;
 pub mod preview;
 pub mod printer;
 pub mod settings;
@@ -24,28 +25,41 @@ use std::sync::Arc;
 use egui::{Color32, Key, Panel, RichText, ScrollArea, Ui};
 use lamina_assistant::net::Net;
 use lamina_core::{Mesh, Scene, Session};
+use lamina_i18n::ui_msg;
 use lamina_slicer::presets::{self, FILAMENT_FIELDS, FILAMENTS, PRINTER_FIELDS, PRINTERS, PROCESS_FIELDS, PROCESSES};
 use lamina_slicer::profile::Profile;
 use serde_json::{Value, json};
 
+use crate::lang::{t, tf};
 use crate::settings::{Presets, Settings};
 use crate::view3d::Pick;
 
-/// A number setting with its label, its range from the profile's table, and on hover what it does and its range.
+/// A number setting with its label (English, translated here), its range from the profile's table, and on hover what it does and
+/// its range.
 fn field<N: egui::emath::Numeric>(ui: &mut Ui, label: &str, name: &str, value: &mut N, speed: f64) {
     let (lo, hi) = lamina_slicer::profile::limits(name).unwrap_or((0.0, 1e6));
-    ui.label(label).on_hover_text(hint(name));
+    ui.label(t(label)).on_hover_text(hint(name));
     ui.add(egui::DragValue::new(value).speed(speed).range(N::from_f64(lo)..=N::from_f64(hi))).on_hover_text(hint(name));
     ui.end_row();
 }
 
 /// What a setting does, and its range when it is a number: every field's tooltip.
 fn hint(name: &str) -> String {
-    let about = lamina_slicer::profile::about(name);
+    let about = t(lamina_slicer::profile::about(name));
     match lamina_slicer::profile::limits(name) {
-        Some((lo, hi)) => format!("{about} From {lo} to {hi}."),
+        Some((lo, hi)) => format!("{about} {}", tf("From {} to {}.", &[&lo.to_string(), &hi.to_string()])),
         None => about.to_string(),
     }
+}
+
+/// What is wrong with a mesh, in the window's language (`Problems::describe` says it in English, for agents).
+fn problems_text(p: &lamina_core::repair::Problems) -> String {
+    let counts = [
+        (p.open_edges, ui_msg!("{} open edges")),
+        (p.nonmanifold_edges, ui_msg!("{} edges shared by more than two faces")),
+        (p.flipped_faces, ui_msg!("{} flipped faces")),
+    ];
+    counts.iter().filter(|(n, _)| *n > 0).map(|(n, what)| tf(what, &[&n.to_string()])).collect::<Vec<_>>().join(", ")
 }
 
 /// The colour of a warning: a mesh with problems, a plate changed since its slice.
@@ -75,11 +89,12 @@ pub enum Kind {
 }
 
 impl Kind {
+    /// Its name in a sentence, in English (also the id of its picker).
     fn word(self) -> &'static str {
         match self {
-            Kind::Printer => "printer",
-            Kind::Filament => "filament",
-            Kind::Process => "process",
+            Kind::Printer => ui_msg!("printer"),
+            Kind::Filament => ui_msg!("filament"),
+            Kind::Process => ui_msg!("process"),
         }
     }
 
@@ -185,6 +200,8 @@ pub struct App {
     pub preview: preview::Preview3d,
     /// The theme chosen, and the one last set on the window.
     pub look: comfort::Look,
+    /// The interface's language, as the settings file keeps it (`main` picks the system's at the first start).
+    pub lang: lang::Lang,
     applied_look: Option<comfort::Look>,
     /// The log beside the settings file, where each error the status bar shows is written once.
     pub log: Option<PathBuf>,
@@ -259,6 +276,7 @@ impl App {
             preview_3d: true,
             preview: preview::Preview3d::default(),
             look: comfort::Look::default(),
+            lang: lang::Lang::English,
             applied_look: None,
             log: None,
             logged: String::new(),
@@ -292,6 +310,7 @@ impl App {
             (s.printer.clone(), s.filament.clone(), s.printers.clone(), s.filaments.clone());
         app.recent = s.recent.clone();
         app.look = s.look.unwrap_or_default();
+        app.lang = s.language.unwrap_or(app.lang);
         app.view.card.cpu = s.cpu_view;
         app.update_check = !s.no_update_check;
         if let Some(u) = &s.local_url {
@@ -341,6 +360,7 @@ impl App {
             connection: Some(self.link.connection.clone()).filter(|c| !c.address.trim().is_empty()),
             connection_key: self.link.sealed.clone(),
             look: Some(self.look).filter(|l| *l != comfort::Look::default()),
+            language: Some(self.lang),
             local_url: Some(self.chat.chat.local_url.clone()).filter(|u| u != lamina_assistant::local::DEFAULT_URL),
             local_model: Some(self.chat.local_model.clone()).filter(|m| m != lamina_assistant::Provider::Local.default_model()),
             agents: Some(self.agents.clone()).filter(|a| *a != control::Agents::default()),
@@ -397,11 +417,11 @@ impl App {
     pub fn save_preset(&mut self, kind: Kind, name: &str) {
         let name = name.trim();
         if name.is_empty() || name.chars().count() > 60 {
-            (self.failed, self.status) = (true, "A preset needs a name of up to 60 characters.".into());
+            (self.failed, self.status) = (true, t("A preset needs a name of up to 60 characters.").into());
             return;
         }
         if kind.built_in().iter().any(|p| p.name.eq_ignore_ascii_case(name)) {
-            (self.failed, self.status) = (true, format!("\"{name}\" is a built-in {}: choose another name.", kind.word()));
+            (self.failed, self.status) = (true, tf("\"{}\" is a built-in {}: choose another name.", &[name, t(kind.word())]));
             return;
         }
         let mut fields = presets::capture(&self.profile, kind.fields());
@@ -423,7 +443,7 @@ impl App {
         }
         self.mine(kind).insert(name.to_string(), fields);
         self.apply_preset(kind, name);
-        self.status = format!("Saved the {} preset \"{name}\".", kind.word());
+        self.status = tf("Saved the {} preset \"{}\".", &[t(kind.word()), name]);
     }
 
     fn preset_picker(&mut self, ui: &mut Ui, kind: Kind) {
@@ -438,11 +458,12 @@ impl App {
             Kind::Filament => self.my_filaments.keys().cloned().collect(),
             Kind::Process => self.my_processes.keys().cloned().collect(),
         };
-        egui::ComboBox::from_id_salt(kind.word()).selected_text(chosen.clone().unwrap_or_else(|| "Choose...".into())).width(170.0).show_ui(
-            ui,
-            |ui| {
+        egui::ComboBox::from_id_salt(kind.word())
+            .selected_text(chosen.clone().unwrap_or_else(|| t("Choose...").into()))
+            .width(170.0)
+            .show_ui(ui, |ui| {
                 for p in kind.built_in() {
-                    if ui.selectable_label(chosen.as_deref() == Some(p.name), p.name).on_hover_text(p.about).clicked() {
+                    if ui.selectable_label(chosen.as_deref() == Some(p.name), p.name).on_hover_text(t(p.about)).clicked() {
                         pick = Some(p.name.to_string());
                     }
                 }
@@ -450,14 +471,13 @@ impl App {
                     ui.separator();
                 }
                 for name in &mine {
-                    if ui.selectable_label(chosen.as_deref() == Some(name), format!("{name} (mine)")).clicked() {
+                    if ui.selectable_label(chosen.as_deref() == Some(name), tf("{} (mine)", &[name])).clicked() {
                         pick = Some(name.clone());
                     }
                 }
-            },
-        );
+            });
         if let Some(name) = chosen.filter(|n| mine.contains(n))
-            && ui.small_button("Delete").on_hover_text("Forget this preset of yours").clicked()
+            && ui.small_button(t("Delete")).on_hover_text(t("Forget this preset of yours")).clicked()
         {
             self.mine(kind).remove(&name);
         }
@@ -468,26 +488,26 @@ impl App {
 
     fn presets_ui(&mut self, ui: &mut Ui) {
         egui::Grid::new("presets").num_columns(2).show(ui, |ui| {
-            ui.label("Printer");
+            ui.label(t("Printer"));
             ui.horizontal(|ui| self.preset_picker(ui, Kind::Printer));
             ui.end_row();
-            ui.label("Filament");
+            ui.label(t("Filament"));
             ui.horizontal(|ui| self.preset_picker(ui, Kind::Filament));
             ui.end_row();
-            ui.label("Process");
+            ui.label(t("Process"));
             ui.horizontal(|ui| self.preset_picker(ui, Kind::Process));
             ui.end_row();
         });
         ui.horizontal(|ui| {
-            ui.add(egui::TextEdit::singleline(&mut self.preset_name).hint_text("Preset name").desired_width(110.0));
+            ui.add(egui::TextEdit::singleline(&mut self.preset_name).hint_text(t("Preset name")).desired_width(110.0));
             let name = self.preset_name.clone();
-            if ui.button("Save printer").on_hover_text("Save the plate, nozzle, G-code and retraction shown").clicked() {
+            if ui.button(t("Save printer")).on_hover_text(t("Save the plate, nozzle, G-code and retraction shown")).clicked() {
                 self.save_preset(Kind::Printer, &name);
             }
-            if ui.button("Save filament").on_hover_text("Save the temperatures and fan shown").clicked() {
+            if ui.button(t("Save filament")).on_hover_text(t("Save the temperatures and fan shown")).clicked() {
                 self.save_preset(Kind::Filament, &name);
             }
-            if ui.button("Save process").on_hover_text("Save the layers, walls, skins and infill shown").clicked() {
+            if ui.button(t("Save process")).on_hover_text(t("Save the layers, walls, skins and infill shown")).clicked() {
                 self.save_preset(Kind::Process, &name);
             }
         });
@@ -534,7 +554,7 @@ impl App {
     /// Whether a command must wait for a job that changes the plate (said on the status bar), so neither undoes the other.
     fn waits(&mut self) -> bool {
         let Some(job) = self.job.as_ref().filter(|j| j.changes_plate) else { return false };
-        (self.failed, self.status) = (true, format!("Wait for {} to finish, or cancel it.", job.label));
+        (self.failed, self.status) = (true, tf("Wait for {} to finish, or cancel it.", &[t(&job.label)]));
         true
     }
 
@@ -594,7 +614,7 @@ impl App {
             let f = |k: &str| m[k].as_f64().unwrap_or(0.0);
             self.status = format!("{:.2} mm (x {:+.2}, y {:+.2}, z {:+.2})", f("distance"), f("dx"), f("dy"), f("dz"));
         } else if self.view.marks.len() == 1 {
-            self.status = "Click a second point to measure to.".into();
+            self.status = t("Click a second point to measure to.").into();
         }
     }
 
@@ -612,16 +632,18 @@ impl App {
             let out = lamina_slicer::print::gcode_each(&objects, &own, &profile)?;
             let layers = preview::parse(&out.gcode);
             let minutes = (out.seconds / 60.0).round() as u64;
-            let summary = format!(
-                "{} layers, {:.2} m of filament, about {}h {:02}m",
-                out.layers,
-                out.filament_mm / 1000.0,
-                minutes / 60,
-                minutes % 60
+            let summary = tf(
+                "{} layers, {} m of filament, about {}h {}m",
+                &[
+                    &out.layers.to_string(),
+                    &format!("{:.2}", out.filament_mm / 1000.0),
+                    &(minutes / 60).to_string(),
+                    &format!("{:02}", minutes % 60),
+                ],
             );
             Ok(work::Done::Sliced(Sliced { layers, summary, warnings: out.warnings, scene }))
         };
-        self.start("Slicing", false, work, |app, done| {
+        self.start(ui_msg!("Slicing"), false, work, |app, done| {
             if let Ok(work::Done::Sliced(sliced)) = done {
                 app.layer = sliced.layers.len() / 2;
                 app.sliced = Some(sliced);
@@ -644,9 +666,10 @@ impl App {
                     .filter_map(Value::as_str)
                     .map(|l| l.split(':').next().unwrap_or(l).to_string())
                     .collect();
+                let (took, from) = (fields.len().to_string(), path.display().to_string());
                 self.status = match left.len() {
-                    0 => format!("Took {} settings from {}.", fields.len(), path.display()),
-                    n => format!("Took {} settings from {}; left out {n}: {}.", fields.len(), path.display(), left.join(", ")),
+                    0 => tf("Took {} settings from {}.", &[&took, &from]),
+                    n => tf("Took {} settings from {}; left out {}: {}.", &[&took, &from, &n.to_string(), &left.join(", ")]),
                 };
             }
             Err(e) => (self.failed, self.status) = (true, e),
@@ -663,12 +686,12 @@ impl App {
         let profile = serde_json::to_value(&self.profile).unwrap_or(Value::Null);
         let params = json!({ "path": path, "profile": profile });
         self.start(
-            "Writing the G-code",
+            ui_msg!("Writing the G-code"),
             false,
             move |s| s.execute("slice", &params).map(work::Done::Value),
             move |app, done| {
                 if done.is_ok() {
-                    app.status = format!("Wrote {path}");
+                    app.status = tf("Wrote {}", &[&path]);
                 }
             },
         );
@@ -676,6 +699,7 @@ impl App {
 
     /// The whole window, one frame of it.
     pub fn show(&mut self, ui: &mut Ui) {
+        lang::set(self.lang);
         let ctx = ui.ctx().clone();
         // While an update is put in place nothing may change: the window closes once it is in.
         if self.poll_updates(&ctx) {
@@ -713,7 +737,7 @@ impl App {
             ui.horizontal(|ui| {
                 self.work_ui(ui);
                 let color = if self.failed { Color32::from_rgb(230, 110, 100) } else { Color32::GRAY };
-                let idle = if self.busy() { "" } else { "Ready" };
+                let idle = if self.busy() { "" } else { t("Ready") };
                 ui.label(RichText::new(if self.status.is_empty() { idle } else { &self.status }).color(color));
             });
         });
@@ -746,7 +770,7 @@ impl App {
         if let (Some(dir), Some(project)) = (&self.chats, &self.project)
             && let Err(e) = lamina_assistant::saved::write(dir, project, chat)
         {
-            (self.failed, self.status) = (true, format!("The chat could not be kept: {e}"));
+            (self.failed, self.status) = (true, tf("The chat could not be kept: {}", &[&e.to_string()]));
         }
         self.chat_saved = chat.revision();
     }
@@ -797,37 +821,42 @@ impl App {
     }
 
     fn toolbar(&mut self, ui: &mut Ui) {
-        ui.horizontal(|ui| {
-            if ui.button("Add box").clicked() {
+        // Wrapped: in a narrow window, or a language with longer words, the last buttons go to a second row, not off the edge.
+        ui.horizontal_wrapped(|ui| {
+            if ui.button(t("Add box")).clicked() {
                 self.add_box();
             }
-            if ui.button("Add cylinder").clicked() {
+            if ui.button(t("Add cylinder")).clicked() {
                 self.add(json!({"kind": "cylinder", "radius": 10, "height": 20}), 20.0);
             }
-            if ui.button("Add sphere").clicked() {
+            if ui.button(t("Add sphere")).clicked() {
                 self.add(json!({"kind": "sphere", "radius": 10}), 20.0);
             }
-            ui.menu_button("More shapes", |ui| {
+            ui.menu_button(t("More shapes"), |ui| {
                 let shapes = [
-                    ("Rounded box", json!({"kind": "rounded_box", "size": [20, 20, 20], "corner": 3}), 20.0),
-                    ("Cone", json!({"kind": "cone", "radius": 10, "height": 20}), 20.0),
-                    ("Tube", json!({"kind": "tube", "radius": 10, "inner": 7, "height": 20}), 20.0),
-                    ("Torus", json!({"kind": "torus", "radius": 10, "tube": 3}), 26.0),
-                    ("Hexagonal prism", json!({"kind": "prism", "radius": 10, "height": 20, "sides": 6}), 20.0),
-                    ("Pyramid", json!({"kind": "pyramid", "radius": 12, "height": 15, "sides": 4}), 24.0),
+                    (ui_msg!("Rounded box"), json!({"kind": "rounded_box", "size": [20, 20, 20], "corner": 3}), 20.0),
+                    (ui_msg!("Cone"), json!({"kind": "cone", "radius": 10, "height": 20}), 20.0),
+                    (ui_msg!("Tube"), json!({"kind": "tube", "radius": 10, "inner": 7, "height": 20}), 20.0),
+                    (ui_msg!("Torus"), json!({"kind": "torus", "radius": 10, "tube": 3}), 26.0),
+                    (ui_msg!("Hexagonal prism"), json!({"kind": "prism", "radius": 10, "height": 20, "sides": 6}), 20.0),
+                    (ui_msg!("Pyramid"), json!({"kind": "pyramid", "radius": 12, "height": 15, "sides": 4}), 24.0),
                 ];
                 for (label, params, width) in shapes {
-                    if ui.button(label).clicked() {
+                    if ui.button(t(label)).clicked() {
                         self.add(params, width);
                     }
                 }
                 ui.separator();
-                if ui.button("Text").on_hover_text("Lettering, 10 mm capitals, 1 mm deep; the assistant or `text` writes any").clicked() {
+                if ui
+                    .button(t("Text"))
+                    .on_hover_text(t("Lettering, 10 mm capitals, 1 mm deep; the assistant or `text` writes any"))
+                    .clicked()
+                {
                     self.add_with("text", json!({"text": "Lamina", "height": 10, "depth": 1}), 50.0);
                 }
                 if ui
-                    .button("Plate with four holes")
-                    .on_hover_text("A rounded plate, extruded; the assistant or `extrude` makes any outline")
+                    .button(t("Plate with four holes"))
+                    .on_hover_text(t("A rounded plate, extruded; the assistant or `extrude` makes any outline"))
                     .clicked()
                 {
                     let plate = json!({"shape": "rounded_rect", "size": [60, 40], "corner": 5, "height": 4, "name": "plate",
@@ -835,47 +864,47 @@ impl App {
                     self.add_with("extrude", plate, 60.0);
                 }
             });
-            if ui.button("Import mesh...").clicked()
-                && let Some(p) = rfd::FileDialog::new().add_filter("Mesh", files::MESHES).pick_file()
+            if ui.button(t("Import mesh...")).clicked()
+                && let Some(p) = rfd::FileDialog::new().add_filter(t("Mesh"), files::MESHES).pick_file()
             {
                 self.import(&p);
             }
             ui.separator();
-            let undo = self.session.undo_label().map_or("Nothing to undo".to_string(), |l| format!("Undo {l} (Ctrl+Z)"));
-            if ui.button("Undo").on_hover_text(undo).clicked() {
+            let undo = self.session.undo_label().map_or(t("Nothing to undo").to_string(), |l| tf("Undo {} (Ctrl+Z)", &[l]));
+            if ui.button(t("Undo")).on_hover_text(undo).clicked() {
                 self.run("undo", json!({}));
             }
-            if ui.button("Redo").on_hover_text("Bring back what undo took (Ctrl+Y)").clicked() {
+            if ui.button(t("Redo")).on_hover_text(t("Bring back what undo took (Ctrl+Y)")).clicked() {
                 self.run("redo", json!({}));
             }
-            if ui.button("Frame all").on_hover_text("Look at everything on the plate (F frames the picked objects)").clicked() {
+            if ui.button(t("Frame all")).on_hover_text(t("Look at everything on the plate (F frames the picked objects)")).clicked() {
                 self.frame_all();
             }
-            if ui.button("Arrange").on_hover_text("Lay every object out on the plate, none touching (A)").clicked() {
+            if ui.button(t("Arrange")).on_hover_text(t("Lay every object out on the plate, none touching (A)")).clicked() {
                 self.arrange();
             }
             ui.separator();
             {
                 use crate::view3d::Tool;
                 let before = self.view.tool;
-                ui.selectable_value(&mut self.view.tool, Tool::Move, "Move")
-                    .on_hover_text("Pick objects and drag them with the arrows (G)");
-                ui.selectable_value(&mut self.view.tool, Tool::LayFlat, "Lay flat")
-                    .on_hover_text("Click a face to turn it down onto the plate (L)");
-                ui.selectable_value(&mut self.view.tool, Tool::Measure, "Measure")
-                    .on_hover_text("Click two points to measure between them (M)");
+                ui.selectable_value(&mut self.view.tool, Tool::Move, t("Move"))
+                    .on_hover_text(t("Pick objects and drag them with the arrows (G)"));
+                ui.selectable_value(&mut self.view.tool, Tool::LayFlat, t("Lay flat"))
+                    .on_hover_text(t("Click a face to turn it down onto the plate (L)"));
+                ui.selectable_value(&mut self.view.tool, Tool::Measure, t("Measure"))
+                    .on_hover_text(t("Click two points to measure between them (M)"));
                 if self.view.tool != before {
                     self.view.marks.clear();
                 }
             }
             ui.separator();
-            ui.selectable_value(&mut self.tab, Tab::Prepare, "Prepare");
-            ui.selectable_value(&mut self.tab, Tab::Preview, "Preview");
+            ui.selectable_value(&mut self.tab, Tab::Prepare, t("Prepare"));
+            ui.selectable_value(&mut self.tab, Tab::Preview, t("Preview"));
             ui.separator();
-            if ui.button("Slice").on_hover_text("Slice the plate with these settings and show the layers").clicked() {
+            if ui.button(t("Slice")).on_hover_text(t("Slice the plate with these settings and show the layers")).clicked() {
                 self.slice();
             }
-            if ui.button("Export G-code...").on_hover_text("Slice the plate into a G-code file").clicked() {
+            if ui.button(t("Export G-code...")).on_hover_text(t("Slice the plate into a G-code file")).clicked() {
                 self.export();
             }
         });
@@ -909,7 +938,7 @@ impl App {
 
     fn plate_panel(&mut self, ui: &mut Ui) {
         self.view.plane = None;
-        ui.heading("Plate");
+        ui.heading(t("Plate"));
         let rows: Vec<(u32, String)> = self
             .session
             .scene
@@ -924,7 +953,8 @@ impl App {
             rows.into_iter().map(|(id, text)| (id, text, self.problems_of(id))).collect();
         if rows.is_empty() {
             ui.label(
-                RichText::new("Nothing on the plate yet: add a shape, import or drop a mesh, open a project, or ask the assistant.").weak(),
+                RichText::new(t("Nothing on the plate yet: add a shape, import or drop a mesh, open a project, or ask the assistant."))
+                    .weak(),
             );
         }
         for (id, text, problems) in rows {
@@ -938,33 +968,33 @@ impl App {
                 }
                 row.context_menu(|ui| self.object_menu(ui));
                 if let Some(p) = problems {
-                    ui.label(RichText::new("\u{26a0}").color(WARNING)).on_hover_text(format!(
+                    ui.label(RichText::new("\u{26a0}").color(WARNING)).on_hover_text(tf(
                         "This mesh is not a clean solid: {}. Parts of it may not print; Repair mends what it can.",
-                        p.describe()
+                        &[&problems_text(&p)],
                     ));
                 }
             });
         }
-        ui.label(RichText::new("Ctrl-click picks several; right-click for more.").small().weak());
+        ui.label(RichText::new(t("Ctrl-click picks several; right-click for more.")).small().weak());
         ui.separator();
         match self.selected.as_slice() {
             [] => {}
             &[id] => self.one_object(ui, id),
             many => {
                 let ids = many.to_vec();
-                ui.label(format!("{} objects picked", ids.len()));
+                ui.label(tf("{} objects picked", &[&ids.len().to_string()]));
                 ui.horizontal(|ui| {
-                    if ui.button("Join").on_hover_text("One solid of all of them (union)").clicked() {
+                    if ui.button(t("Join")).on_hover_text(t("One solid of all of them (union)")).clicked() {
                         self.boolean("union", json!({ "ids": ids }));
                     }
-                    if ui.button("Subtract").on_hover_text("Cut the others out of the first one picked").clicked() {
+                    if ui.button(t("Subtract")).on_hover_text(t("Cut the others out of the first one picked")).clicked() {
                         self.boolean("difference", json!({ "id": ids[0], "minus": ids[1..] }));
                     }
-                    if ui.button("Intersect").on_hover_text("Keep only what they all share").clicked() {
+                    if ui.button(t("Intersect")).on_hover_text(t("Keep only what they all share")).clicked() {
                         self.boolean("intersect", json!({ "ids": ids }));
                     }
                 });
-                if ui.button("Delete all").on_hover_text("Delete the picked objects, as one undo step").clicked() {
+                if ui.button(t("Delete all")).on_hover_text(t("Delete the picked objects, as one undo step")).clicked() {
                     self.delete_selected();
                 }
             }
@@ -985,7 +1015,7 @@ impl App {
             |app, done| {
                 if let Ok(work::Done::Value(v)) = done {
                     if let Some(note) = v["note"].as_str() {
-                        app.status = format!("Done; {note}.");
+                        app.status = tf("Done; {}.", &[note]);
                     }
                     let one = v["id"].as_u64().into_iter();
                     let many = v["ids"].as_array().into_iter().flatten().filter_map(Value::as_u64);
@@ -998,32 +1028,31 @@ impl App {
     fn one_object(&mut self, ui: &mut Ui, id: u32) {
         if let Some(p) = self.problems_of(id) {
             ui.horizontal(|ui| {
-                ui.label(RichText::new(format!("\u{26a0} {}", p.describe())).color(WARNING));
-                if ui.button("Repair").on_hover_text("Drop doubled faces, turn flipped ones, close cracks and small holes").clicked()
+                ui.label(RichText::new(format!("\u{26a0} {}", problems_text(&p))).color(WARNING));
+                if ui.button(t("Repair")).on_hover_text(t("Drop doubled faces, turn flipped ones, close cracks and small holes")).clicked()
                     && let Some(r) = self.run("repair", json!({ "id": id }))
                 {
-                    self.status = format!(
+                    let closed = if r["watertight"] == true {
+                        t("it is closed now")
+                    } else {
+                        t("it is still open: a hole is too big to fill without guessing")
+                    };
+                    let n = |k: &str| r[k].to_string();
+                    self.status = tf(
                         "Repaired: {} faces dropped, {} turned, {} holes filled; {}.",
-                        r["dropped"],
-                        r["flipped"],
-                        r["holes_filled"],
-                        if r["watertight"] == true {
-                            "it is closed now"
-                        } else {
-                            "it is still open: a hole is too big to fill without guessing"
-                        }
+                        &[&n("dropped"), &n("flipped"), &n("holes_filled"), closed],
                     );
                 }
             });
         }
         self.position_fields(ui, id);
         self.object_settings(ui, id);
-        ui.label("Move by, mm");
+        ui.label(t("Move by, mm"));
         ui.horizontal(|ui| {
             for (k, axis) in ["x", "y", "z"].into_iter().enumerate() {
                 ui.add(egui::DragValue::new(&mut self.nudge[k]).speed(0.5).prefix(format!("{axis} ")));
             }
-            if ui.button("Move").clicked() {
+            if ui.button(t("Move")).clicked() {
                 self.run("move", json!({ "id": id, "by": self.nudge }));
             }
         });
@@ -1033,32 +1062,32 @@ impl App {
                     ui.selectable_value(&mut self.axis, k, axis);
                 }
             });
-            ui.add(egui::DragValue::new(&mut self.degrees).speed(1.0).suffix(" deg"));
-            if ui.button("Rotate").clicked() {
+            ui.add(egui::DragValue::new(&mut self.degrees).speed(1.0).suffix(t(" deg")));
+            if ui.button(t("Rotate")).clicked() {
                 let axis = ["x", "y", "z"][self.axis];
                 self.run("rotate", json!({ "id": id, "axis": axis, "degrees": self.degrees }));
             }
-            if ui.button("Mirror").on_hover_text("Mirror across the plane square to the axis chosen").clicked() {
+            if ui.button(t("Mirror")).on_hover_text(t("Mirror across the plane square to the axis chosen")).clicked() {
                 let axis = ["x", "y", "z"][self.axis];
                 self.run("mirror", json!({ "id": id, "axis": axis }));
             }
         });
         ui.horizontal(|ui| {
             ui.add(egui::DragValue::new(&mut self.factor).speed(0.01).range(0.01..=100.0).prefix("x "));
-            if ui.button("Scale").clicked() {
+            if ui.button(t("Scale")).clicked() {
                 self.run("scale", json!({ "id": id, "factor": self.factor }));
             }
         });
-        egui::CollapsingHeader::new("Cut into pieces").show(ui, |ui| self.cut_ui(ui, id));
+        egui::CollapsingHeader::new(t("Cut into pieces")).show(ui, |ui| self.cut_ui(ui, id));
         // A heavy mesh (a scan, say) can be given fewer triangles; on a thread, as it can take seconds.
         let triangles = self.session.scene.get(id).map_or(0, |o| o.mesh.triangles.len());
         if triangles > 1000 {
             ui.horizontal(|ui| {
                 ui.add(egui::DragValue::new(&mut self.keep).speed(1.0).range(1.0..=99.0).suffix(" %"))
-                    .on_hover_text("The share of its triangles to keep");
+                    .on_hover_text(t("The share of its triangles to keep"));
                 if ui
-                    .button("Simplify")
-                    .on_hover_text(format!("{triangles} triangles now; its shape is kept as well as it can be"))
+                    .button(t("Simplify"))
+                    .on_hover_text(tf("{} triangles now; its shape is kept as well as it can be", &[&triangles.to_string()]))
                     .clicked()
                 {
                     let params = json!({ "id": id, "ratio": self.keep / 100.0 });
@@ -1068,7 +1097,8 @@ impl App {
                         move |s| s.execute("simplify", &params).map(work::Done::Value),
                         move |app, done| {
                             if let Ok(work::Done::Value(v)) = done {
-                                app.status = format!("Simplified from {} to {} triangles.", v["before"], v["triangles"]);
+                                let (before, after) = (v["before"].to_string(), v["triangles"].to_string());
+                                app.status = tf("Simplified from {} to {} triangles.", &[&before, &after]);
                             }
                         },
                     );
@@ -1076,16 +1106,16 @@ impl App {
             });
         }
         ui.horizontal(|ui| {
-            if ui.button("Duplicate").on_hover_text("A copy beside it; the plate is laid out again").clicked()
+            if ui.button(t("Duplicate")).on_hover_text(t("A copy beside it; the plate is laid out again")).clicked()
                 && let Some(v) = self.run("duplicate", json!({ "id": id }))
                 && let Some(copy) = v["ids"][0].as_u64()
             {
                 self.selected = vec![copy as u32];
             }
-            if ui.button("Drop to plate").clicked() {
+            if ui.button(t("Drop to plate")).clicked() {
                 self.run("drop_to_bed", json!({ "id": id }));
             }
-            if ui.button("Delete").clicked() {
+            if ui.button(t("Delete")).clicked() {
                 self.run("delete", json!({ "id": id }));
             }
         });
@@ -1096,7 +1126,7 @@ impl App {
     fn cut_ui(&mut self, ui: &mut Ui, id: u32) {
         let Some((lo, hi)) = self.session.scene.get(id).ok().and_then(|o| o.bounds()) else { return };
         ui.horizontal(|ui| {
-            ui.label("Across");
+            ui.label(t("Across"));
             for (k, axis) in ["x", "y", "z"].into_iter().enumerate() {
                 ui.selectable_value(&mut self.cut_axis, k, axis);
             }
@@ -1105,7 +1135,7 @@ impl App {
         if !(lo[k]..=hi[k]).contains(&self.cut_at) {
             self.cut_at = (lo[k] + hi[k]) / 2.0;
         }
-        ui.add(egui::Slider::new(&mut self.cut_at, lo[k]..=hi[k]).text("at").suffix(" mm").max_decimals(2));
+        ui.add(egui::Slider::new(&mut self.cut_at, lo[k]..=hi[k]).text(t("at")).suffix(" mm").max_decimals(2));
         let (ku, kv, m) = ((k + 1) % 3, (k + 2) % 3, 5.0);
         self.view.plane = Some([(-m, -m), (m, -m), (m, m), (-m, m)].map(|(du, dv)| {
             let mut p = [0.0; 3];
@@ -1116,13 +1146,13 @@ impl App {
         }));
         let connectors = self.connectors_ui(ui);
         ui.horizontal(|ui| {
-            if ui.button("Cut").on_hover_text("Cut here; each piece is turned to print and the plate laid out").clicked() {
+            if ui.button(t("Cut")).on_hover_text(t("Cut here; each piece is turned to print and the plate laid out")).clicked() {
                 let axis = ["x", "y", "z"][k];
                 self.boolean("cut", json!({ "id": id, "axis": axis, "at": self.cut_at, "connectors": connectors, "lay_out": true }));
             }
             if ui
-                .button("Split to fit plate")
-                .on_hover_text("Cut it into as few pieces as fit the printer, with connectors at every cut")
+                .button(t("Split to fit plate"))
+                .on_hover_text(t("Cut it into as few pieces as fit the printer, with connectors at every cut"))
                 .clicked()
             {
                 self.boolean("split_to_fit", json!({ "id": id, "connectors": connectors }));
@@ -1134,38 +1164,38 @@ impl App {
     /// (pins, round, Auto, 0.2 mm) asks for nothing by name, so a face too small for them is cut without, and said, not refused.
     fn connectors_ui(&mut self, ui: &mut Ui) -> Value {
         ui.horizontal(|ui| {
-            ui.label("Connectors");
-            ui.selectable_value(&mut self.connector, "pin", "Pins")
-                .on_hover_text("Pegs on one piece and sockets in the other: nothing loose");
-            ui.selectable_value(&mut self.connector, "dowel", "Dowels")
-                .on_hover_text("Holes in both pieces and a loose pin for each pair: both pieces lie on their cut faces");
-            ui.selectable_value(&mut self.connector, "none", "None").on_hover_text("No connectors: for parts you glue");
+            ui.label(t("Connectors"));
+            ui.selectable_value(&mut self.connector, "pin", t("Pins"))
+                .on_hover_text(t("Pegs on one piece and sockets in the other: nothing loose"));
+            ui.selectable_value(&mut self.connector, "dowel", t("Dowels"))
+                .on_hover_text(t("Holes in both pieces and a loose pin for each pair: both pieces lie on their cut faces"));
+            ui.selectable_value(&mut self.connector, "none", t("None")).on_hover_text(t("No connectors: for parts you glue"));
         });
         if self.connector == "none" {
             return json!({ "kind": "none" });
         }
         egui::Grid::new("connector-options").num_columns(2).show(ui, |ui| {
-            ui.label("Shape");
+            ui.label(t("Shape"));
             ui.horizontal(|ui| {
-                ui.selectable_value(&mut self.connector_shape, "round", "Round");
-                ui.selectable_value(&mut self.connector_shape, "square", "Square")
-                    .on_hover_text("A square peg or hole cannot turn in its socket");
+                ui.selectable_value(&mut self.connector_shape, "round", t("Round"));
+                ui.selectable_value(&mut self.connector_shape, "square", t("Square"))
+                    .on_hover_text(t("A square peg or hole cannot turn in its socket"));
             });
             ui.end_row();
-            ui.label("How many");
+            ui.label(t("How many"));
             egui::ComboBox::from_id_salt("connector-count")
-                .selected_text(self.connector_count.map_or("Auto".to_string(), |n| n.to_string()))
+                .selected_text(self.connector_count.map_or(t("Auto").to_string(), |n| n.to_string()))
                 .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.connector_count, None, "Auto");
+                    ui.selectable_value(&mut self.connector_count, None, t("Auto"));
                     for n in 1..=8 {
                         ui.selectable_value(&mut self.connector_count, Some(n), n.to_string());
                     }
                 });
             ui.end_row();
-            ui.label("Size");
+            ui.label(t("Size"));
             ui.horizontal(|ui| {
                 let mut auto = self.connector_size.is_none();
-                if ui.checkbox(&mut auto, "Auto").on_hover_text("Sized from the cut face, 3 to 8 mm across").changed() {
+                if ui.checkbox(&mut auto, t("Auto")).on_hover_text(t("Sized from the cut face, 3 to 8 mm across")).changed() {
                     self.connector_size = if auto { None } else { Some(5.0) };
                 }
                 if let Some(d) = &mut self.connector_size {
@@ -1173,9 +1203,9 @@ impl App {
                 }
             });
             ui.end_row();
-            ui.label("Fit");
-            ui.add(egui::DragValue::new(&mut self.connector_fit).speed(0.01).range(0.0..=1.0).suffix(" mm a side"))
-                .on_hover_text("The gap between a peg or pin and its hole: more is looser. 0.2 mm suits most printers");
+            ui.label(t("Fit"));
+            ui.add(egui::DragValue::new(&mut self.connector_fit).speed(0.01).range(0.0..=1.0).suffix(t(" mm a side")))
+                .on_hover_text(t("The gap between a peg or pin and its hole: more is looser. 0.2 mm suits most printers"));
             ui.end_row();
         });
         let mut c = serde_json::Map::new();
@@ -1208,7 +1238,7 @@ impl App {
         let Some(mut f) = self.fields.clone() else { return };
         let (mut moved, mut sized) = (None, None);
         egui::Grid::new("fields").num_columns(4).show(ui, |ui| {
-            ui.label("Position");
+            ui.label(t("Position"));
             for (k, axis) in ["x", "y", "z"].into_iter().enumerate() {
                 let r = ui.add(egui::DragValue::new(&mut f.at[k]).speed(0.5).prefix(format!("{axis} ")).max_decimals(3));
                 if r.drag_stopped() || (r.changed() && !r.dragged()) {
@@ -1216,7 +1246,7 @@ impl App {
                 }
             }
             ui.end_row();
-            ui.label("Size");
+            ui.label(t("Size"));
             for (k, axis) in ["x", "y", "z"].into_iter().enumerate() {
                 let r = ui
                     .add(egui::DragValue::new(&mut f.size[k]).speed(0.5).range(0.01..=10_000.0).prefix(format!("{axis} ")).max_decimals(3));
@@ -1226,7 +1256,7 @@ impl App {
             }
             ui.end_row();
         });
-        ui.checkbox(&mut self.keep_proportions, "Keep proportions");
+        ui.checkbox(&mut self.keep_proportions, t("Keep proportions"));
         self.fields = Some(f.clone());
         let now = [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, lo[2]];
         if moved.is_some() {
@@ -1242,13 +1272,13 @@ impl App {
         let Ok(o) = self.session.scene.get(id) else { return };
         let mine = o.settings.as_deref().and_then(Value::as_object).cloned().unwrap_or_default();
         let mut changed = None;
-        egui::CollapsingHeader::new("This object's settings").show(ui, |ui| {
+        egui::CollapsingHeader::new(t("This object's settings")).show(ui, |ui| {
             let mut infill = mine.get("infill_density").and_then(Value::as_f64);
             let mut walls = mine.get("perimeters").and_then(Value::as_u64).map(|w| w as u32);
             let mut own_infill = infill.is_some();
             let mut own_walls = walls.is_some();
             ui.horizontal(|ui| {
-                ui.checkbox(&mut own_infill, "Infill");
+                ui.checkbox(&mut own_infill, t("Infill"));
                 let mut percent = infill.unwrap_or(self.profile.infill_density) * 100.0;
                 if ui.add_enabled(own_infill, egui::DragValue::new(&mut percent).range(0.0..=100.0).suffix(" %")).changed()
                     || own_infill != infill.is_some()
@@ -1258,7 +1288,7 @@ impl App {
                 }
             });
             ui.horizontal(|ui| {
-                ui.checkbox(&mut own_walls, "Walls");
+                ui.checkbox(&mut own_walls, t("Walls"));
                 let mut w = walls.unwrap_or(self.profile.perimeters);
                 if ui.add_enabled(own_walls, egui::DragValue::new(&mut w).range(0..=10)).changed() || own_walls != walls.is_some() {
                     walls = own_walls.then_some(w);
@@ -1268,7 +1298,7 @@ impl App {
             let mut extruder = mine.get("extruder").and_then(Value::as_u64).map(|e| e as u32);
             let mut own_extruder = extruder.is_some();
             ui.horizontal(|ui| {
-                ui.checkbox(&mut own_extruder, "Extruder").on_hover_text(hint("extruder"));
+                ui.checkbox(&mut own_extruder, t("Extruder")).on_hover_text(hint("extruder"));
                 let mut e = extruder.unwrap_or(self.profile.extruder);
                 let range = 1..=self.profile.extruders.max(1);
                 if ui.add_enabled(own_extruder, egui::DragValue::new(&mut e).range(range)).changed() || own_extruder != extruder.is_some() {
@@ -1315,55 +1345,55 @@ impl App {
     }
 
     fn print_settings(&mut self, ui: &mut Ui) {
-        egui::CollapsingHeader::new("Print settings").default_open(true).show(ui, |ui| {
+        egui::CollapsingHeader::new(t("Print settings")).default_open(true).show(ui, |ui| {
             let p = &mut self.profile;
             let max_layer = p.nozzle * 0.8;
             egui::Grid::new("settings").num_columns(2).show(ui, |ui| {
-                ui.label("Layer height, mm");
+                ui.label(t("Layer height, mm"));
                 ui.add(egui::DragValue::new(&mut p.layer_height).speed(0.01).range(0.02..=max_layer)).on_hover_text(hint("layer_height"));
                 ui.end_row();
                 ui.label("");
                 ui.horizontal(|ui| {
-                    ui.checkbox(&mut p.adaptive_layers, "Adaptive, from").on_hover_text(hint("adaptive_layers"));
+                    ui.checkbox(&mut p.adaptive_layers, t("Adaptive, from")).on_hover_text(hint("adaptive_layers"));
                     ui.add_enabled(p.adaptive_layers, egui::DragValue::new(&mut p.min_layer_height).speed(0.01).range(0.02..=max_layer))
                         .on_hover_text(hint("min_layer_height"));
                 });
                 ui.end_row();
-                ui.label("First layer, mm");
+                ui.label(t("First layer, mm"));
                 ui.add(egui::DragValue::new(&mut p.first_layer_height).speed(0.01).range(0.02..=max_layer))
                     .on_hover_text(hint("first_layer_height"));
                 ui.end_row();
-                ui.label("Walls");
+                ui.label(t("Walls"));
                 ui.add(egui::DragValue::new(&mut p.perimeters).range(0..=10)).on_hover_text(hint("perimeters"));
                 ui.end_row();
-                ui.label("Top / bottom layers");
+                ui.label(t("Top / bottom layers"));
                 ui.horizontal(|ui| {
                     ui.add(egui::DragValue::new(&mut p.top_layers).range(0..=50)).on_hover_text(hint("top_layers"));
                     ui.add(egui::DragValue::new(&mut p.bottom_layers).range(0..=50)).on_hover_text(hint("bottom_layers"));
                 });
                 ui.end_row();
-                ui.label("Infill");
+                ui.label(t("Infill"));
                 let mut percent = p.infill_density * 100.0;
                 if ui
                     .add(egui::DragValue::new(&mut percent).speed(1.0).range(0.0..=100.0).suffix(" %"))
-                    .on_hover_text(lamina_slicer::profile::about("infill_density"))
+                    .on_hover_text(t(lamina_slicer::profile::about("infill_density")))
                     .changed()
                 {
                     p.infill_density = percent / 100.0;
                 }
                 ui.end_row();
                 ui.label("");
-                ui.checkbox(&mut p.vase, "Vase mode").on_hover_text(hint("vase"));
+                ui.checkbox(&mut p.vase, t("Vase mode")).on_hover_text(hint("vase"));
                 ui.end_row();
-                ui.label("Infill pattern");
+                ui.label(t("Infill pattern"));
                 {
                     use lamina_slicer::infill::Pattern;
                     let name = |x: Pattern| match x {
-                        Pattern::Lines => "Lines",
-                        Pattern::Grid => "Grid",
-                        Pattern::Triangles => "Triangles",
-                        Pattern::Gyroid => "Gyroid",
-                        Pattern::Honeycomb => "Honeycomb",
+                        Pattern::Lines => t("Lines"),
+                        Pattern::Grid => t("Grid"),
+                        Pattern::Triangles => t("Triangles"),
+                        Pattern::Gyroid => t("Gyroid"),
+                        Pattern::Honeycomb => t("Honeycomb"),
                     };
                     egui::ComboBox::from_id_salt("infill pattern")
                         .selected_text(name(p.infill_pattern))
@@ -1376,13 +1406,13 @@ impl App {
                         .on_hover_text(hint("infill_pattern"));
                 }
                 ui.end_row();
-                ui.label("Nozzle / bed, C");
+                ui.label(t("Nozzle / bed, C"));
                 ui.horizontal(|ui| {
                     ui.add(egui::DragValue::new(&mut p.nozzle_temp).range(0.0..=400.0)).on_hover_text(hint("nozzle_temp"));
                     ui.add(egui::DragValue::new(&mut p.bed_temp).range(0.0..=400.0)).on_hover_text(hint("bed_temp"));
                 });
                 ui.end_row();
-                ui.label("First layer nozzle / bed");
+                ui.label(t("First layer nozzle / bed"));
                 ui.horizontal(|ui| {
                     ui.add(egui::DragValue::new(&mut p.first_layer_nozzle_temp).range(0.0..=400.0))
                         .on_hover_text(hint("first_layer_nozzle_temp"));
@@ -1390,14 +1420,14 @@ impl App {
                         .on_hover_text(hint("first_layer_bed_temp"));
                 });
                 ui.end_row();
-                ui.label("Seam");
+                ui.label(t("Seam"));
                 {
                     use lamina_slicer::profile::Seam;
                     let name = |s: Seam| match s {
-                        Seam::Aligned => "Aligned",
-                        Seam::Rear => "At the back",
-                        Seam::Sharpest => "Sharpest corner",
-                        Seam::Nearest => "Nearest",
+                        Seam::Aligned => t("Aligned"),
+                        Seam::Rear => t("At the back"),
+                        Seam::Sharpest => t("Sharpest corner"),
+                        Seam::Nearest => t("Nearest"),
                     };
                     egui::ComboBox::from_id_salt("seam")
                         .selected_text(name(p.seam))
@@ -1410,19 +1440,19 @@ impl App {
                         .on_hover_text(hint("seam"));
                 }
                 ui.end_row();
-                ui.label("Brim, mm / raft layers");
+                ui.label(t("Brim, mm / raft layers"));
                 ui.horizontal(|ui| {
                     ui.add(egui::DragValue::new(&mut p.brim_width).speed(0.5).range(0.0..=50.0)).on_hover_text(hint("brim_width"));
                     ui.add(egui::DragValue::new(&mut p.raft_layers).range(0..=10)).on_hover_text(hint("raft_layers"));
                 });
                 ui.end_row();
-                ui.label("Supports");
+                ui.label(t("Supports"));
                 ui.horizontal(|ui| {
                     use lamina_slicer::profile::Support;
                     let name = |s: Support| match s {
-                        Support::Off => "Off",
-                        Support::Everywhere => "Everywhere",
-                        Support::FromPlate => "From the plate only",
+                        Support::Off => t("Off"),
+                        Support::Everywhere => t("Everywhere"),
+                        Support::FromPlate => t("From the plate only"),
                     };
                     egui::ComboBox::from_id_salt("support")
                         .selected_text(name(p.support))
@@ -1434,12 +1464,12 @@ impl App {
                         .response
                         .on_hover_text(hint("support"));
                     if p.support != Support::Off {
-                        ui.add(egui::DragValue::new(&mut p.support_angle).range(10.0..=89.0).suffix(" deg"))
+                        ui.add(egui::DragValue::new(&mut p.support_angle).range(10.0..=89.0).suffix(t(" deg")))
                             .on_hover_text(hint("support_angle"));
                         use lamina_slicer::profile::SupportStyle;
                         let style = |s: SupportStyle| match s {
-                            SupportStyle::Columns => "Columns",
-                            SupportStyle::Tree => "Tree",
+                            SupportStyle::Columns => t("Columns"),
+                            SupportStyle::Tree => t("Tree"),
                         };
                         egui::ComboBox::from_id_salt("support_style")
                             .selected_text(style(p.support_style))
@@ -1453,7 +1483,7 @@ impl App {
                     }
                 });
                 ui.end_row();
-                ui.label("Plate, mm");
+                ui.label(t("Plate, mm"));
                 ui.horizontal(|ui| {
                     ui.add(egui::DragValue::new(&mut p.bed[0]).range(10.0..=2000.0)).on_hover_text(hint("bed"));
                     ui.add(egui::DragValue::new(&mut p.bed[1]).range(10.0..=2000.0)).on_hover_text(hint("bed"));
@@ -1462,14 +1492,14 @@ impl App {
             });
             self.more_settings(ui);
             ui.horizontal(|ui| {
-                if ui.button("Back to the defaults").clicked() {
+                if ui.button(t("Back to the defaults")).clicked() {
                     self.profile = Profile::default();
                 }
                 if ui
-                    .button("Import profile...")
-                    .on_hover_text("A PrusaSlicer .ini, or an OrcaSlicer or Bambu Studio .json preset")
+                    .button(t("Import profile..."))
+                    .on_hover_text(t("A PrusaSlicer .ini, or an OrcaSlicer or Bambu Studio .json preset"))
                     .clicked()
-                    && let Some(path) = rfd::FileDialog::new().add_filter("Profile", &["ini", "json"]).pick_file()
+                    && let Some(path) = rfd::FileDialog::new().add_filter(t("Profile"), &["ini", "json"]).pick_file()
                 {
                     self.import_profile(&path);
                 }
@@ -1483,7 +1513,7 @@ impl App {
         let group = |ui: &mut Ui, title: &str, body: &mut dyn FnMut(&mut Ui)| {
             egui::CollapsingHeader::new(title).show(ui, |ui| egui::Grid::new(title).num_columns(2).show(ui, |ui| body(ui)));
         };
-        group(ui, "Speeds", &mut |ui| {
+        group(ui, t("Speeds"), &mut |ui| {
             field(ui, "Walls, mm/s", "perimeter_speed", &mut p.perimeter_speed, 1.0);
             field(ui, "Infill, mm/s", "infill_speed", &mut p.infill_speed, 1.0);
             field(ui, "First layer, mm/s", "first_layer_speed", &mut p.first_layer_speed, 1.0);
@@ -1491,40 +1521,40 @@ impl App {
             field(ui, "Bridges, mm/s", "bridge_speed", &mut p.bridge_speed, 1.0);
             field(ui, "Slowest when cooling, mm/s", "min_print_speed", &mut p.min_print_speed, 1.0);
         });
-        group(ui, "Retraction and travel", &mut |ui| {
+        group(ui, t("Retraction and travel"), &mut |ui| {
             field(ui, "Retract, mm", "retract_length", &mut p.retract_length, 0.1);
             field(ui, "Retract speed, mm/s", "retract_speed", &mut p.retract_speed, 1.0);
             field(ui, "Not under, mm of travel", "retract_min_travel", &mut p.retract_min_travel, 0.1);
             field(ui, "Z hop, mm", "z_hop", &mut p.z_hop, 0.05);
             field(ui, "Wipe, mm", "wipe_distance", &mut p.wipe_distance, 0.1);
-            ui.checkbox(&mut p.combing, "Travel inside the part without retracting").on_hover_text(hint("combing"));
+            ui.checkbox(&mut p.combing, t("Travel inside the part without retracting")).on_hover_text(hint("combing"));
             ui.end_row();
-            ui.checkbox(&mut p.firmware_retraction, "Firmware retraction (G10, G11)").on_hover_text(hint("firmware_retraction"));
+            ui.checkbox(&mut p.firmware_retraction, t("Firmware retraction (G10, G11)")).on_hover_text(hint("firmware_retraction"));
             ui.end_row();
         });
-        group(ui, "Skirt", &mut |ui| {
+        group(ui, t("Skirt"), &mut |ui| {
             field(ui, "Loops", "skirt_loops", &mut p.skirt_loops, 0.1);
             field(ui, "Distance, mm", "skirt_distance", &mut p.skirt_distance, 0.5);
         });
-        group(ui, "Cooling", &mut |ui| {
+        group(ui, t("Cooling"), &mut |ui| {
             field(ui, "Fan, 0 to 255", "fan_speed", &mut p.fan_speed, 1.0);
             field(ui, "Full fan from layer", "fan_full_layer", &mut p.fan_full_layer, 0.1);
             field(ui, "Shortest layer, s", "min_layer_time", &mut p.min_layer_time, 0.5);
             field(ui, "Fan on bridges", "bridge_fan", &mut p.bridge_fan, 1.0);
             field(ui, "Bridge flow", "bridge_flow", &mut p.bridge_flow, 0.01);
         });
-        group(ui, "Surface", &mut |ui| {
-            ui.checkbox(&mut p.ironing, "Iron the top surfaces").on_hover_text(hint("ironing"));
+        group(ui, t("Surface"), &mut |ui| {
+            ui.checkbox(&mut p.ironing, t("Iron the top surfaces")).on_hover_text(hint("ironing"));
             ui.end_row();
             field(ui, "Ironing flow", "ironing_flow", &mut p.ironing_flow, 0.01);
             field(ui, "Ironing spacing, mm", "ironing_spacing", &mut p.ironing_spacing, 0.01);
             field(ui, "Ironing speed, mm/s", "ironing_speed", &mut p.ironing_speed, 1.0);
-            ui.checkbox(&mut p.fuzzy_skin, "Fuzzy skin on the outer wall").on_hover_text(hint("fuzzy_skin"));
+            ui.checkbox(&mut p.fuzzy_skin, t("Fuzzy skin on the outer wall")).on_hover_text(hint("fuzzy_skin"));
             ui.end_row();
             field(ui, "Fuzzy thickness, mm", "fuzzy_thickness", &mut p.fuzzy_thickness, 0.01);
             field(ui, "Fuzzy spacing, mm", "fuzzy_spacing", &mut p.fuzzy_spacing, 0.05);
         });
-        group(ui, "Support details", &mut |ui| {
+        group(ui, t("Support details"), &mut |ui| {
             field(ui, "Density", "support_density", &mut p.support_density, 0.01);
             field(ui, "Gap above, mm", "support_z_gap", &mut p.support_z_gap, 0.05);
             field(ui, "Gap beside, mm", "support_xy_gap", &mut p.support_xy_gap, 0.05);
@@ -1533,14 +1563,14 @@ impl App {
             field(ui, "Tree branch lean, deg", "tree_branch_angle", &mut p.tree_branch_angle, 1.0);
             field(ui, "Tree trunk radius, mm", "tree_max_radius", &mut p.tree_max_radius, 0.1);
         });
-        group(ui, "Extruders", &mut |ui| {
+        group(ui, t("Extruders"), &mut |ui| {
             field(ui, "How many", "extruders", &mut p.extruders, 0.05);
             // Fewer extruders: what named the ones gone goes with them, so the settings stay valid.
             p.extruder = p.extruder.min(p.extruders);
             p.extruder_temps.truncate(p.extruders.saturating_sub(1) as usize);
             for i in 1..p.extruders as usize {
                 let mut t = p.extruder_temps.get(i - 1).copied().unwrap_or(p.nozzle_temp);
-                ui.label(format!("Extruder {} nozzle, C", i + 1)).on_hover_text(hint("extruder_temps"));
+                ui.label(tf("Extruder {} nozzle, C", &[&(i + 1).to_string()])).on_hover_text(hint("extruder_temps"));
                 if ui.add(egui::DragValue::new(&mut t).range(0.0..=400.0)).on_hover_text(hint("extruder_temps")).changed() {
                     p.extruder_temps.resize(p.extruder_temps.len().max(i), p.nozzle_temp);
                     p.extruder_temps[i - 1] = t;
@@ -1553,20 +1583,20 @@ impl App {
             field(ui, "Tower size, mm", "tower_size", &mut p.tower_size, 0.5);
             field(ui, "Purge, mm3", "purge_volume", &mut p.purge_volume, 1.0);
         });
-        group(ui, "One at a time", &mut |ui| {
-            ui.checkbox(&mut p.sequential, "Print each object whole, one after another").on_hover_text(hint("sequential"));
+        group(ui, t("One at a time"), &mut |ui| {
+            ui.checkbox(&mut p.sequential, t("Print each object whole, one after another")).on_hover_text(hint("sequential"));
             ui.end_row();
             field(ui, "Head clearance radius, mm", "clearance_radius", &mut p.clearance_radius, 1.0);
             field(ui, "Gantry height, mm", "gantry_height", &mut p.gantry_height, 1.0);
         });
-        group(ui, "Machine", &mut |ui| {
+        group(ui, t("Machine"), &mut |ui| {
             field(ui, "Nozzle, mm", "nozzle", &mut p.nozzle, 0.05);
             field(ui, "Filament, mm", "filament_diameter", &mut p.filament_diameter, 0.05);
             field(ui, "Height, mm", "max_height", &mut p.max_height, 1.0);
             field(ui, "Acceleration, mm/s2", "max_acceleration", &mut p.max_acceleration, 10.0);
             field(ui, "Junction deviation, mm", "junction_deviation", &mut p.junction_deviation, 0.001);
             field(ui, "Pressure advance", "pressure_advance", &mut p.pressure_advance, 0.001);
-            ui.label("Firmware");
+            ui.label(t("Firmware"));
             {
                 use lamina_slicer::profile::Firmware;
                 let name = |f: Firmware| match f {
@@ -1581,39 +1611,34 @@ impl App {
                 });
             }
             ui.end_row();
-            ui.label("Thumbnail, pixels");
-            ui.add(egui::DragValue::new(&mut p.thumbnail).range(0..=512))
-                .on_hover_text(format!("{} 0, or from 16 to 512.", lamina_slicer::profile::about("thumbnail")));
+            ui.label(t("Thumbnail, pixels"));
+            ui.add(egui::DragValue::new(&mut p.thumbnail).range(0..=512)).on_hover_text(format!(
+                "{} {}",
+                t(lamina_slicer::profile::about("thumbnail")),
+                t("0, or from 16 to 512.")
+            ));
             ui.end_row();
-            ui.checkbox(&mut p.origin_center, "Zero in the middle (delta)").on_hover_text(hint("origin_center"));
+            ui.checkbox(&mut p.origin_center, t("Zero in the middle (delta)")).on_hover_text(hint("origin_center"));
             ui.end_row();
-            ui.checkbox(&mut p.arc_fitting, "Curves as arcs (G2, G3)").on_hover_text(hint("arc_fitting"));
+            ui.checkbox(&mut p.arc_fitting, t("Curves as arcs (G2, G3)")).on_hover_text(hint("arc_fitting"));
             ui.end_row();
             field(ui, "Arc tolerance, mm", "arc_tolerance", &mut p.arc_tolerance, 0.005);
             ui.end_row();
         });
-        egui::CollapsingHeader::new("Start and end G-code").show(ui, |ui| {
+        egui::CollapsingHeader::new(t("Start and end G-code")).show(ui, |ui| {
+            let names = lamina_slicer::profile::PLACEHOLDERS.iter().map(|n| format!("[{n}]")).collect::<Vec<_>>().join(" ");
+            ui.label(RichText::new(tf("Placeholders: {}", &[&names])).small());
             ui.label(
-                RichText::new(format!(
-                    "Placeholders: {}",
-                    lamina_slicer::profile::PLACEHOLDERS.iter().map(|n| format!("[{n}]")).collect::<Vec<_>>().join(" ")
-                ))
-                .small(),
-            );
-            ui.label(
-                RichText::new("In braces, an expression of them: {first_layer_bed_temp - 5}, {if(bed_temp > 90, 1, 0)}, with min, max and round; {{ for a brace.")
+                RichText::new(t("In braces, an expression of them: {first_layer_bed_temp - 5}, {if(bed_temp > 90, 1, 0)}, with min, max and round; {{ for a brace."))
                     .small(),
             );
-            ui.label("Start");
+            ui.label(t("Start"));
             ui.add(egui::TextEdit::multiline(&mut p.start_gcode).code_editor().desired_rows(4));
-            ui.label("End");
+            ui.label(t("End"));
             ui.add(egui::TextEdit::multiline(&mut p.end_gcode).code_editor().desired_rows(4));
             let tool = lamina_slicer::profile::TOOL_PLACEHOLDERS;
-            ui.label(format!(
-                "Tool change, before the T; also {}",
-                tool.iter().map(|(n, _)| format!("[{n}]")).collect::<Vec<_>>().join(" ")
-            ))
-            .on_hover_text(hint("toolchange_gcode"));
+            let names = tool.iter().map(|(n, _)| format!("[{n}]")).collect::<Vec<_>>().join(" ");
+            ui.label(tf("Tool change, before the T; also {}", &[&names])).on_hover_text(hint("toolchange_gcode"));
             ui.add(egui::TextEdit::multiline(&mut p.toolchange_gcode).code_editor().desired_rows(2));
             for (text, extra) in [(&p.start_gcode, &[][..]), (&p.end_gcode, &[][..]), (&p.toolchange_gcode, tool)] {
                 if let Err(e) = p.expand_with(text, extra) {
@@ -1646,7 +1671,7 @@ impl App {
             && self.run("lay_flat", json!({ "id": id, "face": face })).is_some()
         {
             self.selected = vec![id];
-            self.status = "Laid flat on the face clicked.".into();
+            self.status = t("Laid flat on the face clicked.").into();
         }
         if let Some(p) = shown.point {
             self.measure(p);
@@ -1670,13 +1695,13 @@ impl App {
     fn preview(&mut self, ui: &mut Ui) {
         let current = Arc::as_ptr(&self.session.scene) as usize;
         let Some(sliced) = self.sliced.as_ref() else {
-            ui.centered_and_justified(|ui| ui.label("Slice the plate to see its layers."));
+            ui.centered_and_justified(|ui| ui.label(t("Slice the plate to see its layers.")));
             return;
         };
         ui.horizontal(|ui| {
             ui.label(&sliced.summary);
             if sliced.scene != current {
-                ui.label(RichText::new("The plate changed since this slice: slice again.").color(WARNING));
+                ui.label(RichText::new(t("The plate changed since this slice: slice again.")).color(WARNING));
             }
         });
         for w in &sliced.warnings {
@@ -1685,12 +1710,13 @@ impl App {
         let last = sliced.layers.len().saturating_sub(1);
         let z = sliced.layers.get(self.layer).map_or(0.0, |l| l.z);
         ui.horizontal(|ui| {
-            ui.add(egui::Slider::new(&mut self.layer, 0..=last).text("layer"));
+            ui.add(egui::Slider::new(&mut self.layer, 0..=last).text(t("layer")));
             ui.label(format!("z = {z:.2} mm"));
-            ui.checkbox(&mut self.travels, "Travels");
+            ui.checkbox(&mut self.travels, t("Travels"));
             ui.separator();
-            ui.selectable_value(&mut self.preview_3d, true, "3D").on_hover_text("Every layer up to this one, coloured by what it prints");
-            ui.selectable_value(&mut self.preview_3d, false, "Layer").on_hover_text("This layer alone, from above");
+            ui.selectable_value(&mut self.preview_3d, true, "3D")
+                .on_hover_text(t("Every layer up to this one, coloured by what it prints"));
+            ui.selectable_value(&mut self.preview_3d, false, t("Layer")).on_hover_text(t("This layer alone, from above"));
         });
         let (bed, centred) = (self.profile.bed, self.profile.origin_center);
         if self.preview_3d {
@@ -2337,6 +2363,37 @@ mod tests {
     }
 
     #[test]
+    fn the_window_speaks_the_language_chosen_in_the_view_menu_and_keeps_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let app = App::with_settings(session(), Arc::new(lamina_assistant::testing::Fake::default()), path.clone());
+        let mut h = Harness::builder().with_size([1400.0, 860.0]).build_ui_state(|ui, app: &mut App| app.show(ui), app);
+        h.run();
+        assert_eq!(h.state().lang, lang::Lang::English, "a test's window is English, whatever the machine's locale");
+        h.get_by_label("Slice");
+        press(&mut h, "View");
+        press(&mut h, "Português (Brasil)");
+        h.get_by_label("Fatiar");
+        h.get_by_label("Configurações de impressão");
+        assert!(h.query_by_label("Slice").is_none(), "nothing of the toolbar is left in English");
+        assert_eq!(Settings::read(&path).0.language, Some(lang::Lang::Portuguese));
+        assert!(h.state().title().starts_with("Sem título"), "{}", h.state().title());
+        // What the user named stays as it is.
+        h.state_mut().run("add_primitive", json!({"kind": "box", "size": [10, 10, 10], "name": "Bracket"}));
+        h.run();
+        h.get_by_label_contains("Bracket");
+        // Back to English, from the same menu (now called Exibir).
+        h.key_press(Key::Escape);
+        h.run();
+        press(&mut h, "Exibir");
+        press(&mut h, "English");
+        h.get_by_label("Slice");
+        assert!(h.query_by_label("Fatiar").is_none());
+        let again = App::with_settings(session(), Arc::new(lamina_assistant::testing::Fake::default()), path);
+        assert_eq!(again.lang, lang::Lang::English, "kept for the next start");
+    }
+
+    #[test]
     fn a_preset_saved_over_another_keeps_only_what_differs_and_follows_it() {
         let mut h = window();
         let app = h.state_mut();
@@ -2607,7 +2664,8 @@ fill_angle = 45
         app.session.scene_mut().add("open box", open).unwrap();
         app.selected = vec![1];
         h.run();
-        assert!(h.state_mut().problems_of(1).is_some_and(|p| p.open_edges == 3));
+        let p = h.state_mut().problems_of(1).unwrap();
+        assert_eq!((p.open_edges, problems_text(&p)), (3, "3 open edges".to_string()));
         h.get_by_label("Repair");
         press(&mut h, "Repair");
         assert!(h.state().status.contains("closed now"), "{}", h.state().status);
@@ -2818,6 +2876,14 @@ fill_angle = 45
         h.run();
         let out = std::env::var("LAMINA_PICTURE").unwrap_or_else(|_| "target/lamina-window.png".into());
         h.render().unwrap().save(&out).unwrap();
+        // The same window in each translation, to see that its longer words still fit.
+        for language in lang::Lang::ALL.into_iter().skip(1) {
+            h.state_mut().lang = language;
+            h.run();
+            h.render().unwrap().save(out.replace(".png", &format!("-{}.png", language.code()))).unwrap();
+        }
+        h.state_mut().lang = lang::Lang::English;
+        h.run();
         press(&mut h, "Slice");
         h.render().unwrap().save(out.replace(".png", "-preview.png")).unwrap();
     }
