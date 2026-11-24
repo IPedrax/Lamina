@@ -224,6 +224,11 @@ Priorities:
   printed one at a time stand apart and are planned alone. Tested with a T whose arm reaches over a lower box: in the G-code, columns
   and trees put no support in the box and stand on its top; from the plate only, nothing over it; two copies of a T in one place
   share one support.
+- **4.20 A tree's interface only where its tips hold it.** After the walk, each interface layer of a tree keeps only what lies within
+  three quarters of a tip's spacing of a tip that was kept or that rests on the model, from a tip's spacing above it to the
+  interface's own layers below; a branch dropped with `from_plate` takes its part of the interface with it. Tested with a roof over
+  a solid block and one beside it: from the plate only, nothing is left over the block while the roof beside it keeps its interface;
+  everywhere, both keep theirs. A T's arms keep the whole interface as before.
 - **5.1 Process presets.** A third kind in `presets.rs`, setting only the layers and the strength (`PROCESS_FIELDS`): 0.12 mm Fine,
   0.20 mm Standard, 0.28 mm Draft and Strong. `slice` and `slice_check` take `process` (after the printer and the filament, before
   `profile`); `slicer_presets` lists them; the window has a Process picker and Save process, kept in the settings file and the
@@ -412,12 +417,6 @@ after, and keep a test that a chain which passed still passes with the same volu
 
 ## 4. Slicer
 
-**4.20 A tree's interface only where its tips hold it (P1).** A tree keeps the columns' interface, which covers the whole overhang,
-and with `from_plate` a branch dropped for not reaching the plate leaves its corner of the interface over air. How: after the walk,
-each interface layer keeps only what lies within a tip's reach (`tree_tip_spacing` times 0.71, the cell a tip stands for) of a tip
-that was kept, or of one that rests on the model; the sparse part follows. Test: under a ledge over a lower step, with `from_plate`,
-no interface is left where the step's tips were dropped, and every interface point is near a kept tip.
-
 **4.21 The purge tower and one-at-a-time printing by outlines (P2).** The tower is refused over an object's bounding box, and one at
 a time takes each object as its box, so both refuse arrangements that would print. How: the tower against the union of each
 object's layers up to the tower's last layer (an overhang above the first layer can still reach over the tower), refused only
@@ -456,8 +455,7 @@ which Bambu's 2025 authorization keeps to Bambu Connect or a printer in Develope
 
 ## Known limits today
 
-- Walls are constant width; a thin feature gets one gap-fill line, not walls of varying width. A tree's interface covers the whole
-  overhang, as the columns' does, and with `from_plate` a branch left out can leave a corner of it over air.
+- Walls are constant width; a thin feature gets one gap-fill line, not walls of varying width.
 - The time estimate has not been checked against a real print.
 - A mesh whose holes are too big to fill without guessing stays open, and prints with parts missing, with a warning. STL, 3MF, OBJ and glTF in; STL and 3MF out.
 - Booleans refuse about 1 in 100 random pairs (the rest of a sphere-with-sphere union mostly). Booleans of earlier results are

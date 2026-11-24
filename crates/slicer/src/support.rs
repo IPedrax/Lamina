@@ -7,7 +7,8 @@
 //! 3. What is printed keeps `support_xy_gap` from the model's walls and stops `support_z_gap` below it, so it breaks away.
 //! 4. The top `support_interface_layers` under the model are denser, to give the overhang a surface to print on.
 //!
-//! Trees (`support_style: "tree"`) keep the interface and replace the columns under it, as tree supports are described:
+//! Trees (`support_style: "tree"`) keep the interface where their tips hold it and replace the columns under it, as tree supports are
+//! described:
 //!
 //! 5. Tips stand under the bottom of each column's top, `tree_tip_spacing` apart, on the layer below it.
 //! 6. Walked down a layer at a time, each branch leans toward the nearest branch it can still meet before the plate, at most
@@ -16,6 +17,8 @@
 //!    Branches that meet go on as one, thicker for the tips they carry and for how far they have come down.
 //! 7. A branch that cannot reach the plate rests on the model, or with `from_plate` is dropped with every tip it carries.
 //! 8. Each layer's branches are the union of their circles, kept out of the model by the gaps as the columns are.
+//! 9. The interface stays only within reach of a tip whose branch was kept, or that rests on the model: a branch dropped with
+//!    `from_plate` takes the interface it would have held with it, so none is left over air.
 //!
 //! Supports are planned for the plate, not for one object alone: `solid` is everything on each layer (the object and the others
 //! beside it), which support stands on, keeps the xy gap from and goes round, while only the object's own layers make overhangs.
@@ -251,6 +254,8 @@ fn trees(
         (l <= reach && free(k, out)).then_some(out)
     };
     let mut branches: Vec<Branch> = Vec::new();
+    // Each tip: its layer, where it is, and its branch (none where the roof rests on the model there).
+    let mut holds: Vec<(usize, P2, Option<usize>)> = Vec::new();
     let mut active: Vec<usize> = Vec::new();
     let mut circles: Vec<Vec<(P2, f64, usize)>> = vec![Vec::new(); n];
     for j in (0..n).rev() {
@@ -293,7 +298,8 @@ fn trees(
         }
         for &t in &tips[j] {
             if geom::contains(&regions[j], t) {
-                continue; // the roof rests on the model here
+                holds.push((j, t, None)); // the roof rests on the model here
+                continue;
             }
             let at = match (free(j, t), escape(j, t, w)) {
                 (true, _) => t,
@@ -301,6 +307,7 @@ fn trees(
                 (false, None) if p.support == Support::FromPlate => continue,
                 (false, None) => t,
             };
+            holds.push((j, t, Some(branches.len())));
             kept.push(branches.len());
             branches.push(Branch { at, tips: 1.0, grown: 0.0, into: branches.len(), dropped: false });
         }
@@ -344,20 +351,38 @@ fn trees(
         }
         i
     };
+    // The interface where a tip holds it: within the reach of a tip whose branch was kept, or that rests on the model, a little below
+    // it (the interface's layers over the tip) or a tip's spacing either way (a tip on a slope stands for the strips beside it).
+    let reach = 0.75 * s;
+    let tall = heights.iter().copied().fold(0.0, f64::max) * (p.support_interface_layers as f64 + 1.0);
+    let held = |m: usize| -> Region {
+        let near: Vec<Loop> = holds
+            .iter()
+            .filter(|(j, _, b)| (z[m] - z[*j]) >= -s && (z[m] - z[*j]) <= tall + s && b.is_none_or(|b| !branches[root(b)].dropped))
+            .map(|&(_, t, _)| disc(t, reach))
+            .collect();
+        geom::region(&near)
+    };
     columns
         .into_iter()
         .enumerate()
         .map(|(j, layer)| {
+            let interface = if geom::is_empty(&layer.interface) {
+                layer.interface
+            } else {
+                let kept = geom::intersect(&layer.interface, &held(j));
+                geom::inset(&geom::inset(&kept, w / 2.0), -w / 2.0)
+            };
             let discs: Vec<Loop> = circles[j].iter().filter(|c| !branches[root(c.2)].dropped).map(|&(c, r, _)| disc(c, r)).collect();
             if discs.is_empty() {
-                return Layer { sparse: Region::new(), interface: layer.interface };
+                return Layer { sparse: Region::new(), interface };
             }
             let mut tree = geom::difference(&geom::region(&discs), &keep_out(j));
             if let Some(shadow) = shadows.get(j) {
                 tree = geom::difference(&tree, shadow);
             }
             let tree = geom::inset(&geom::inset(&tree, w / 2.0), -w / 2.0);
-            Layer { sparse: geom::difference(&tree, &layer.interface), interface: layer.interface }
+            Layer { sparse: geom::difference(&tree, &interface), interface }
         })
         .collect()
 }
@@ -422,6 +447,36 @@ mod tests {
 
     fn tree() -> Profile {
         Profile { support: Support::Everywhere, support_style: SupportStyle::Tree, ..Profile::default() }
+    }
+
+    #[test]
+    fn a_trees_interface_is_only_where_a_kept_tip_holds_it() {
+        // A block 10 mm square and 4 mm tall (20 layers), then air. Two roofs of interface at layers 26 and 27: one over the block's
+        // middle, whose tips cannot reach the plate, and one beside the block, over the plate.
+        let n = 30;
+        let block = geom::region(&[rect(-5.0, -5.0, 5.0, 5.0)]);
+        let regions: Vec<Region> = (0..n).map(|k| if k < 20 { block.clone() } else { Region::new() }).collect();
+        let heights = vec![0.2; n];
+        let over_block = geom::region(&[rect(-2.0, -2.0, 2.0, 2.0)]);
+        let over_plate = geom::region(&[rect(10.0, -2.0, 14.0, 2.0)]);
+        let roof = geom::union(&over_block, &over_plate);
+        let mut roofs = vec![Region::new(); n];
+        let mut columns = vec![Layer::default(); n];
+        for k in [26, 27] {
+            roofs[k] = roof.clone();
+            columns[k].interface = roof.clone();
+        }
+        let keep_out = |k: usize| geom::inset(&regions[k], -0.6);
+        let p = Profile { support: Support::FromPlate, ..tree() };
+        let s = trees(&regions, &heights, &p, &roofs, columns.clone(), &keep_out);
+        for k in [26, 27] {
+            assert!(geom::area(&geom::intersect(&s[k].interface, &over_block)) < 1e-6, "layer {k}: no interface left over air");
+            assert!(geom::area(&geom::intersect(&s[k].interface, &over_plate)) > 10.0, "layer {k}: the held one stays");
+        }
+        assert!(s.iter().all(|l| geom::area(&geom::intersect(&l.sparse, &over_block)) < 1e-6), "no branch over the block");
+        // Everywhere, the branches over the block end on it, and hold their interface.
+        let everywhere = trees(&regions, &heights, &tree(), &roofs, columns, &keep_out);
+        assert!(geom::area(&geom::intersect(&everywhere[26].interface, &over_block)) > 10.0);
     }
 
     #[test]
