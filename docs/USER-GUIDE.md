@@ -100,6 +100,10 @@ all, set the environment variable `LAMINA_NO_UPDATE_CHECK=1`: the menu items and
 - **Calibration**, in More shapes, puts a temperature tower, two retraction towers, a pressure advance tower or a row of flow
   blocks on the plate, each with its settings changing by height (or by block); the status bar says what to look for. Ask the
   assistant for another range.
+- **Layer heights by hand**, in the View menu, opens a strip beside the 3D view: the plate's layers drawn against height. Drag up
+  the strip over the heights to change and across to the layer height you want (thinner to the left), or click for a millimetre
+  round a point; Adaptive starts from adaptive layers, Smooth softens the steps, Reset goes back to the layer height in the
+  settings. It is kept in the project and applies to every object.
 - **By height**, under This object's settings, gives the layers between two heights their own nozzle temperature, infill or walls
   (Add range); the assistant can set more (fan, pressure advance, retraction, flow, speeds) with `set_height_range`.
 - **This object's settings** lets one object print differently from the rest: its own walls, infill, seam, speeds or supports,

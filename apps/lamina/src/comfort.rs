@@ -254,6 +254,8 @@ impl App {
             if ui.add(egui::Button::new(t("Frame")).shortcut_text("F")).on_hover_text(t("The picked objects, or everything")).clicked() {
                 self.frame_selected();
             }
+            ui.checkbox(&mut self.strip.open, t("Layer heights by hand"))
+                .on_hover_text(t("A strip beside the 3D view to make layers thinner or thicker by height"));
             ui.separator();
             ui.label(t("Theme"));
             for (look, name) in [(Look::Dark, t("Dark")), (Look::Light, t("Light")), (Look::System, t("As the system"))] {

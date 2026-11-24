@@ -9,6 +9,7 @@ pub mod comfort;
 pub mod control;
 pub mod files;
 pub mod gpu;
+pub mod heights;
 pub mod icon;
 pub mod lang;
 pub mod preview;
@@ -152,6 +153,8 @@ pub struct App {
     pub session: Session,
     pub selected: Vec<u32>,
     pub view: view3d::View,
+    /// The layer heights strip beside the 3D view.
+    pub strip: heights::Strip,
     pub tab: Tab,
     pub profile: Profile,
     pub sliced: Option<Sliced>,
@@ -247,6 +250,7 @@ impl App {
             session,
             selected: Vec::new(),
             view: view3d::View::default(),
+            strip: heights::Strip::default(),
             tab: Tab::Prepare,
             profile: Profile::default(),
             sliced: None,
@@ -643,10 +647,11 @@ impl App {
     /// Slices the plate with the settings shown, on a thread, and opens the preview when it is done.
     pub fn slice(&mut self) {
         let all: Vec<&lamina_core::Object> = self.session.scene.objects.iter().collect();
-        let job = match lamina_slicer::commands::Job::of(&all, &self.profile) {
-            Ok(job) => job,
-            Err(e) => return (self.failed, self.status) = (true, e),
-        };
+        let job =
+            match lamina_slicer::commands::Job::of(&all, self.session.scene.layer_heights.as_deref().map(Vec::as_slice), &self.profile) {
+                Ok(job) => job,
+                Err(e) => return (self.failed, self.status) = (true, e),
+            };
         let profile = self.profile.clone();
         let scene = Arc::as_ptr(&self.session.scene) as usize;
         let work = move |_: &mut Session| {
@@ -1832,7 +1837,7 @@ impl App {
     /// The brush's settings, over the 3D view while the paint tool is in hand.
     fn brush_ui(&mut self, ui: &mut Ui) {
         use lamina_core::Paint;
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             let b = &mut self.view.brush;
             ui.label(t("Paint:"));
             ui.selectable_value(&mut b.kind, Paint::Seam, t("Seam")).on_hover_text(t("Each wall's seam starts on the painted faces"));
@@ -1858,6 +1863,9 @@ impl App {
     }
 
     fn prepare(&mut self, ui: &mut Ui) {
+        if self.strip.open {
+            Panel::right("layer-heights").resizable(false).exact_size(170.0).show(ui, |ui| self.heights_ui(ui));
+        }
         if self.view.tool == view3d::Tool::Paint {
             self.brush_ui(ui);
         }
@@ -3140,6 +3148,33 @@ fill_angle = 45
     }
 
     #[test]
+    fn the_layer_heights_strip_sets_a_band_by_dragging_and_its_buttons_fill_smooth_and_reset() {
+        let mut h = window();
+        press(&mut h, "Add box");
+        h.state_mut().strip.open = true;
+        h.run();
+        let top = h.state().session.scene.get(1).unwrap().bounds().unwrap().1[2];
+        press(&mut h, "Adaptive");
+        assert!(h.state().session.scene.layer_heights.is_some(), "{}", h.state().status);
+        press(&mut h, "Reset");
+        assert!(h.state().session.scene.layer_heights.is_none());
+        // A drag from a quarter of the way up to halfway, a quarter of the way across: those heights at a quarter of the most the
+        // nozzle prints (0.32 mm for 0.4).
+        let plot = h.state().strip.plot.unwrap();
+        let at = |x: f32, y: f32| egui::pos2(plot.left() + x * plot.width(), plot.bottom() - y * plot.height());
+        drag(&mut h, at(0.25, 0.25), at(0.25, 0.5));
+        let curve = h.state().session.scene.layer_heights.clone().expect("a band set");
+        let height = |z: f64| lamina_slicer::heights::at(&curve, z);
+        assert!((height(top * 0.375) - 0.08).abs() < 0.011, "{curve:?}");
+        assert!((height(top * 0.1) - h.state().profile.layer_height).abs() < 1e-9, "below the band as it was");
+        press(&mut h, "Smooth");
+        assert_ne!(h.state().session.scene.layer_heights.as_ref(), Some(&curve), "smoothed");
+        // Each is one step to undo.
+        h.state_mut().run("undo", json!({}));
+        assert_eq!(h.state().session.scene.layer_heights.as_ref(), Some(&curve));
+    }
+
+    #[test]
     fn the_paint_tool_paints_where_it_is_clicked_and_dragged_and_each_stroke_is_one_undo() {
         use lamina_core::Paint;
         let mut h = window();
@@ -3472,6 +3507,17 @@ fill_angle = 45
             h.render().unwrap().save(out.replace(".png", &format!("-{}.png", language.code()))).unwrap();
         }
         h.state_mut().lang = lang::Lang::English;
+        h.run();
+        // The layer heights strip with adaptive layers, and the paint tool with the box painted.
+        h.state_mut().strip.open = true;
+        h.run();
+        press(&mut h, "Adaptive");
+        press(&mut h, "Paint");
+        h.state_mut().run("paint", json!({"id": 1, "kind": "seam", "at": [0, -10, 10], "radius": 4}));
+        h.state_mut().run("paint", json!({"id": 1, "kind": "block", "at": [0, 0, 20], "radius": 4}));
+        h.run();
+        h.render().unwrap().save(out.replace(".png", "-tools.png")).unwrap();
+        h.state_mut().strip.open = false;
         h.run();
         press(&mut h, "Slice");
         h.render().unwrap().save(out.replace(".png", "-preview.png")).unwrap();

@@ -141,7 +141,7 @@ pub static ALL: &[Command] = &[
     ),
     cmd(
         "info",
-        "{} every object: id, name, triangles, size, min, max, volume_mm3, watertight (a slicer can only fill a closed mesh), and its problems: open_edges (holes), nonmanifold_edges (edges of three or more faces), flipped_faces; `repair` mends what it can; its recipe, its own settings, its modifier (support_enforcer, support_blocker, or null for a part) and its settings by height (ranges)",
+        "{} every object: id, name, triangles, size, min, max, volume_mm3, watertight (a slicer can only fill a closed mesh), and its problems: open_edges (holes), nonmanifold_edges (edges of three or more faces), flipped_faces; `repair` mends what it can; its recipe, its own settings, its modifier (support_enforcer, support_blocker, or null for a part), its settings by height (ranges) and its painted faces (painted: how many seam, support, block). Also the plate's layer height curve (layer_heights: [z, height] points, or null)",
         info,
         false,
         Files::None,
@@ -1080,7 +1080,8 @@ fn info(s: &mut Session, p: &Value) -> Result<Value, String> {
             })
         })
         .collect();
-    Ok(json!({"objects": objects}))
+    let heights = s.scene.layer_heights.as_deref().map_or(Value::Null, |h| json!(h));
+    Ok(json!({"objects": objects, "layer_heights": heights}))
 }
 
 /// How many faces carry each kind of paint, or null when none do.

@@ -3,16 +3,16 @@
 msgid ""
 msgstr "Project-Id-Version: Lamina\nMIME-Version: 1.0\nContent-Type: text/plain; charset=UTF-8\nContent-Transfer-Encoding: 8bit\nLanguage: pt_BR\n"
 
-#: apps/lamina/src/lib.rs:1127
-#: apps/lamina/src/lib.rs:1644
+#: apps/lamina/src/lib.rs:1132
+#: apps/lamina/src/lib.rs:1649
 msgid " deg"
 msgstr " graus"
 
-#: apps/lamina/src/lib.rs:1298
+#: apps/lamina/src/lib.rs:1303
 msgid " mm a side"
 msgstr " mm por lado"
 
-#: apps/lamina/src/lib.rs:443
+#: apps/lamina/src/lib.rs:447
 msgid "\"{}\" is a built-in {}: choose another name."
 msgstr "\"{}\" é uma predefinição embutida de {}: escolha outro nome."
 
@@ -20,19 +20,19 @@ msgstr "\"{}\" é uma predefinição embutida de {}: escolha outro nome."
 msgid "/dev/ttyUSB0, /dev/ttyACM0 or COM3"
 msgstr "/dev/ttyUSB0, /dev/ttyACM0 ou COM3"
 
-#: apps/lamina/src/lib.rs:1799
+#: apps/lamina/src/lib.rs:1804
 msgid "0, or from 16 to 512."
 msgstr "0, ou de 16 a 512."
 
-#: apps/lamina/src/lib.rs:904
+#: apps/lamina/src/lib.rs:909
 msgid "0.005 more every millimetre up: the height of the sharpest corners, in mm, times 0.005."
 msgstr "0,005 a mais a cada milímetro de altura: a altura dos cantos mais nítidos, em mm, vezes 0,005."
 
-#: apps/lamina/src/lib.rs:899
+#: apps/lamina/src/lib.rs:904
 msgid "0.4 mm more every 5 mm up: take the lowest band with no hairs between the towers."
 msgstr "0,4 mm a mais a cada 5 mm de altura: escolha a faixa mais baixa sem fios entre as torres."
 
-#: apps/lamina/src/lib.rs:909
+#: apps/lamina/src/lib.rs:914
 msgid "0.90, 0.95, 1.00, 1.05 and 1.10 from left to right: take the block with the smoothest top."
 msgstr "0,90, 0,95, 1,00, 1,05 e 1,10 da esquerda para a direita: escolha o bloco com o topo mais liso."
 
@@ -64,7 +64,7 @@ msgstr "300 x 300 x 300 mm, bico de 0,4 mm; a configuração da impressora preci
 msgid "350 x 350 x 340 mm, 0.4 mm nozzle; the printer's config must define PRINT_START and PRINT_END macros"
 msgstr "350 x 350 x 340 mm, bico de 0,4 mm; a configuração da impressora precisa definir as macros PRINT_START e PRINT_END"
 
-#: apps/lamina/src/lib.rs:1677
+#: apps/lamina/src/lib.rs:1682
 msgid "A PrusaSlicer .ini, or an OrcaSlicer or Bambu Studio .json preset"
 msgstr "Um .ini do PrusaSlicer, ou uma predefinição .json do OrcaSlicer ou do Bambu Studio"
 
@@ -72,7 +72,7 @@ msgstr "Um .ini do PrusaSlicer, ou uma predefinição .json do OrcaSlicer ou do 
 msgid "A bridge's flow as a share of the normal flow: under 1 makes thinner strands that sag less."
 msgstr "O fluxo de uma ponte como fração do fluxo normal: abaixo de 1 faz fios mais finos, que cedem menos."
 
-#: apps/lamina/src/lib.rs:1200
+#: apps/lamina/src/lib.rs:1205
 msgid "A copy beside it; the plate is laid out again"
 msgstr "Uma cópia ao lado; a mesa é organizada de novo"
 
@@ -80,7 +80,7 @@ msgstr "Uma cópia ao lado; a mesa é organizada de novo"
 msgid "A layer that would print faster than this, s, is slowed so it cools before the next."
 msgstr "Uma camada que imprimiria em menos tempo que isto, s, é desacelerada para esfriar antes da próxima."
 
-#: apps/lamina/src/lib.rs:1148
+#: apps/lamina/src/lib.rs:1153
 msgid "A part"
 msgstr "Uma peça"
 
@@ -92,7 +92,7 @@ msgstr "Uma frase-senha tem pelo menos {} caracteres."
 msgid "A picture of the plate this many pixels square, for the printer's screen; 0 for none."
 msgstr "Uma imagem quadrada da mesa com este lado em pixels, para a tela da impressora; 0 para nenhuma."
 
-#: apps/lamina/src/lib.rs:439
+#: apps/lamina/src/lib.rs:443
 msgid "A preset needs a name of up to 60 characters."
 msgstr "Uma predefinição precisa de um nome de até 60 caracteres."
 
@@ -100,7 +100,7 @@ msgstr "Uma predefinição precisa de um nome de até 60 caracteres."
 msgid "A printer on a USB cable has nowhere to keep a file: Send and print"
 msgstr "Uma impressora no cabo USB não tem onde guardar um arquivo: Enviar e imprimir"
 
-#: apps/lamina/src/lib.rs:881
+#: apps/lamina/src/lib.rs:886
 msgid "A rounded plate, extruded; the assistant or `extrude` makes any outline"
 msgstr "Uma placa arredondada, extrudada; o assistente ou `extrude` faz qualquer contorno"
 
@@ -108,11 +108,15 @@ msgstr "Uma placa arredondada, extrudada; o assistente ou `extrude` faz qualquer
 msgid "A second pass over each top surface with a trickle of plastic, which melts its ridges flat; slower, smoother tops."
 msgstr "Uma segunda passada sobre cada superfície de topo com um fio de plástico, que derrete e aplaina as cristas; topos mais lentos e mais lisos."
 
-#: apps/lamina/src/lib.rs:1273
+#: apps/lamina/src/lib.rs:1278
 msgid "A square peg or hole cannot turn in its socket"
 msgstr "Um pino ou furo quadrado não gira no encaixe"
 
-#: apps/lamina/src/lib.rs:1162
+#: apps/lamina/src/comfort.rs:258
+msgid "A strip beside the 3D view to make layers thinner or thicker by height"
+msgstr "Uma faixa ao lado da vista 3D para deixar as camadas mais finas ou mais grossas conforme a altura"
+
+#: apps/lamina/src/lib.rs:1167
 msgid "A support enforcer or blocker is not printed: the overhangs of a part inside it get supports, or none"
 msgstr "Um volume de forçar ou bloquear suporte não é impresso: as saliências de uma peça dentro dele recebem suportes, ou nenhum"
 
@@ -132,32 +136,36 @@ msgstr "Chave de API"
 msgid "API key, only if the server asks for one"
 msgstr "Chave de API, só se o servidor pedir"
 
-#: apps/lamina/src/lib.rs:1777
+#: apps/lamina/src/lib.rs:1782
 msgid "Acceleration, mm/s2"
 msgstr "Aceleração, mm/s2"
 
-#: apps/lamina/src/lib.rs:1220
+#: apps/lamina/src/lib.rs:1225
 msgid "Across"
 msgstr "No eixo"
 
-#: apps/lamina/src/lib.rs:1519
+#: apps/lamina/src/heights.rs:29
+msgid "Adaptive"
+msgstr "Adaptativas"
+
+#: apps/lamina/src/lib.rs:1524
 msgid "Adaptive, from"
 msgstr "Adaptativa, desde"
 
-#: apps/lamina/src/comfort.rs:307
-#: apps/lamina/src/lib.rs:847
+#: apps/lamina/src/comfort.rs:309
+#: apps/lamina/src/lib.rs:852
 msgid "Add box"
 msgstr "Adicionar caixa"
 
-#: apps/lamina/src/lib.rs:850
+#: apps/lamina/src/lib.rs:855
 msgid "Add cylinder"
 msgstr "Adicionar cilindro"
 
-#: apps/lamina/src/lib.rs:1485
+#: apps/lamina/src/lib.rs:1490
 msgid "Add range"
 msgstr "Adicionar faixa"
 
-#: apps/lamina/src/lib.rs:853
+#: apps/lamina/src/lib.rs:858
 msgid "Add sphere"
 msgstr "Adicionar esfera"
 
@@ -173,16 +181,16 @@ msgstr "Agentes"
 msgid "Agents may change the plate"
 msgstr "Agentes podem alterar a mesa"
 
-#: apps/lamina/src/lib.rs:1604
+#: apps/lamina/src/lib.rs:1609
 msgid "Aligned"
 msgstr "Alinhada"
 
-#: apps/lamina/src/lib.rs:1806
+#: apps/lamina/src/lib.rs:1811
 msgid "Arc tolerance, mm"
 msgstr "Tolerância do arco, mm"
 
-#: apps/lamina/src/comfort.rs:311
-#: apps/lamina/src/lib.rs:942
+#: apps/lamina/src/comfort.rs:313
+#: apps/lamina/src/lib.rs:947
 msgid "Arrange"
 msgstr "Organizar"
 
@@ -190,7 +198,7 @@ msgstr "Organizar"
 msgid "Arrange the plate"
 msgstr "Organizar a mesa"
 
-#: apps/lamina/src/comfort.rs:259
+#: apps/lamina/src/comfort.rs:261
 msgid "As the system"
 msgstr "Como o sistema"
 
@@ -218,7 +226,7 @@ msgstr "Pede para salvar antes se houver alterações não salvas, depois fecha 
 msgid "Assistant"
 msgstr "Assistente"
 
-#: apps/lamina/src/lib.rs:1605
+#: apps/lamina/src/lib.rs:1610
 msgid "At the back"
 msgstr "Atrás"
 
@@ -226,9 +234,9 @@ msgstr "Atrás"
 msgid "Attach..."
 msgstr "Anexar..."
 
-#: apps/lamina/src/lib.rs:1278
-#: apps/lamina/src/lib.rs:1280
-#: apps/lamina/src/lib.rs:1289
+#: apps/lamina/src/lib.rs:1283
+#: apps/lamina/src/lib.rs:1285
+#: apps/lamina/src/lib.rs:1294
 msgid "Auto"
 msgstr "Auto"
 
@@ -240,27 +248,31 @@ msgstr "O salvamento automático falhou: {}"
 msgid "Away from the 3D view: turn the picked objects 90 degrees about z"
 msgstr "Fora da vista 3D: girar os objetos selecionados 90 graus em torno de z"
 
-#: apps/lamina/src/lib.rs:1672
+#: apps/lamina/src/lib.rs:1677
 msgid "Back to the defaults"
 msgstr "Voltar aos padrões"
+
+#: apps/lamina/src/heights.rs:41
+msgid "Back to the layer height in the settings"
+msgstr "Voltar à altura de camada das configurações"
 
 #: apps/lamina/src/printer.rs:165
 msgid "Baud"
 msgstr "Baud"
 
-#: apps/lamina/src/lib.rs:1841
+#: apps/lamina/src/lib.rs:1846
 msgid "Block"
 msgstr "Bloquear"
 
-#: apps/lamina/src/lib.rs:1724
+#: apps/lamina/src/lib.rs:1729
 msgid "Bridge flow"
 msgstr "Fluxo em pontes"
 
-#: apps/lamina/src/lib.rs:1699
+#: apps/lamina/src/lib.rs:1704
 msgid "Bridges, mm/s"
 msgstr "Pontes, mm/s"
 
-#: apps/lamina/src/lib.rs:1620
+#: apps/lamina/src/lib.rs:1625
 msgid "Brim, mm / raft layers"
 msgstr "Brim, mm / camadas de raft"
 
@@ -272,7 +284,7 @@ msgstr "Recuperar a última mesa?"
 msgid "Bring back up to this step"
 msgstr "Refazer até este passo"
 
-#: apps/lamina/src/lib.rs:936
+#: apps/lamina/src/lib.rs:941
 msgid "Bring back what undo took (Ctrl+Y)"
 msgstr "Trazer de volta o que foi desfeito (Ctrl+Y)"
 
@@ -284,15 +296,15 @@ msgstr "Recuperar"
 msgid "Brought back the plate from before Lamina closed. Save it to keep it."
 msgstr "A mesa de antes de o Lamina fechar foi recuperada. Salve-a para mantê-la."
 
-#: apps/lamina/src/lib.rs:1844
+#: apps/lamina/src/lib.rs:1849
 msgid "Brush"
 msgstr "Pincel"
 
-#: apps/lamina/src/lib.rs:1423
+#: apps/lamina/src/lib.rs:1428
 msgid "By height"
 msgstr "Por altura"
 
-#: apps/lamina/src/lib.rs:889
+#: apps/lamina/src/lib.rs:894
 msgid "Calibration"
 msgstr "Calibração"
 
@@ -313,11 +325,11 @@ msgstr "Procurar atualizações ao iniciar"
 msgid "Check for updates now"
 msgstr "Procurar atualizações agora"
 
-#: apps/lamina/src/lib.rs:481
+#: apps/lamina/src/lib.rs:485
 msgid "Choose..."
 msgstr "Escolher..."
 
-#: apps/lamina/src/lib.rs:1533
+#: apps/lamina/src/lib.rs:1538
 msgid "Classic"
 msgstr "Clássicas"
 
@@ -333,7 +345,7 @@ msgstr "Limpar"
 msgid "Clear the list"
 msgstr "Limpar a lista"
 
-#: apps/lamina/src/lib.rs:1850
+#: apps/lamina/src/lib.rs:1855
 msgid "Clear the picked objects' paint"
 msgstr "Limpar a pintura dos objetos selecionados"
 
@@ -341,19 +353,19 @@ msgstr "Limpar a pintura dos objetos selecionados"
 msgid "Clear the picked objects' place, turn or scale"
 msgstr "Limpar a posição, o giro ou a escala dos objetos selecionados"
 
-#: apps/lamina/src/lib.rs:952
+#: apps/lamina/src/lib.rs:957
 msgid "Click a face to turn it down onto the plate (L)"
 msgstr "Clique numa face para virá-la para baixo sobre a mesa (L)"
 
-#: apps/lamina/src/lib.rs:639
+#: apps/lamina/src/lib.rs:643
 msgid "Click a second point to measure to."
 msgstr "Clique num segundo ponto para medir até ele."
 
-#: apps/lamina/src/lib.rs:954
+#: apps/lamina/src/lib.rs:959
 msgid "Click two points to measure between them (M)"
 msgstr "Clique em dois pontos para medir entre eles (M)"
 
-#: apps/lamina/src/lib.rs:1648
+#: apps/lamina/src/lib.rs:1653
 msgid "Columns"
 msgstr "Colunas"
 
@@ -361,15 +373,15 @@ msgstr "Colunas"
 msgid "Columns under the whole overhang, or trees: thin branches that merge on the way down, less plastic and smaller marks."
 msgstr "Colunas sob toda a saliência, ou árvores: galhos finos que se juntam na descida, menos plástico e marcas menores."
 
-#: apps/lamina/src/lib.rs:859
+#: apps/lamina/src/lib.rs:864
 msgid "Cone"
 msgstr "Cone"
 
-#: apps/lamina/src/lib.rs:1258
+#: apps/lamina/src/lib.rs:1263
 msgid "Connectors"
 msgstr "Conectores"
 
-#: apps/lamina/src/lib.rs:1719
+#: apps/lamina/src/lib.rs:1724
 msgid "Cooling"
 msgstr "Resfriamento"
 
@@ -389,46 +401,46 @@ msgstr "Não foi possível instalar a atualização: {}"
 msgid "Could not listen on port {} for agents: {}"
 msgstr "Não foi possível escutar na porta {} para agentes: {}"
 
-#: apps/lamina/src/lib.rs:1040
+#: apps/lamina/src/lib.rs:1045
 msgid "Ctrl-click picks several; right-click for more."
 msgstr "Ctrl+clique seleciona vários; clique direito para mais."
 
-#: apps/lamina/src/lib.rs:1804
+#: apps/lamina/src/lib.rs:1809
 msgid "Curves as arcs (G2, G3)"
 msgstr "Curvas como arcos (G2, G3)"
 
-#: apps/lamina/src/lib.rs:1240
+#: apps/lamina/src/lib.rs:1245
 msgid "Cut"
 msgstr "Cortar"
 
-#: apps/lamina/src/lib.rs:1240
+#: apps/lamina/src/lib.rs:1245
 msgid "Cut here; each piece is turned to print and the plate laid out"
 msgstr "Cortar aqui; cada peça é virada para imprimir e a mesa organizada"
 
-#: apps/lamina/src/lib.rs:1172
+#: apps/lamina/src/lib.rs:1177
 msgid "Cut into pieces"
 msgstr "Cortar em peças"
 
-#: apps/lamina/src/lib.rs:1246
+#: apps/lamina/src/lib.rs:1251
 msgid "Cut it into as few pieces as fit the printer, with connectors at every cut"
 msgstr "Cortar no menor número de peças que caibam na impressora, com conectores em cada corte"
 
-#: apps/lamina/src/lib.rs:1052
+#: apps/lamina/src/lib.rs:1057
 msgid "Cut the others out of the first one picked"
 msgstr "Recortar os outros do primeiro selecionado"
 
-#: apps/lamina/src/comfort.rs:259
+#: apps/lamina/src/comfort.rs:261
 msgid "Dark"
 msgstr "Escuro"
 
 #: apps/lamina/src/comfort.rs:243
-#: apps/lamina/src/comfort.rs:347
-#: apps/lamina/src/lib.rs:499
-#: apps/lamina/src/lib.rs:1209
+#: apps/lamina/src/comfort.rs:349
+#: apps/lamina/src/lib.rs:503
+#: apps/lamina/src/lib.rs:1214
 msgid "Delete"
 msgstr "Excluir"
 
-#: apps/lamina/src/lib.rs:1059
+#: apps/lamina/src/lib.rs:1064
 msgid "Delete all"
 msgstr "Excluir todos"
 
@@ -436,7 +448,7 @@ msgstr "Excluir todos"
 msgid "Delete the picked objects"
 msgstr "Excluir os objetos selecionados"
 
-#: apps/lamina/src/lib.rs:1059
+#: apps/lamina/src/lib.rs:1064
 msgid "Delete the picked objects, as one undo step"
 msgstr "Excluir os objetos selecionados, num só passo de desfazer"
 
@@ -444,7 +456,7 @@ msgstr "Excluir os objetos selecionados, num só passo de desfazer"
 msgid "Denser layers at the top of a support, under the part, for a cleaner underside."
 msgstr "Camadas mais densas no topo de um suporte, sob a peça, para uma face inferior mais limpa."
 
-#: apps/lamina/src/lib.rs:1738
+#: apps/lamina/src/lib.rs:1743
 msgid "Density"
 msgstr "Densidade"
 
@@ -452,7 +464,7 @@ msgstr "Densidade"
 msgid "Discard it"
 msgstr "Descartar"
 
-#: apps/lamina/src/lib.rs:1717
+#: apps/lamina/src/lib.rs:1722
 msgid "Distance, mm"
 msgstr "Distância, mm"
 
@@ -464,11 +476,11 @@ msgstr "Não enviar este arquivo"
 msgid "Don't save"
 msgstr "Não salvar"
 
-#: apps/lamina/src/lib.rs:1080
+#: apps/lamina/src/lib.rs:1085
 msgid "Done; {}."
 msgstr "Pronto; {}."
 
-#: apps/lamina/src/lib.rs:1261
+#: apps/lamina/src/lib.rs:1266
 msgid "Dowels"
 msgstr "Cavilhas"
 
@@ -484,22 +496,26 @@ msgstr "Baixando o Lamina {}..."
 msgid "Downloads the update and checks it; Lamina then closes, updates and starts again."
 msgstr "Baixa a atualização e a verifica; o Lamina então fecha, atualiza e inicia de novo."
 
-#: apps/lamina/src/comfort.rs:278
+#: apps/lamina/src/heights.rs:70
+msgid "Drag up the strip over the heights to change, and across to the layer height wanted."
+msgstr "Arraste para cima na faixa sobre as alturas a mudar, e para o lado até a altura de camada desejada."
+
+#: apps/lamina/src/comfort.rs:280
 msgid "Draw the 3D view on the processor"
 msgstr "Desenhar a vista 3D no processador"
 
-#: apps/lamina/src/lib.rs:1094
+#: apps/lamina/src/lib.rs:1099
 msgid "Drop doubled faces, turn flipped ones, close cracks and small holes"
 msgstr "Remover faces duplicadas, desvirar as invertidas, fechar fissuras e furos pequenos"
 
-#: apps/lamina/src/comfort.rs:334
-#: apps/lamina/src/lib.rs:1206
+#: apps/lamina/src/comfort.rs:336
+#: apps/lamina/src/lib.rs:1211
 msgid "Drop to plate"
 msgstr "Baixar até a mesa"
 
 #: apps/lamina/src/comfort.rs:240
-#: apps/lamina/src/comfort.rs:328
-#: apps/lamina/src/lib.rs:1200
+#: apps/lamina/src/comfort.rs:330
+#: apps/lamina/src/lib.rs:1205
 msgid "Duplicate"
 msgstr "Duplicar"
 
@@ -507,11 +523,11 @@ msgstr "Duplicar"
 msgid "Duplicate the picked objects"
 msgstr "Duplicar os objetos selecionados"
 
-#: apps/lamina/src/comfort.rs:271
+#: apps/lamina/src/comfort.rs:273
 msgid "Each object's own middle"
 msgstr "O centro de cada objeto"
 
-#: apps/lamina/src/lib.rs:1838
+#: apps/lamina/src/lib.rs:1843
 msgid "Each wall's seam starts on the painted faces"
 msgstr "A costura de cada parede começa nas faces pintadas"
 
@@ -523,24 +539,24 @@ msgstr "Editar"
 msgid "Encrypt"
 msgstr "Criptografar"
 
-#: apps/lamina/src/lib.rs:1818
+#: apps/lamina/src/lib.rs:1823
 msgid "End"
 msgstr "Fim"
 
-#: apps/lamina/src/lib.rs:1842
+#: apps/lamina/src/lib.rs:1847
 msgid "Erase"
 msgstr "Apagar"
 
-#: apps/lamina/src/lib.rs:1929
+#: apps/lamina/src/lib.rs:1937
 msgid "Every layer up to this one, coloured by what it prints"
 msgstr "Todas as camadas até esta, coloridas pelo que imprimem"
 
-#: apps/lamina/src/lib.rs:1631
+#: apps/lamina/src/lib.rs:1636
 msgid "Everywhere"
 msgstr "Em toda parte"
 
 #: apps/lamina/src/files.rs:307
-#: apps/lamina/src/lib.rs:968
+#: apps/lamina/src/lib.rs:973
 msgid "Export G-code..."
 msgstr "Exportar G-code..."
 
@@ -548,31 +564,31 @@ msgstr "Exportar G-code..."
 msgid "Export mesh..."
 msgstr "Exportar malha..."
 
-#: apps/lamina/src/lib.rs:1392
+#: apps/lamina/src/lib.rs:1397
 msgid "Extruder"
 msgstr "Extrusora"
 
-#: apps/lamina/src/lib.rs:1753
+#: apps/lamina/src/lib.rs:1758
 msgid "Extruder {} nozzle, C"
 msgstr "Bico da extrusora {}, C"
 
-#: apps/lamina/src/lib.rs:1746
+#: apps/lamina/src/lib.rs:1751
 msgid "Extruders"
 msgstr "Extrusoras"
 
-#: apps/lamina/src/lib.rs:1723
+#: apps/lamina/src/lib.rs:1728
 msgid "Fan on bridges"
 msgstr "Ventoinha em pontes"
 
-#: apps/lamina/src/lib.rs:1720
+#: apps/lamina/src/lib.rs:1725
 msgid "Fan, 0 to 255"
 msgstr "Ventoinha, 0 a 255"
 
-#: apps/lamina/src/lib.rs:513
+#: apps/lamina/src/lib.rs:517
 msgid "Filament"
 msgstr "Filamento"
 
-#: apps/lamina/src/lib.rs:1775
+#: apps/lamina/src/lib.rs:1780
 msgid "Filament, mm"
 msgstr "Filamento, mm"
 
@@ -580,35 +596,35 @@ msgstr "Filamento, mm"
 msgid "File"
 msgstr "Arquivo"
 
-#: apps/lamina/src/lib.rs:1780
+#: apps/lamina/src/lib.rs:1785
 msgid "Firmware"
 msgstr "Firmware"
 
-#: apps/lamina/src/lib.rs:1712
+#: apps/lamina/src/lib.rs:1717
 msgid "Firmware retraction (G10, G11)"
 msgstr "Retração pelo firmware (G10, G11)"
 
-#: apps/lamina/src/lib.rs:1593
+#: apps/lamina/src/lib.rs:1598
 msgid "First layer nozzle / bed"
 msgstr "Bico / mesa, 1ª camada"
 
-#: apps/lamina/src/lib.rs:1524
+#: apps/lamina/src/lib.rs:1529
 msgid "First layer, mm"
 msgstr "Primeira camada, mm"
 
-#: apps/lamina/src/lib.rs:1697
+#: apps/lamina/src/lib.rs:1702
 msgid "First layer, mm/s"
 msgstr "Primeira camada, mm/s"
 
-#: apps/lamina/src/lib.rs:1297
+#: apps/lamina/src/lib.rs:1302
 msgid "Fit"
 msgstr "Folga"
 
-#: apps/lamina/src/lib.rs:907
+#: apps/lamina/src/lib.rs:912
 msgid "Flow blocks, 0.90 to 1.10"
 msgstr "Blocos de fluxo, 0,90 a 1,10"
 
-#: apps/lamina/src/lib.rs:1702
+#: apps/lamina/src/lib.rs:1707
 msgid "Flow ratio"
 msgstr "Razão de fluxo"
 
@@ -616,17 +632,17 @@ msgstr "Razão de fluxo"
 msgid "Forget it"
 msgstr "Esquecer"
 
-#: apps/lamina/src/lib.rs:499
+#: apps/lamina/src/lib.rs:503
 msgid "Forget this preset of yours"
 msgstr "Esquecer esta predefinição sua"
 
 #: apps/lamina/src/comfort.rs:254
-#: apps/lamina/src/comfort.rs:339
+#: apps/lamina/src/comfort.rs:341
 msgid "Frame"
 msgstr "Enquadrar"
 
-#: apps/lamina/src/comfort.rs:315
-#: apps/lamina/src/lib.rs:939
+#: apps/lamina/src/comfort.rs:317
+#: apps/lamina/src/lib.rs:944
 msgid "Frame all"
 msgstr "Enquadrar tudo"
 
@@ -638,31 +654,31 @@ msgstr "Enquadrar tudo, ou os objetos selecionados"
 msgid "Frame the picked objects, or everything"
 msgstr "Enquadrar os objetos selecionados, ou tudo"
 
-#: apps/lamina/src/lib.rs:1446
+#: apps/lamina/src/lib.rs:1451
 msgid "From"
 msgstr "De"
 
-#: apps/lamina/src/lib.rs:1632
+#: apps/lamina/src/lib.rs:1637
 msgid "From the plate only"
 msgstr "Só a partir da mesa"
 
-#: apps/lamina/src/lib.rs:50
+#: apps/lamina/src/lib.rs:51
 msgid "From {} to {}."
 msgstr "De {} a {}."
 
-#: apps/lamina/src/lib.rs:1721
+#: apps/lamina/src/lib.rs:1726
 msgid "Full fan from layer"
 msgstr "Ventoinha total a partir da camada"
 
-#: apps/lamina/src/lib.rs:1732
+#: apps/lamina/src/lib.rs:1737
 msgid "Fuzzy skin on the outer wall"
 msgstr "Pele difusa na parede externa"
 
-#: apps/lamina/src/lib.rs:1735
+#: apps/lamina/src/lib.rs:1740
 msgid "Fuzzy spacing, mm"
 msgstr "Espaçamento da pele difusa, mm"
 
-#: apps/lamina/src/lib.rs:1734
+#: apps/lamina/src/lib.rs:1739
 msgid "Fuzzy thickness, mm"
 msgstr "Espessura da pele difusa, mm"
 
@@ -678,15 +694,15 @@ msgstr "G-code enviado depois da impressão; [nome] é trocado por essa configur
 msgid "G-code sent before the print; [name] is replaced by that setting, and {expression} by its value."
 msgstr "G-code enviado antes da impressão; [nome] é trocado por essa configuração, e {expressão} pelo seu valor."
 
-#: apps/lamina/src/lib.rs:1771
+#: apps/lamina/src/lib.rs:1776
 msgid "Gantry height, mm"
 msgstr "Altura do pórtico, mm"
 
-#: apps/lamina/src/lib.rs:1739
+#: apps/lamina/src/lib.rs:1744
 msgid "Gap above, mm"
 msgstr "Folga acima, mm"
 
-#: apps/lamina/src/lib.rs:1740
+#: apps/lamina/src/lib.rs:1745
 msgid "Gap beside, mm"
 msgstr "Folga lateral, mm"
 
@@ -694,27 +710,27 @@ msgstr "Folga lateral, mm"
 msgid "Give the printer's address in Printer connection first."
 msgstr "Informe antes o endereço da impressora em Conexão da impressora."
 
-#: apps/lamina/src/lib.rs:1571
+#: apps/lamina/src/lib.rs:1576
 msgid "Grid"
 msgstr "Grade"
 
-#: apps/lamina/src/lib.rs:1573
+#: apps/lamina/src/lib.rs:1578
 msgid "Gyroid"
 msgstr "Giroide"
 
-#: apps/lamina/src/lib.rs:1770
+#: apps/lamina/src/lib.rs:1775
 msgid "Head clearance radius, mm"
 msgstr "Raio livre do cabeçote, mm"
 
-#: apps/lamina/src/lib.rs:1761
+#: apps/lamina/src/lib.rs:1766
 msgid "Heating, C/s"
 msgstr "Aquecimento, C/s"
 
-#: apps/lamina/src/lib.rs:1776
+#: apps/lamina/src/lib.rs:1781
 msgid "Height, mm"
 msgstr "Altura, mm"
 
-#: apps/lamina/src/lib.rs:862
+#: apps/lamina/src/lib.rs:867
 msgid "Hexagonal prism"
 msgstr "Prisma hexagonal"
 
@@ -722,15 +738,15 @@ msgstr "Prisma hexagonal"
 msgid "History"
 msgstr "Histórico"
 
-#: apps/lamina/src/lib.rs:1262
+#: apps/lamina/src/lib.rs:1267
 msgid "Holes in both pieces and a loose pin for each pair: both pieces lie on their cut faces"
 msgstr "Furos nas duas peças e um pino solto para cada par: as duas peças ficam deitadas sobre as faces de corte"
 
-#: apps/lamina/src/lib.rs:1574
+#: apps/lamina/src/lib.rs:1579
 msgid "Honeycomb"
 msgstr "Favo de mel"
 
-#: apps/lamina/src/lib.rs:894
+#: apps/lamina/src/lib.rs:899
 msgid "Hottest at the bottom, 5 C a block: take the coolest block that bonds well and stays clean."
 msgstr "Mais quente embaixo, 5 C por bloco: escolha o bloco mais frio que ainda adere bem e fica limpo."
 
@@ -814,8 +830,8 @@ msgstr "A velocidade com que a impressora faz as curvas (junction deviation do M
 msgid "How fast walls print, mm/s."
 msgstr "A velocidade das paredes, mm/s."
 
-#: apps/lamina/src/lib.rs:1276
-#: apps/lamina/src/lib.rs:1747
+#: apps/lamina/src/lib.rs:1281
+#: apps/lamina/src/lib.rs:1752
 msgid "How many"
 msgstr "Quantidade"
 
@@ -836,11 +852,11 @@ msgid "How much plastic ironing lays, as a share of a full line: 0.1 is usual."
 msgstr "Quanto plástico o alisamento deposita, como fração de uma linha cheia: 0,1 é o comum."
 
 #: apps/lamina/src/files.rs:298
-#: apps/lamina/src/lib.rs:926
+#: apps/lamina/src/lib.rs:931
 msgid "Import mesh..."
 msgstr "Importar malha..."
 
-#: apps/lamina/src/lib.rs:1676
+#: apps/lamina/src/lib.rs:1681
 msgid "Import profile..."
 msgstr "Importar perfil..."
 
@@ -848,21 +864,21 @@ msgstr "Importar perfil..."
 msgid "Imported and repaired: {} faces dropped, {} turned, {} holes filled."
 msgstr "Importado e reparado: {} faces removidas, {} viradas, {} furos preenchidos."
 
-#: apps/lamina/src/lib.rs:1813
+#: apps/lamina/src/lib.rs:1818
 msgid "In braces, an expression of them: {first_layer_bed_temp - 5}, {if(bed_temp > 90, 1, 0)}, with min, max and round; {{ for a brace."
 msgstr "Entre chaves, uma expressão com eles: {first_layer_bed_temp - 5}, {if(bed_temp > 90, 1, 0)}, com min, max e round; {{ para uma chave."
 
-#: apps/lamina/src/lib.rs:1372
-#: apps/lamina/src/lib.rs:1463
-#: apps/lamina/src/lib.rs:1553
+#: apps/lamina/src/lib.rs:1377
+#: apps/lamina/src/lib.rs:1468
+#: apps/lamina/src/lib.rs:1558
 msgid "Infill"
 msgstr "Preenchimento"
 
-#: apps/lamina/src/lib.rs:1566
+#: apps/lamina/src/lib.rs:1571
 msgid "Infill pattern"
 msgstr "Padrão de preenchimento"
 
-#: apps/lamina/src/lib.rs:1696
+#: apps/lamina/src/lib.rs:1701
 msgid "Infill, mm/s"
 msgstr "Preenchimento, mm/s"
 
@@ -870,47 +886,47 @@ msgstr "Preenchimento, mm/s"
 msgid "Installing Lamina {}..."
 msgstr "Instalando o Lamina {}..."
 
-#: apps/lamina/src/lib.rs:1741
+#: apps/lamina/src/lib.rs:1746
 msgid "Interface layers"
 msgstr "Camadas de interface"
 
-#: apps/lamina/src/lib.rs:1055
+#: apps/lamina/src/lib.rs:1060
 msgid "Intersect"
 msgstr "Intersectar"
 
-#: apps/lamina/src/lib.rs:1727
+#: apps/lamina/src/lib.rs:1732
 msgid "Iron the top surfaces"
 msgstr "Alisar as superfícies de topo"
 
-#: apps/lamina/src/lib.rs:1729
+#: apps/lamina/src/lib.rs:1734
 msgid "Ironing flow"
 msgstr "Fluxo do alisamento"
 
-#: apps/lamina/src/lib.rs:1730
+#: apps/lamina/src/lib.rs:1735
 msgid "Ironing spacing, mm"
 msgstr "Espaçamento do alisamento, mm"
 
-#: apps/lamina/src/lib.rs:1731
+#: apps/lamina/src/lib.rs:1736
 msgid "Ironing speed, mm/s"
 msgstr "Velocidade do alisamento, mm/s"
 
-#: apps/lamina/src/lib.rs:915
+#: apps/lamina/src/lib.rs:920
 msgid "Its settings change with height; the assistant can change the range"
 msgstr "As configurações mudam com a altura; o assistente pode mudar a faixa"
 
-#: apps/lamina/src/lib.rs:1049
+#: apps/lamina/src/lib.rs:1054
 msgid "Join"
 msgstr "Unir"
 
-#: apps/lamina/src/lib.rs:1778
+#: apps/lamina/src/lib.rs:1783
 msgid "Junction deviation, mm"
 msgstr "Desvio de junção, mm"
 
-#: apps/lamina/src/lib.rs:1055
+#: apps/lamina/src/lib.rs:1060
 msgid "Keep only what they all share"
 msgstr "Manter só o que todos têm em comum"
 
-#: apps/lamina/src/lib.rs:1350
+#: apps/lamina/src/lib.rs:1355
 msgid "Keep proportions"
 msgstr "Manter proporções"
 
@@ -918,11 +934,11 @@ msgstr "Manter proporções"
 msgid "Kept in the settings file, sealed under a secret built into Lamina: scrambled, not protected from anyone who has Lamina."
 msgstr "Guardada no arquivo de configurações, selada com um segredo embutido no Lamina: embaralhada, mas não protegida de quem tem o Lamina."
 
-#: apps/lamina/src/comfort.rs:284
+#: apps/lamina/src/comfort.rs:286
 msgid "Keyboard shortcuts"
 msgstr "Atalhos de teclado"
 
-#: apps/lamina/src/lib.rs:1885
+#: apps/lamina/src/lib.rs:1893
 msgid "Laid flat on the face clicked."
 msgstr "Apoiado sobre a face clicada."
 
@@ -959,7 +975,7 @@ msgstr "O Lamina {} está pronto. Ele vai fechar, atualizar e iniciar de novo."
 msgid "Lamina {} is up to date."
 msgstr "O Lamina {} está atualizado."
 
-#: apps/lamina/src/comfort.rs:264
+#: apps/lamina/src/comfort.rs:266
 msgid "Language"
 msgstr "Idioma"
 
@@ -968,15 +984,15 @@ msgstr "Idioma"
 msgid "Later"
 msgstr "Depois"
 
-#: apps/lamina/src/lib.rs:942
+#: apps/lamina/src/lib.rs:947
 msgid "Lay every object out on the plate, none touching (A)"
 msgstr "Distribuir todos os objetos na mesa, sem se tocarem (A)"
 
-#: apps/lamina/src/lib.rs:951
+#: apps/lamina/src/lib.rs:956
 msgid "Lay flat"
 msgstr "Apoiar face"
 
-#: apps/lamina/src/comfort.rs:338
+#: apps/lamina/src/comfort.rs:340
 msgid "Lay flat on a face..."
 msgstr "Apoiar numa face..."
 
@@ -984,15 +1000,23 @@ msgstr "Apoiar numa face..."
 msgid "Lay flat tool: click a face to turn it down"
 msgstr "Ferramenta Apoiar face: clique numa face para virá-la para baixo"
 
-#: apps/lamina/src/lib.rs:1930
+#: apps/lamina/src/lib.rs:1938
 msgid "Layer"
 msgstr "Camada"
 
-#: apps/lamina/src/lib.rs:1514
+#: apps/lamina/src/lib.rs:1519
 msgid "Layer height, mm"
 msgstr "Altura da camada, mm"
 
-#: apps/lamina/src/lib.rs:1424
+#: apps/lamina/src/heights.rs:26
+msgid "Layer heights"
+msgstr "Alturas de camada"
+
+#: apps/lamina/src/comfort.rs:257
+msgid "Layer heights by hand"
+msgstr "Alturas de camada à mão"
+
+#: apps/lamina/src/lib.rs:1429
 msgid "Layers between two heights print with settings of their own: a temperature tower, denser infill near a load"
 msgstr "As camadas entre duas alturas imprimem com configurações próprias: uma torre de temperatura, preenchimento mais denso perto de uma carga"
 
@@ -1008,7 +1032,7 @@ msgstr "Deixar agentes trabalharem nesta mesa"
 msgid "Lets an AI agent (Claude Code, Codex, any MCP client) work on this plate through lamina-cli mcp --connect. Only programs on this computer that can read your settings folder get in."
 msgstr "Deixa um agente de IA (Claude Code, Codex, qualquer cliente MCP) trabalhar nesta mesa pelo lamina-cli mcp --connect. Só entram programas deste computador que podem ler a sua pasta de configurações."
 
-#: apps/lamina/src/lib.rs:874
+#: apps/lamina/src/lib.rs:879
 msgid "Lettering, 10 mm capitals, 1 mm deep; the assistant or `text` writes any"
 msgstr "Letras, maiúsculas de 10 mm, 1 mm de profundidade; o assistente ou `text` escreve qualquer uma"
 
@@ -1016,11 +1040,11 @@ msgstr "Letras, maiúsculas de 10 mm, 1 mm de profundidade; o assistente ou `tex
 msgid "Lift the nozzle by this much while it travels, mm, so it does not knock the part; 0 for none."
 msgstr "Erguer o bico este tanto durante o deslocamento, mm, para não bater na peça; 0 para nenhum."
 
-#: apps/lamina/src/comfort.rs:259
+#: apps/lamina/src/comfort.rs:261
 msgid "Light"
 msgstr "Claro"
 
-#: apps/lamina/src/lib.rs:1570
+#: apps/lamina/src/lib.rs:1575
 msgid "Lines"
 msgstr "Linhas"
 
@@ -1028,11 +1052,11 @@ msgstr "Linhas"
 msgid "Listening on port {}: {}."
 msgstr "Escutando na porta {}: {}."
 
-#: apps/lamina/src/lib.rs:939
+#: apps/lamina/src/lib.rs:944
 msgid "Look at everything on the plate (F frames the picked objects)"
 msgstr "Ver tudo o que está na mesa (F enquadra os objetos selecionados)"
 
-#: apps/lamina/src/lib.rs:1716
+#: apps/lamina/src/lib.rs:1721
 msgid "Loops"
 msgstr "Voltas"
 
@@ -1044,11 +1068,11 @@ msgstr "Voltas ao redor de tudo na primeira camada, por fora do seu contorno con
 msgid "Loops round the first layer, touching it, that hold its edges down, mm wide; 0 for none."
 msgstr "Voltas ao redor da primeira camada, encostadas nela, que seguram as bordas, largura em mm; 0 para nenhuma."
 
-#: apps/lamina/src/lib.rs:1773
+#: apps/lamina/src/lib.rs:1778
 msgid "Machine"
 msgstr "Máquina"
 
-#: apps/lamina/src/lib.rs:953
+#: apps/lamina/src/lib.rs:958
 msgid "Measure"
 msgstr "Medir"
 
@@ -1057,7 +1081,7 @@ msgid "Measure tool: click two points"
 msgstr "Ferramenta Medir: clique em dois pontos"
 
 #: apps/lamina/src/files.rs:299
-#: apps/lamina/src/lib.rs:927
+#: apps/lamina/src/lib.rs:932
 msgid "Mesh"
 msgstr "Malha"
 
@@ -1065,15 +1089,15 @@ msgstr "Malha"
 msgid "Message (Enter sends)"
 msgstr "Mensagem (Enter envia)"
 
-#: apps/lamina/src/lib.rs:1132
+#: apps/lamina/src/lib.rs:1137
 msgid "Mirror"
 msgstr "Espelhar"
 
-#: apps/lamina/src/lib.rs:1132
+#: apps/lamina/src/lib.rs:1137
 msgid "Mirror across the plane square to the axis chosen"
 msgstr "Espelhar pelo plano perpendicular ao eixo escolhido"
 
-#: apps/lamina/src/comfort.rs:330
+#: apps/lamina/src/comfort.rs:332
 msgid "Mirror left to right"
 msgstr "Espelhar da esquerda para a direita"
 
@@ -1081,24 +1105,24 @@ msgstr "Espelhar da esquerda para a direita"
 msgid "Model"
 msgstr "Modelo"
 
-#: apps/lamina/src/lib.rs:856
+#: apps/lamina/src/lib.rs:861
 msgid "More shapes"
 msgstr "Mais formas"
 
-#: apps/lamina/src/lib.rs:1701
+#: apps/lamina/src/lib.rs:1706
 msgid "Most plastic, mm3/s"
 msgstr "Máximo de plástico, mm3/s"
 
-#: apps/lamina/src/lib.rs:949
-#: apps/lamina/src/lib.rs:1117
+#: apps/lamina/src/lib.rs:954
+#: apps/lamina/src/lib.rs:1122
 msgid "Move"
 msgstr "Mover"
 
-#: apps/lamina/src/comfort.rs:273
+#: apps/lamina/src/comfort.rs:275
 msgid "Move and turn along"
 msgstr "Mover e girar ao longo de"
 
-#: apps/lamina/src/lib.rs:1112
+#: apps/lamina/src/lib.rs:1117
 msgid "Move by, mm"
 msgstr "Mover, mm"
 
@@ -1106,7 +1130,7 @@ msgstr "Mover, mm"
 msgid "Move tool: pick and drag, turn with the rings, scale with the square"
 msgstr "Ferramenta Mover: selecione e arraste, gire pelos anéis, escale pelo quadrado"
 
-#: apps/lamina/src/lib.rs:1607
+#: apps/lamina/src/lib.rs:1612
 msgid "Nearest"
 msgstr "Mais próxima"
 
@@ -1118,19 +1142,19 @@ msgstr "Novo"
 msgid "New project."
 msgstr "Novo projeto."
 
-#: apps/lamina/src/lib.rs:1263
+#: apps/lamina/src/lib.rs:1268
 msgid "No connectors: for parts you glue"
 msgstr "Sem conectores: para peças que você cola"
 
-#: apps/lamina/src/lib.rs:1841
+#: apps/lamina/src/lib.rs:1846
 msgid "No support under the painted faces"
 msgstr "Nenhum suporte sob as faces pintadas"
 
-#: apps/lamina/src/lib.rs:1263
+#: apps/lamina/src/lib.rs:1268
 msgid "None"
 msgstr "Nenhum"
 
-#: apps/lamina/src/lib.rs:1707
+#: apps/lamina/src/lib.rs:1712
 msgid "Not under, mm of travel"
 msgstr "Não abaixo de, mm de deslocamento"
 
@@ -1138,23 +1162,23 @@ msgstr "Não abaixo de, mm de deslocamento"
 msgid "Note: {}."
 msgstr "Observação: {}."
 
-#: apps/lamina/src/lib.rs:1018
+#: apps/lamina/src/lib.rs:1023
 msgid "Nothing on the plate yet: add a shape, import or drop a mesh, open a project, or ask the assistant."
 msgstr "Nada na mesa ainda: adicione uma forma, importe ou solte uma malha, abra um projeto ou peça ao assistente."
 
-#: apps/lamina/src/lib.rs:932
+#: apps/lamina/src/lib.rs:937
 msgid "Nothing to undo"
 msgstr "Nada para desfazer"
 
-#: apps/lamina/src/lib.rs:1587
+#: apps/lamina/src/lib.rs:1592
 msgid "Nozzle / bed, C"
 msgstr "Bico / mesa, C"
 
-#: apps/lamina/src/lib.rs:1457
+#: apps/lamina/src/lib.rs:1462
 msgid "Nozzle, C"
 msgstr "Bico, C"
 
-#: apps/lamina/src/lib.rs:1774
+#: apps/lamina/src/lib.rs:1779
 msgid "Nozzle, mm"
 msgstr "Bico, mm"
 
@@ -1162,7 +1186,7 @@ msgstr "Bico, mm"
 msgid "OctoPrint's settings, Application Keys"
 msgstr "Configurações do OctoPrint, Application Keys"
 
-#: apps/lamina/src/lib.rs:1630
+#: apps/lamina/src/lib.rs:1635
 msgid "Off"
 msgstr "Desligado"
 
@@ -1174,11 +1198,11 @@ msgstr "Desligado: agentes não alcançam esta mesa."
 msgid "Ollama: http://localhost:11434/v1. LM Studio: http://localhost:1234/v1. Only this computer is allowed."
 msgstr "Ollama: http://localhost:11434/v1. LM Studio: http://localhost:1234/v1. Só este computador é permitido."
 
-#: apps/lamina/src/lib.rs:1767
+#: apps/lamina/src/lib.rs:1772
 msgid "One at a time"
 msgstr "Um de cada vez"
 
-#: apps/lamina/src/lib.rs:1049
+#: apps/lamina/src/lib.rs:1054
 msgid "One solid of all of them (union)"
 msgstr "Um só sólido de todos eles (união)"
 
@@ -1206,7 +1230,7 @@ msgstr "Sobre a vista 3D: olhar de frente, da direita, de cima; com Ctrl, de tr�
 msgid "Over the 3D view: move, turn or scale the picked objects with the pointer, as Blender does"
 msgstr "Sobre a vista 3D: mover, girar ou escalar os objetos selecionados com o ponteiro, como no Blender"
 
-#: apps/lamina/src/lib.rs:955
+#: apps/lamina/src/lib.rs:960
 msgid "Paint"
 msgstr "Pintar"
 
@@ -1214,15 +1238,15 @@ msgstr "Pintar"
 msgid "Paint tool: click or drag over an object to paint seams, supports or blocks"
 msgstr "Ferramenta de pintura: clique ou arraste sobre um objeto para pintar costuras, suportes ou bloqueios"
 
-#: apps/lamina/src/lib.rs:956
+#: apps/lamina/src/lib.rs:961
 msgid "Paint where seams go and where supports must or must not go: click or drag over an object (P)"
 msgstr "Pinte onde vão as costuras e onde os suportes devem ou não devem ir: clique ou arraste sobre um objeto (P)"
 
-#: apps/lamina/src/lib.rs:1837
+#: apps/lamina/src/lib.rs:1842
 msgid "Paint:"
 msgstr "Pintar:"
 
-#: apps/lamina/src/lib.rs:1840
+#: apps/lamina/src/lib.rs:1845
 msgid "Painted faces looking down are held up, even with supports off"
 msgstr "As faces pintadas voltadas para baixo são sustentadas, mesmo com os suportes desligados"
 
@@ -1235,7 +1259,7 @@ msgstr "Frase-senha"
 msgid "Password"
 msgstr "Senha"
 
-#: apps/lamina/src/lib.rs:1260
+#: apps/lamina/src/lib.rs:1265
 msgid "Pegs on one piece and sockets in the other: nothing loose"
 msgstr "Pinos numa peça e encaixes na outra: nada solto"
 
@@ -1247,7 +1271,7 @@ msgstr "Selecionar tudo"
 msgid "Pick every object"
 msgstr "Selecionar todos os objetos"
 
-#: apps/lamina/src/lib.rs:950
+#: apps/lamina/src/lib.rs:955
 msgid "Pick objects and drag them with the arrows (G)"
 msgstr "Selecione objetos e arraste-os pelas setas (G)"
 
@@ -1255,11 +1279,11 @@ msgstr "Selecione objetos e arraste-os pelas setas (G)"
 msgid "Picture"
 msgstr "Imagem"
 
-#: apps/lamina/src/lib.rs:1259
+#: apps/lamina/src/lib.rs:1264
 msgid "Pins"
 msgstr "Pinos"
 
-#: apps/lamina/src/lib.rs:1811
+#: apps/lamina/src/lib.rs:1816
 msgid "Placeholders: {}"
 msgstr "Marcadores: {}"
 
@@ -1267,15 +1291,15 @@ msgstr "Marcadores: {}"
 msgid "Plastic each tool change lays on the purge tower, mm3, so the new nozzle prints clean."
 msgstr "Plástico que cada troca de ferramenta deposita na torre de purga, mm3, para o novo bico imprimir limpo."
 
-#: apps/lamina/src/lib.rs:1002
+#: apps/lamina/src/lib.rs:1007
 msgid "Plate"
 msgstr "Mesa"
 
-#: apps/lamina/src/lib.rs:880
+#: apps/lamina/src/lib.rs:885
 msgid "Plate with four holes"
 msgstr "Placa com quatro furos"
 
-#: apps/lamina/src/lib.rs:1663
+#: apps/lamina/src/lib.rs:1668
 msgid "Plate, mm"
 msgstr "Mesa, mm"
 
@@ -1284,27 +1308,27 @@ msgstr "Mesa, mm"
 msgid "Port"
 msgstr "Porta"
 
-#: apps/lamina/src/lib.rs:1332
+#: apps/lamina/src/lib.rs:1337
 msgid "Position"
 msgstr "Posição"
 
-#: apps/lamina/src/lib.rs:962
+#: apps/lamina/src/lib.rs:967
 msgid "Prepare"
 msgstr "Preparar"
 
-#: apps/lamina/src/lib.rs:522
+#: apps/lamina/src/lib.rs:526
 msgid "Preset name"
 msgstr "Nome da predefinição"
 
-#: apps/lamina/src/lib.rs:1779
+#: apps/lamina/src/lib.rs:1784
 msgid "Pressure advance"
 msgstr "Avanço de pressão"
 
-#: apps/lamina/src/lib.rs:902
+#: apps/lamina/src/lib.rs:907
 msgid "Pressure advance tower, 0 to 0.1"
 msgstr "Torre de avanço de pressão, 0 a 0,1"
 
-#: apps/lamina/src/lib.rs:963
+#: apps/lamina/src/lib.rs:968
 msgid "Preview"
 msgstr "Visualizar"
 
@@ -1312,15 +1336,15 @@ msgstr "Visualizar"
 msgid "Print each object whole before the next, the shortest first, so a failed one spoils no other; the head needs room round each."
 msgstr "Imprimir cada objeto inteiro antes do próximo, o mais baixo primeiro, para que uma falha não estrague os outros; o cabeçote precisa de espaço ao redor de cada um."
 
-#: apps/lamina/src/lib.rs:1768
+#: apps/lamina/src/lib.rs:1773
 msgid "Print each object whole, one after another"
 msgstr "Imprimir cada objeto inteiro, um após o outro"
 
-#: apps/lamina/src/lib.rs:1510
+#: apps/lamina/src/lib.rs:1515
 msgid "Print settings"
 msgstr "Configurações de impressão"
 
-#: apps/lamina/src/lib.rs:510
+#: apps/lamina/src/lib.rs:514
 msgid "Printer"
 msgstr "Impressora"
 
@@ -1332,15 +1356,15 @@ msgstr "Conexão da impressora"
 msgid "Printing over the USB cable"
 msgstr "Imprimindo pelo cabo USB"
 
-#: apps/lamina/src/lib.rs:1152
+#: apps/lamina/src/lib.rs:1157
 msgid "Prints as"
 msgstr "Imprime como"
 
-#: apps/lamina/src/lib.rs:516
+#: apps/lamina/src/lib.rs:520
 msgid "Process"
 msgstr "Processo"
 
-#: apps/lamina/src/lib.rs:1679
+#: apps/lamina/src/lib.rs:1684
 msgid "Profile"
 msgstr "Perfil"
 
@@ -1348,11 +1372,15 @@ msgstr "Perfil"
 msgid "PrusaLink's user name, when it asks for a user name and password: the password goes below"
 msgstr "O nome de usuário do PrusaLink, quando ele pede usuário e senha: a senha vai abaixo"
 
-#: apps/lamina/src/lib.rs:1765
+#: apps/lamina/src/lib.rs:1770
 msgid "Purge, mm3"
 msgstr "Purga, mm3"
 
-#: apps/lamina/src/lib.rs:863
+#: apps/lamina/src/heights.rs:57
+msgid "Put an object on the plate to set its layer heights."
+msgstr "Coloque um objeto na mesa para definir as alturas de camada."
+
+#: apps/lamina/src/lib.rs:868
 msgid "Pyramid"
 msgstr "Pirâmide"
 
@@ -1360,12 +1388,12 @@ msgstr "Pirâmide"
 msgid "Quit"
 msgstr "Sair"
 
-#: apps/lamina/src/lib.rs:761
+#: apps/lamina/src/lib.rs:766
 msgid "Ready"
 msgstr "Pronto"
 
 #: apps/lamina/src/comfort.rs:218
-#: apps/lamina/src/lib.rs:936
+#: apps/lamina/src/lib.rs:941
 msgid "Redo"
 msgstr "Refazer"
 
@@ -1381,24 +1409,28 @@ msgstr "Lembrar neste computador"
 msgid "Remember the key"
 msgstr "Lembrar a chave"
 
-#: apps/lamina/src/lib.rs:1436
+#: apps/lamina/src/lib.rs:1441
 msgid "Remove"
 msgstr "Remover"
 
-#: apps/lamina/src/comfort.rs:341
-#: apps/lamina/src/lib.rs:1094
+#: apps/lamina/src/comfort.rs:343
+#: apps/lamina/src/lib.rs:1099
 msgid "Repair"
 msgstr "Reparar"
 
-#: apps/lamina/src/lib.rs:1104
+#: apps/lamina/src/lib.rs:1109
 msgid "Repaired: {} faces dropped, {} turned, {} holes filled; {}."
 msgstr "Reparado: {} faces removidas, {} viradas, {} furos preenchidos; {}."
+
+#: apps/lamina/src/heights.rs:40
+msgid "Reset"
+msgstr "Redefinir"
 
 #: apps/lamina/src/updates.rs:107
 msgid "Restart and install"
 msgstr "Reiniciar e instalar"
 
-#: apps/lamina/src/lib.rs:1706
+#: apps/lamina/src/lib.rs:1711
 msgid "Retract speed, mm/s"
 msgstr "Velocidade de retração, mm/s"
 
@@ -1410,19 +1442,19 @@ msgstr "Retrair enquanto volta pela linha recém-impressa, mm, o que deixa uma b
 msgid "Retract with the firmware's G10 and G11, so the printer's own retraction settings apply."
 msgstr "Retrair com o G10 e o G11 do firmware, para valerem as configurações de retração da própria impressora."
 
-#: apps/lamina/src/lib.rs:1705
+#: apps/lamina/src/lib.rs:1710
 msgid "Retract, mm"
 msgstr "Retração, mm"
 
-#: apps/lamina/src/lib.rs:1704
+#: apps/lamina/src/lib.rs:1709
 msgid "Retraction and travel"
 msgstr "Retração e deslocamento"
 
-#: apps/lamina/src/lib.rs:897
+#: apps/lamina/src/lib.rs:902
 msgid "Retraction towers, 0.4 to 2 mm"
 msgstr "Torres de retração, 0,4 a 2 mm"
 
-#: apps/lamina/src/lib.rs:1128
+#: apps/lamina/src/lib.rs:1133
 msgid "Rotate"
 msgstr "Girar"
 
@@ -1430,15 +1462,15 @@ msgstr "Girar"
 msgid "Roughen the outer wall with small random bumps, for a textured grip that hides layer lines."
 msgstr "Deixar a parede externa áspera com pequenas saliências aleatórias, para uma pegada texturizada que esconde as linhas das camadas."
 
-#: apps/lamina/src/lib.rs:1271
+#: apps/lamina/src/lib.rs:1276
 msgid "Round"
 msgstr "Redondo"
 
-#: apps/lamina/src/lib.rs:858
+#: apps/lamina/src/lib.rs:863
 msgid "Rounded box"
 msgstr "Caixa arredondada"
 
-#: apps/lamina/src/lib.rs:1842
+#: apps/lamina/src/lib.rs:1847
 msgid "Rub paint out"
 msgstr "Apagar a pintura"
 
@@ -1451,15 +1483,15 @@ msgstr "Salvar"
 msgid "Save as..."
 msgstr "Salvar como..."
 
-#: apps/lamina/src/lib.rs:528
+#: apps/lamina/src/lib.rs:532
 msgid "Save filament"
 msgstr "Salvar filamento"
 
-#: apps/lamina/src/lib.rs:525
+#: apps/lamina/src/lib.rs:529
 msgid "Save printer"
 msgstr "Salvar impressora"
 
-#: apps/lamina/src/lib.rs:531
+#: apps/lamina/src/lib.rs:535
 msgid "Save process"
 msgstr "Salvar processo"
 
@@ -1467,15 +1499,15 @@ msgstr "Salvar processo"
 msgid "Save the changes?"
 msgstr "Salvar as alterações?"
 
-#: apps/lamina/src/lib.rs:531
+#: apps/lamina/src/lib.rs:535
 msgid "Save the layers, walls, skins and infill shown"
 msgstr "Salvar as camadas, paredes, topo e fundo e preenchimento mostrados"
 
-#: apps/lamina/src/lib.rs:525
+#: apps/lamina/src/lib.rs:529
 msgid "Save the plate, nozzle, G-code and retraction shown"
 msgstr "Salvar a mesa, o bico, o G-code e a retração mostrados"
 
-#: apps/lamina/src/lib.rs:528
+#: apps/lamina/src/lib.rs:532
 msgid "Save the temperatures and fan shown"
 msgstr "Salvar as temperaturas e a ventoinha mostradas"
 
@@ -1487,7 +1519,7 @@ msgstr "Salva criptografada com a sua frase-senha (AES-256-GCM): você a digita 
 msgid "Saved scrambled with a secret built into Lamina: not readable at a glance, but anyone who has Lamina can unscramble it. Add a passphrase to encrypt it, or leave Remember off on a shared computer."
 msgstr "Salva embaralhada com um segredo embutido no Lamina: não é legível de relance, mas quem tem o Lamina consegue desembaralhá-la. Adicione uma frase-senha para criptografá-la, ou deixe Lembrar desmarcado num computador compartilhado."
 
-#: apps/lamina/src/lib.rs:465
+#: apps/lamina/src/lib.rs:469
 msgid "Saved the {} preset \"{}\"."
 msgstr "Predefinição de {} \"{}\" salva."
 
@@ -1495,12 +1527,12 @@ msgstr "Predefinição de {} \"{}\" salva."
 msgid "Saved {}."
 msgstr "{} salvo."
 
-#: apps/lamina/src/lib.rs:1139
+#: apps/lamina/src/lib.rs:1144
 msgid "Scale"
 msgstr "Escalar"
 
-#: apps/lamina/src/lib.rs:1600
-#: apps/lamina/src/lib.rs:1838
+#: apps/lamina/src/lib.rs:1605
+#: apps/lamina/src/lib.rs:1843
 msgid "Seam"
 msgstr "Costura"
 
@@ -1541,15 +1573,15 @@ msgstr "{} enviado para {}: está imprimindo."
 msgid "Server"
 msgstr "Servidor"
 
-#: apps/lamina/src/lib.rs:1269
+#: apps/lamina/src/lib.rs:1274
 msgid "Shape"
 msgstr "Formato"
 
-#: apps/lamina/src/lib.rs:1606
+#: apps/lamina/src/lib.rs:1611
 msgid "Sharpest corner"
 msgstr "Canto mais agudo"
 
-#: apps/lamina/src/lib.rs:1722
+#: apps/lamina/src/lib.rs:1727
 msgid "Shortest layer, s"
 msgstr "Camada mais curta, s"
 
@@ -1557,28 +1589,28 @@ msgstr "Camada mais curta, s"
 msgid "Show what it is doing"
 msgstr "Mostrar o que ela está fazendo"
 
-#: apps/lamina/src/lib.rs:1192
+#: apps/lamina/src/lib.rs:1197
 msgid "Simplified from {} to {} triangles."
 msgstr "Simplificado de {} para {} triângulos."
 
-#: apps/lamina/src/lib.rs:1180
+#: apps/lamina/src/lib.rs:1185
 msgid "Simplify"
 msgstr "Simplificar"
 
-#: apps/lamina/src/lib.rs:1286
-#: apps/lamina/src/lib.rs:1340
+#: apps/lamina/src/lib.rs:1291
+#: apps/lamina/src/lib.rs:1345
 msgid "Size"
 msgstr "Tamanho"
 
-#: apps/lamina/src/lib.rs:1289
+#: apps/lamina/src/lib.rs:1294
 msgid "Sized from the cut face, 3 to 8 mm across"
 msgstr "Dimensionado pela face de corte, de 3 a 8 mm de diâmetro"
 
-#: apps/lamina/src/lib.rs:1715
+#: apps/lamina/src/lib.rs:1720
 msgid "Skirt"
 msgstr "Saia"
 
-#: apps/lamina/src/lib.rs:965
+#: apps/lamina/src/lib.rs:970
 msgid "Slice"
 msgstr "Fatiar"
 
@@ -1586,15 +1618,15 @@ msgstr "Fatiar"
 msgid "Slice the plate and upload it"
 msgstr "Fatiar a mesa e enviá-la"
 
-#: apps/lamina/src/lib.rs:968
+#: apps/lamina/src/lib.rs:973
 msgid "Slice the plate into a G-code file"
 msgstr "Fatiar a mesa num arquivo de G-code"
 
-#: apps/lamina/src/lib.rs:1909
+#: apps/lamina/src/lib.rs:1917
 msgid "Slice the plate to see its layers."
 msgstr "Fatie a mesa para ver as camadas."
 
-#: apps/lamina/src/lib.rs:965
+#: apps/lamina/src/lib.rs:970
 msgid "Slice the plate with these settings and show the layers"
 msgstr "Fatiar a mesa com estas configurações e mostrar as camadas"
 
@@ -1602,17 +1634,25 @@ msgstr "Fatiar a mesa com estas configurações e mostrar as camadas"
 msgid "Slice the plate, upload it and start printing"
 msgstr "Fatiar a mesa, enviá-la e começar a imprimir"
 
-#: apps/lamina/src/lib.rs:667
+#: apps/lamina/src/lib.rs:672
 msgid "Slicing"
 msgstr "Fatiando"
 
-#: apps/lamina/src/comfort.rs:279
+#: apps/lamina/src/comfort.rs:281
 msgid "Slower with large meshes. The graphics card draws it otherwise, where the window has one."
 msgstr "Mais lento com malhas grandes. Senão a placa de vídeo a desenha, onde a janela tiver uma."
 
-#: apps/lamina/src/lib.rs:1700
+#: apps/lamina/src/lib.rs:1705
 msgid "Slowest when cooling, mm/s"
 msgstr "Mínima ao resfriar, mm/s"
+
+#: apps/lamina/src/heights.rs:33
+msgid "Smooth"
+msgstr "Suavizar"
+
+#: apps/lamina/src/heights.rs:34
+msgid "Soften the steps between heights"
+msgstr "Suavizar os degraus entre alturas"
 
 #: crates/slicer/src/profile.rs:424
 msgid "Solid layers at the bottom of the part."
@@ -1622,29 +1662,33 @@ msgstr "Camadas sólidas no fundo da peça."
 msgid "Solid layers that close the top of the part."
 msgstr "Camadas sólidas que fecham o topo da peça."
 
-#: apps/lamina/src/lib.rs:1694
+#: apps/lamina/src/lib.rs:1699
 msgid "Speeds"
 msgstr "Velocidades"
 
-#: apps/lamina/src/lib.rs:1245
+#: apps/lamina/src/lib.rs:1250
 msgid "Split to fit plate"
 msgstr "Dividir para caber na mesa"
 
-#: apps/lamina/src/lib.rs:1272
+#: apps/lamina/src/lib.rs:1277
 msgid "Square"
 msgstr "Quadrado"
 
-#: apps/lamina/src/lib.rs:1760
+#: apps/lamina/src/lib.rs:1765
 msgid "Standby, C below"
 msgstr "Espera, C abaixo"
 
-#: apps/lamina/src/lib.rs:1816
+#: apps/lamina/src/lib.rs:1821
 msgid "Start"
 msgstr "Início"
 
-#: apps/lamina/src/lib.rs:1809
+#: apps/lamina/src/lib.rs:1814
 msgid "Start and end G-code"
 msgstr "G-code de início e fim"
+
+#: apps/lamina/src/heights.rs:29
+msgid "Start from adaptive layers for the objects on the plate"
+msgstr "Começar das camadas adaptativas para os objetos na mesa"
 
 #: apps/lamina/src/chat.rs:324
 msgid "Stop"
@@ -1654,27 +1698,27 @@ msgstr "Parar"
 msgid "Stop it; nothing it would have done is applied"
 msgstr "Interromper; nada do que faria é aplicado"
 
-#: apps/lamina/src/lib.rs:1052
+#: apps/lamina/src/lib.rs:1057
 msgid "Subtract"
 msgstr "Subtrair"
 
-#: apps/lamina/src/lib.rs:1839
+#: apps/lamina/src/lib.rs:1844
 msgid "Support"
 msgstr "Suporte"
 
-#: apps/lamina/src/lib.rs:1150
+#: apps/lamina/src/lib.rs:1155
 msgid "Support blocker"
 msgstr "Bloquear suporte"
 
-#: apps/lamina/src/lib.rs:1737
+#: apps/lamina/src/lib.rs:1742
 msgid "Support details"
 msgstr "Detalhes do suporte"
 
-#: apps/lamina/src/lib.rs:1149
+#: apps/lamina/src/lib.rs:1154
 msgid "Support enforcer"
 msgstr "Forçar suporte"
 
-#: apps/lamina/src/lib.rs:1626
+#: apps/lamina/src/lib.rs:1631
 msgid "Supports"
 msgstr "Suportes"
 
@@ -1682,11 +1726,11 @@ msgstr "Suportes"
 msgid "Supports under overhangs: off, everywhere, or only those that stand on the plate."
 msgstr "Suportes sob as saliências: desligados, em toda parte, ou só os que se apoiam na mesa."
 
-#: apps/lamina/src/lib.rs:1726
+#: apps/lamina/src/lib.rs:1731
 msgid "Surface"
 msgstr "Superfície"
 
-#: apps/lamina/src/lib.rs:1851
+#: apps/lamina/src/lib.rs:1856
 msgid "Take all paint off the picked objects"
 msgstr "Tirar toda a pintura dos objetos selecionados"
 
@@ -1694,12 +1738,12 @@ msgstr "Tirar toda a pintura dos objetos selecionados"
 msgid "Take back this step and those after it"
 msgstr "Desfazer este passo e os seguintes"
 
-#: apps/lamina/src/lib.rs:892
+#: apps/lamina/src/lib.rs:897
 msgid "Temperature tower, 230 to 190 C"
 msgstr "Torre de temperatura, 230 a 190 C"
 
 #: apps/lamina/src/chat.rs:336
-#: apps/lamina/src/lib.rs:873
+#: apps/lamina/src/lib.rs:878
 msgid "Text"
 msgstr "Texto"
 
@@ -1715,7 +1759,7 @@ msgstr "A configuração de processador da vista 3D foi ignorada: não é true n
 msgid "The Agents settings were left out: they do not read"
 msgstr "As configurações de Agentes foram ignoradas: não puderam ser lidas"
 
-#: apps/lamina/src/lib.rs:794
+#: apps/lamina/src/lib.rs:799
 msgid "The chat could not be kept: {}"
 msgstr "Não foi possível guardar o chat: {}"
 
@@ -1739,7 +1783,7 @@ msgstr "O fluxo do filamento: o plástico de cada linha vezes isto; ajuste-o pel
 msgid "The filament's pressure advance (linear advance on Marlin), sent at the start; 0 leaves the printer's own."
 msgstr "O avanço de pressão do filamento (linear advance no Marlin), enviado no início; 0 mantém o da impressora."
 
-#: apps/lamina/src/lib.rs:1299
+#: apps/lamina/src/lib.rs:1304
 msgid "The gap between a peg or pin and its hole: more is looser. 0.2 mm suits most printers"
 msgstr "A folga entre um pino e o seu furo: mais é mais solto. 0,2 mm serve para a maioria das impressoras"
 
@@ -1767,7 +1811,7 @@ msgstr "O endereço do modelo local foi ignorado: não está neste computador"
 msgid "The local model's name was left out: it is not a model id"
 msgstr "O nome do modelo local foi ignorado: não é um id de modelo"
 
-#: apps/lamina/src/comfort.rs:272
+#: apps/lamina/src/comfort.rs:274
 msgid "The middle of all picked"
 msgstr "O centro de todos os selecionados"
 
@@ -1803,7 +1847,7 @@ msgstr "A ventoinha de resfriamento da peça, 0 a 255: desligada na primeira cam
 msgid "The pattern of the sparse infill: lines, grid, triangles, gyroid or honeycomb."
 msgstr "O padrão do preenchimento esparso: linhas, grade, triângulos, giroide ou favo de mel."
 
-#: apps/lamina/src/comfort.rs:275
+#: apps/lamina/src/comfort.rs:277
 msgid "The picked object's own axes"
 msgstr "Os eixos do próprio objeto selecionado"
 
@@ -1819,11 +1863,11 @@ msgstr "A imagem vai para o assistente com a sua próxima mensagem."
 msgid "The plate as a 3MF or an OBJ, each object its own, or as one STL"
 msgstr "A mesa como 3MF ou OBJ, cada objeto separado, ou como um único STL"
 
-#: apps/lamina/src/lib.rs:1915
+#: apps/lamina/src/lib.rs:1923
 msgid "The plate changed since this slice: slice again."
 msgstr "A mesa mudou desde este fatiamento: fatie de novo."
 
-#: apps/lamina/src/comfort.rs:274
+#: apps/lamina/src/comfort.rs:276
 msgid "The plate's axes"
 msgstr "Os eixos da mesa"
 
@@ -1879,7 +1923,7 @@ msgstr "A chave salva de {} está trancada: digite a frase-senha dela para usá-
 msgid "The saved {} key was left out: it is not a sealed key"
 msgstr "A chave salva de {} foi ignorada: não é uma chave selada"
 
-#: apps/lamina/src/lib.rs:1178
+#: apps/lamina/src/lib.rs:1183
 msgid "The share of its triangles to keep"
 msgstr "A fração dos triângulos a manter"
 
@@ -1919,7 +1963,7 @@ msgstr "A menor espessura de uma camada adaptativa, mm; a maior é a altura da c
 msgid "The update check's setting was left out: it is not true or false"
 msgstr "A configuração da busca por atualizações foi ignorada: não é true nem false"
 
-#: apps/lamina/src/comfort.rs:258
+#: apps/lamina/src/comfort.rs:260
 msgid "Theme"
 msgstr "Tema"
 
@@ -1939,59 +1983,59 @@ msgstr "Nem todos cabem na mesa: alguns ficam fora dela."
 msgid "Thin layers where a surface is nearly flat, so its steps hardly show, and thick ones on walls, to save time."
 msgstr "Camadas finas onde uma superfície é quase plana, para os degraus quase não aparecerem, e grossas nas paredes, para ganhar tempo."
 
-#: apps/lamina/src/lib.rs:1930
+#: apps/lamina/src/lib.rs:1938
 msgid "This layer alone, from above"
 msgstr "Só esta camada, vista de cima"
 
-#: apps/lamina/src/lib.rs:1034
+#: apps/lamina/src/lib.rs:1039
 msgid "This mesh is not a clean solid: {}. Parts of it may not print; Repair mends what it can."
 msgstr "Esta malha não é um sólido limpo: {}. Partes dela podem não imprimir; Reparar conserta o que puder."
 
-#: apps/lamina/src/lib.rs:1366
+#: apps/lamina/src/lib.rs:1371
 msgid "This object's settings"
 msgstr "Configurações deste objeto"
 
-#: apps/lamina/src/lib.rs:864
+#: apps/lamina/src/lib.rs:869
 msgid "Thread, M8"
 msgstr "Rosca, M8"
 
-#: apps/lamina/src/lib.rs:1795
+#: apps/lamina/src/lib.rs:1800
 msgid "Thumbnail, pixels"
 msgstr "Miniatura, pixels"
 
-#: apps/lamina/src/lib.rs:692
+#: apps/lamina/src/lib.rs:697
 msgid "Took {} settings from {}."
 msgstr "{} configurações importadas de {}."
 
-#: apps/lamina/src/lib.rs:693
+#: apps/lamina/src/lib.rs:698
 msgid "Took {} settings from {}; left out {}: {}."
 msgstr "{} configurações importadas de {}; {} ignoradas: {}."
 
-#: apps/lamina/src/lib.rs:1822
+#: apps/lamina/src/lib.rs:1827
 msgid "Tool change, before the T; also {}"
 msgstr "Troca de ferramenta, antes do T; também {}"
 
-#: apps/lamina/src/lib.rs:1547
+#: apps/lamina/src/lib.rs:1552
 msgid "Top / bottom layers"
 msgstr "Camadas de topo / fundo"
 
-#: apps/lamina/src/lib.rs:861
+#: apps/lamina/src/lib.rs:866
 msgid "Torus"
 msgstr "Toro"
 
-#: apps/lamina/src/lib.rs:1764
+#: apps/lamina/src/lib.rs:1769
 msgid "Tower size, mm"
 msgstr "Tamanho da torre, mm"
 
-#: apps/lamina/src/lib.rs:1762
+#: apps/lamina/src/lib.rs:1767
 msgid "Tower x, mm"
 msgstr "Torre x, mm"
 
-#: apps/lamina/src/lib.rs:1763
+#: apps/lamina/src/lib.rs:1768
 msgid "Tower y, mm"
 msgstr "Torre y, mm"
 
-#: apps/lamina/src/lib.rs:1710
+#: apps/lamina/src/lib.rs:1715
 msgid "Travel inside the part without retracting"
 msgstr "Deslocar dentro da peça sem retrair"
 
@@ -1999,43 +2043,43 @@ msgstr "Deslocar dentro da peça sem retrair"
 msgid "Travel inside the part without retracting, however far: it crosses no gap, so nothing strings."
 msgstr "Deslocar dentro da peça sem retrair, a qualquer distância: não cruza nenhum vão, então nada forma fios."
 
-#: apps/lamina/src/lib.rs:1698
+#: apps/lamina/src/lib.rs:1703
 msgid "Travel, mm/s"
 msgstr "Deslocamento, mm/s"
 
-#: apps/lamina/src/lib.rs:1926
+#: apps/lamina/src/lib.rs:1934
 msgid "Travels"
 msgstr "Deslocamentos"
 
-#: apps/lamina/src/lib.rs:1649
+#: apps/lamina/src/lib.rs:1654
 msgid "Tree"
 msgstr "Árvore"
 
-#: apps/lamina/src/lib.rs:1743
+#: apps/lamina/src/lib.rs:1748
 msgid "Tree branch lean, deg"
 msgstr "Inclinação dos galhos, graus"
 
-#: apps/lamina/src/lib.rs:1742
+#: apps/lamina/src/lib.rs:1747
 msgid "Tree tips apart, mm"
 msgstr "Distância entre pontas, mm"
 
-#: apps/lamina/src/lib.rs:1744
+#: apps/lamina/src/lib.rs:1749
 msgid "Tree trunk radius, mm"
 msgstr "Raio do tronco, mm"
 
-#: apps/lamina/src/lib.rs:1572
+#: apps/lamina/src/lib.rs:1577
 msgid "Triangles"
 msgstr "Triângulos"
 
-#: apps/lamina/src/lib.rs:860
+#: apps/lamina/src/lib.rs:865
 msgid "Tube"
 msgstr "Tubo"
 
-#: apps/lamina/src/comfort.rs:329
+#: apps/lamina/src/comfort.rs:331
 msgid "Turn 90 degrees"
 msgstr "Girar 90 graus"
 
-#: apps/lamina/src/comfort.rs:270
+#: apps/lamina/src/comfort.rs:272
 msgid "Turn and scale about"
 msgstr "Girar e escalar em torno de"
 
@@ -2044,7 +2088,7 @@ msgid "Type a valid key first."
 msgstr "Digite antes uma chave válida."
 
 #: apps/lamina/src/comfort.rs:214
-#: apps/lamina/src/lib.rs:933
+#: apps/lamina/src/lib.rs:938
 msgid "Undo"
 msgstr "Desfazer"
 
@@ -2052,7 +2096,7 @@ msgstr "Desfazer"
 msgid "Undo {}"
 msgstr "Desfazer {}"
 
-#: apps/lamina/src/lib.rs:932
+#: apps/lamina/src/lib.rs:937
 msgid "Undo {} (Ctrl+Z)"
 msgstr "Desfazer {} (Ctrl+Z)"
 
@@ -2085,11 +2129,11 @@ msgstr "Usuário"
 msgid "Using the key in {}."
 msgstr "Usando a chave em {}."
 
-#: apps/lamina/src/lib.rs:1534
+#: apps/lamina/src/lib.rs:1539
 msgid "Variable width"
 msgstr "Largura variável"
 
-#: apps/lamina/src/lib.rs:1564
+#: apps/lamina/src/lib.rs:1569
 msgid "Vase mode"
 msgstr "Modo vaso"
 
@@ -2101,14 +2145,14 @@ msgstr "Modo vaso: acima do fundo, uma parede que sobe sem parar, sem preenchime
 msgid "View"
 msgstr "Exibir"
 
-#: apps/lamina/src/lib.rs:578
+#: apps/lamina/src/lib.rs:582
 #: apps/lamina/src/work.rs:59
 msgid "Wait for {} to finish, or cancel it."
 msgstr "Aguarde o fim de {} ou cancele."
 
-#: apps/lamina/src/lib.rs:1382
-#: apps/lamina/src/lib.rs:1469
-#: apps/lamina/src/lib.rs:1528
+#: apps/lamina/src/lib.rs:1387
+#: apps/lamina/src/lib.rs:1474
+#: apps/lamina/src/lib.rs:1533
 msgid "Walls"
 msgstr "Paredes"
 
@@ -2116,7 +2160,7 @@ msgstr "Paredes"
 msgid "Walls round each layer: more is stronger and slower."
 msgstr "Paredes em volta de cada camada: mais é mais forte e mais lento."
 
-#: apps/lamina/src/lib.rs:1695
+#: apps/lamina/src/lib.rs:1700
 msgid "Walls, mm/s"
 msgstr "Paredes, mm/s"
 
@@ -2144,7 +2188,7 @@ msgstr "Se o zero da impressora é o centro da mesa (a maioria das delta) em vez
 msgid "While moving, turning or scaling: snap to steps"
 msgstr "Ao mover, girar ou escalar: encaixar em passos"
 
-#: apps/lamina/src/lib.rs:1709
+#: apps/lamina/src/lib.rs:1714
 msgid "Wipe, mm"
 msgstr "Limpeza, mm"
 
@@ -2152,11 +2196,11 @@ msgstr "Limpeza, mm"
 msgid "Write curves as G2 and G3 arcs: a smaller file and smoother circles. Klipper needs [gcode_arcs] in its config."
 msgstr "Escrever curvas como arcos G2 e G3: arquivo menor e círculos mais suaves. O Klipper precisa de [gcode_arcs] na configuração."
 
-#: apps/lamina/src/lib.rs:710
+#: apps/lamina/src/lib.rs:715
 msgid "Writing the G-code"
 msgstr "Gravando o G-code"
 
-#: apps/lamina/src/lib.rs:715
+#: apps/lamina/src/lib.rs:720
 msgid "Wrote {}"
 msgstr "{} gravado"
 
@@ -2172,11 +2216,11 @@ msgstr "As suas mensagens e o que está na mesa vão para o servidor do modelo n
 msgid "Your messages and what is on the plate go to {} under your key."
 msgstr "As suas mensagens e o que está na mesa vão para {} com a sua chave."
 
-#: apps/lamina/src/lib.rs:1708
+#: apps/lamina/src/lib.rs:1713
 msgid "Z hop, mm"
 msgstr "Elevação em Z, mm"
 
-#: apps/lamina/src/lib.rs:1802
+#: apps/lamina/src/lib.rs:1807
 msgid "Zero in the middle (delta)"
 msgstr "Zero no centro (delta)"
 
@@ -2188,7 +2232,7 @@ msgstr "uma mesa redonda de 200 mm, 300 mm de altura, com o zero da máquina no 
 msgid "as the server names it, e.g. qwen3"
 msgstr "como o servidor o chama, por exemplo qwen3"
 
-#: apps/lamina/src/lib.rs:1229
+#: apps/lamina/src/lib.rs:1234
 msgid "at"
 msgstr "em"
 
@@ -2208,7 +2252,7 @@ msgstr "não foi possível salvar as configurações em {}: {}"
 msgid "extrusion"
 msgstr "extrusão"
 
-#: apps/lamina/src/lib.rs:96
+#: apps/lamina/src/lib.rs:97
 msgid "filament"
 msgstr "filamento"
 
@@ -2232,11 +2276,11 @@ msgstr "erro interno: {} parou no meio"
 msgid "ironing"
 msgstr "alisamento"
 
-#: apps/lamina/src/lib.rs:1098
+#: apps/lamina/src/lib.rs:1103
 msgid "it is closed now"
 msgstr "agora está fechado"
 
-#: apps/lamina/src/lib.rs:1100
+#: apps/lamina/src/lib.rs:1105
 msgid "it is still open: a hole is too big to fill without guessing"
 msgstr "ainda está aberto: um furo é grande demais para preencher sem adivinhar"
 
@@ -2244,7 +2288,7 @@ msgstr "ainda está aberto: um furo é grande demais para preencher sem adivinha
 msgid "its print settings were left out ({}), so the ones shown stay"
 msgstr "as configurações de impressão dele foram ignoradas ({}), então ficam as mostradas"
 
-#: apps/lamina/src/lib.rs:1924
+#: apps/lamina/src/lib.rs:1932
 msgid "layer"
 msgstr "camada"
 
@@ -2292,11 +2336,11 @@ msgstr "parede externa"
 msgid "picture"
 msgstr "imagem"
 
-#: apps/lamina/src/lib.rs:95
+#: apps/lamina/src/lib.rs:96
 msgid "printer"
 msgstr "impressora"
 
-#: apps/lamina/src/lib.rs:97
+#: apps/lamina/src/lib.rs:98
 msgid "process"
 msgstr "processo"
 
@@ -2364,7 +2408,7 @@ msgstr "camadas finas para detalhes e curvas suaves; leva cerca de uma vez e mei
 msgid "this version left out {}"
 msgstr "esta versão ignorou {}"
 
-#: apps/lamina/src/lib.rs:1448
+#: apps/lamina/src/lib.rs:1453
 msgid "to"
 msgstr "a"
 
@@ -2372,7 +2416,7 @@ msgstr "a"
 msgid "with {}"
 msgstr "com {}"
 
-#: apps/lamina/src/lib.rs:493
+#: apps/lamina/src/lib.rs:497
 msgid "{} (mine)"
 msgstr "{} (minha)"
 
@@ -2393,11 +2437,11 @@ msgstr "{} graus em torno de {}"
 msgid "{} does not read ({}): started from the defaults"
 msgstr "{} não pôde ser lido ({}): começou com os padrões"
 
-#: apps/lamina/src/lib.rs:59
+#: apps/lamina/src/lib.rs:60
 msgid "{} edges shared by more than two faces"
 msgstr "{} arestas compartilhadas por mais de duas faces"
 
-#: apps/lamina/src/lib.rs:60
+#: apps/lamina/src/lib.rs:61
 msgid "{} flipped faces"
 msgstr "{} faces invertidas"
 
@@ -2413,23 +2457,27 @@ msgstr "{} não é um arquivo de configurações: não foi alterado"
 msgid "{} is too big to be settings: left alone"
 msgstr "{} é grande demais para ser de configurações: não foi alterado"
 
-#: apps/lamina/src/lib.rs:657
+#: apps/lamina/src/heights.rs:69
+msgid "{} layers"
+msgstr "{} camadas"
+
+#: apps/lamina/src/lib.rs:662
 msgid "{} layers, {} m of filament, about {}h {}m"
 msgstr "{} camadas, {} m de filamento, cerca de {}h {}min"
 
-#: apps/lamina/src/lib.rs:1047
+#: apps/lamina/src/lib.rs:1052
 msgid "{} objects picked"
 msgstr "{} objetos selecionados"
 
-#: apps/lamina/src/lib.rs:58
+#: apps/lamina/src/lib.rs:59
 msgid "{} open edges"
 msgstr "{} arestas abertas"
 
-#: apps/lamina/src/lib.rs:1435
+#: apps/lamina/src/lib.rs:1440
 msgid "{} to {} mm: {}"
 msgstr "{} a {} mm: {}"
 
-#: apps/lamina/src/lib.rs:1181
+#: apps/lamina/src/lib.rs:1186
 msgid "{} triangles now; its shape is kept as well as it can be"
 msgstr "{} triângulos agora; a forma é mantida o melhor possível"
 

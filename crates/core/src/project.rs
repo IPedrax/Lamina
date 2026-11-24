@@ -44,6 +44,9 @@ pub fn write(scene: &Scene, print: &Value) -> String {
     if !print.is_null() {
         v["print"] = print.clone();
     }
+    if let Some(h) = &scene.layer_heights {
+        v["layer_heights"] = json!(**h);
+    }
     serde_json::to_string_pretty(&v).unwrap_or_default()
 }
 
@@ -90,7 +93,7 @@ pub fn read(text: &str) -> Result<Loaded, String> {
     }
     let mut ignored = Vec::new();
     for key in top.keys() {
-        if !matches!(key.as_str(), "format" | "generator" | "objects" | "print") {
+        if !matches!(key.as_str(), "format" | "generator" | "objects" | "print" | "layer_heights") {
             ignored.push(key.clone());
         }
     }
@@ -115,7 +118,14 @@ pub fn read(text: &str) -> Result<Loaded, String> {
             Value::Null
         }
     };
-    let scene = Scene::restore(objects)?;
+    let mut scene = Scene::restore(objects)?;
+    // A layer height curve that does not check out is left out, as an unknown key is.
+    if let Some(h) = top.get("layer_heights") {
+        match serde_json::from_value::<Vec<[f64; 2]>>(h.clone()).ok().filter(|p| crate::scene::check_heights(p).is_ok()) {
+            Some(points) => scene.layer_heights = Some(Arc::new(points)),
+            None => ignored.push("layer_heights".into()),
+        }
+    }
     scene.check()?;
     Ok(Loaded { scene, print, ignored })
 }

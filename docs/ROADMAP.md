@@ -321,6 +321,17 @@ Priorities:
   one arm of a tee with supports off, painted block takes one arm's support away with them on; paint of the wrong length is
   ignored. Not done: painting by a smart fill (a whole flat face or an overhang angle at once) and the brush's circle shown on
   the model before a click.
+- **4.30 Layer heights by hand.** The plate keeps a curve of layer height against height on the plate (`Scene::layer_heights`,
+  `[z, height]` points read along straight lines; in projects, in `info`, undone with the plate). `layer_heights {action}` sets a
+  band (`"set"`, from, to, height), starts from adaptive layers for the plate's objects (`"adaptive"`, min and max), smooths
+  (`"smooth"`, a weighted mean over `radius` mm) or clears; it answers with the layer count and the thinnest and thickest layer.
+  `crates/slicer/src/heights.rs` turns the curve into the plate's layer tops (each layer as thick as the curve at its middle, kept
+  from 0.02 mm to 0.8 of the nozzle), used in place of `layer_height` and adaptive layers; the first layer stays
+  `first_layer_height`. In the window, View, Layer heights by hand opens a strip beside the 3D view: the layers drawn against height,
+  Adaptive, Smooth and Reset, a drag up the strip sets the heights it covers to the height across, a click a millimetre round
+  it. Tested through G-code: a box with 0.1 mm layers from 4 to 6 mm and 0.2 mm elsewhere, 60 layers; adaptive then smoothed on a
+  ball; kept in a project, one undo; hostile curves; the strip's drag, buttons and undo. Not done: PrusaSlicer's brush that adds or
+  takes away detail gradually with the wheel, and a curve per object (one curve serves the plate, as adaptive layers do).
 - **5.1 Process presets.** A third kind in `presets.rs`, setting only the layers and the strength (`PROCESS_FIELDS`): 0.12 mm Fine,
   0.20 mm Standard, 0.28 mm Draft and Strong. `slice` and `slice_check` take `process` (after the printer and the filament, before
   `profile`); `slicer_presets` lists them; the window has a Process picker and Save process, kept in the settings file and the
@@ -514,10 +525,6 @@ and one Klipper printer, measure with calipers, fill in the tables, and fix what
 ## 3. Modelling
 
 ## 4. Slicer
-
-**4.30 Variable layer height by hand (P2).** PrusaSlicer's variable layer height takes adaptive layers as a start and lets the user
-add or remove detail by height and smooth it. Lamina has adaptive layers only. How: a layer-height curve kept with the plate, edited
-in a strip beside the 3D view, used as `slice::layers_at` tops.
 
 **4.31 Modifier meshes with settings (P2).** PrusaSlicer's modifier and Cura's infill and cutting meshes give part of an object its
 own infill, walls or speed. How: 4.24's `modifier` with `kind: "settings"` and a profile; the plan splits each layer's region by the

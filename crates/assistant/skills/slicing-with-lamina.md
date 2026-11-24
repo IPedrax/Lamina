@@ -31,7 +31,9 @@ presets live in the app's settings panel, not in these commands.
   `"variable"`: a part too thin for its walls, a fin, a thin rib or a tube wall, gets as many lines as its width holds, each a share
   of it, instead of loops that fold onto themselves and gap fill; try it for thin-walled parts), `top_layers` and `bottom_layers` (enough for 0.8 to 1.0 mm of skin).
   `adaptive_layers: true` varies each layer from `min_layer_height` (0.08) up to `layer_height`: thin on domes and gentle slopes,
-  thick on walls; good for figures and rounded parts, little use for boxy ones.
+  thick on walls; good for figures and rounded parts, little use for boxy ones. By hand, for the whole plate:
+  `layer_heights {action: "set", from, to, height}` (fine layers only where a detail is), `"adaptive"` to start from adaptive
+  layers, `"smooth"`, `"clear"`; these take the place of `layer_height` and `adaptive_layers`.
 - Strength: `infill_density` from 0 to 1. Use 0.1 to 0.2 for looks and 0.3 to 0.5 for parts that bear load. Walls add more
   strength than infill does. `infill_pattern`: `"lines"` (the default, quickest), `"grid"`, `"triangles"` (stiff in the plane),
   `"gyroid"` (strong in every direction, the usual choice for functional parts) or `"honeycomb"`.

@@ -45,7 +45,7 @@ Linux only). A change to a string the window shows needs `cargo i18n update` and
 ## Module map
 
 - `crates/core`: `mesh.rs` (triangle mesh, primitives with ISO metric threads, `Transform`), `stl.rs` (read and write), `scene.rs`
-  (objects on the plate, `Modifier`: support enforcers and blockers, which print nothing, and `Paint`, one tag a face),
+  (objects on the plate, `Modifier`: support enforcers and blockers, which print nothing, `Paint`, one tag a face, and the plate's layer heights by hand),
   `engine.rs` (`Session`: execute, undo, transactions, `adopt` for work done on a thread, script, catalog, the project's print settings), `commands.rs` (the built-in commands),
   `project.rs` (`.lamina` files: `save`, `open`, `new`), `repair.rs` (mesh repair shared by import and the booleans, `tidy_flat` that takes out the vertices a
   boolean left in flat faces and along straight edges, and the problems `info` reports), `simplify.rs` (quadric edge collapse for heavy meshes, the `simplify` command), `threemf.rs` and `zip.rs` (3MF in and out), `mesh_in.rs` (OBJ and glTF in, lifted from BIMCraft), `sketch.rs` (outlines extruded into solids), `text.rs` (lettering from the bundled IBM Plex Mono, under the OFL), `render.rs` (the orbit camera and CPU rasterizer
@@ -54,11 +54,11 @@ Linux only). A change to a string the window shows needs `cargo i18n update` and
   `bridge.rs` (what an agent may ask: execute, script, catalog; read-only access; `REPLACES`, the commands that replace the plate;
   the control port's protocol, token and bridge file, and `settings_file`, the settings folder the desktop and the CLI share).
 - `crates/slicer`: `slice.rs` (mesh to closed loops per layer), `geom.rs` (polygon booleans, offsets, line clipping on i_overlay),
-  `print.rs` (walls, skins, infill, skirt, tool changes and the purge tower, one object at a time, the G-code writer; `Plate`, all it reads from the plate, which `commands::Job` gathers), `infill.rs` (sparse infill patterns), `gap.rs` (gap fill and thin walls), `paint.rs` (painted faces read on each layer: support and block shadows for the support planner, seam points the walls start at), `walls.rs` (walls of varying width for thin parts,
+  `print.rs` (walls, skins, infill, skirt, tool changes and the purge tower, one object at a time, the G-code writer; `Plate`, all it reads from the plate, which `commands::Job` gathers), `infill.rs` (sparse infill patterns), `gap.rs` (gap fill and thin walls), `paint.rs` (painted faces read on each layer: support and block shadows for the support planner, seam points the walls start at), `heights.rs` (layer heights by hand: the plate's curve read, turned into layer tops, set, smoothed, from adaptive layers), `walls.rs` (walls of varying width for thin parts,
   `wall_generator: "variable"`), `time.rs` (the print time planner), `support.rs` (overhangs,
   supports and their interface, planned for the whole plate with its enforcers and blockers, `plan_with`), `profile.rs` (settings, `LIMITS` and `ABOUT`, checks, `[name]` placeholders), `expr.rs` (`{expr}` in the start and end G-code), `import.rs` (PrusaSlicer and OrcaSlicer profiles through a key table), `presets.rs`
   (built-in printers and filaments, each setting only its own fields; `apply` and `capture`), `commands.rs`
-  (`slice`, `slice_check`, `slicer_presets`, `slicer_profile`; an app adds them with `session.register(lamina_slicer::COMMANDS)`).
+  (`slice`, `slice_check`, `slicer_presets`, `slicer_profile`, `layer_heights`, `calibration`, `set_height_range`; an app adds them with `session.register(lamina_slicer::COMMANDS)`).
   `tests/golden/`: models whose G-code is compared line by line; a slicer change re-blesses them with `LAMINA_BLESS=1` and the diff
   is read before it is committed.
 - `crates/csg`: `boolean(op, a, b)`, the only code that knows csgrs, and the `union`, `difference` and `intersect` commands; `split.rs`
@@ -100,7 +100,7 @@ Linux only). A change to a string the window shows needs `cargo i18n update` and
   buttons), `work.rs` (slicing, booleans, export and sending on a thread, with a spinner and Cancel), `comfort.rs` (shortcuts,
   Blender's view keys, the right-click menu, the Edit menu with the undo history, the theme), `control.rs` (the control port: agents work on the
   window's plate through `lamina-cli mcp --connect`; from BIMCraft), `icon.rs` (the app icon, drawn, and its PNG, ICO and ICNS files), `startup.rs` (`lamina.log` beside the settings, panics
-  and failed starts, and another graphics backend after a start that died; from BIMCraft), `updates.rs` (the update banner, the box
+  and failed starts, and another graphics backend after a start that died; from BIMCraft), `heights.rs` (the layer heights strip beside the 3D view), `updates.rs` (the update banner, the box
   that holds the window while one installs, and the File menu's Check for updates at start and Check for updates now; `main`
   attaches the updater, so a window in a test has `updates: None`; from BIMCraft), `settings.rs` (the settings file: print settings,
   presets, sealed keys, the update check's switch, the language; read hostilely, written whole and owner-only), `lang.rs` (the

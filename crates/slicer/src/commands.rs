@@ -39,6 +39,19 @@ pub static COMMANDS: &[Command] = &[
         files: Files::None,
     },
     Command {
+        id: "layer_heights",
+        params: "{action, from?, to?, height?, radius?, min?, max?} sets the plate's layer heights by hand, which every object prints \
+                 on, in place of `layer_height` and adaptive layers. action \"set\": the layers from `from` to `to` mm up are `height` mm \
+                 thick (finer detail where the model curves, thicker where it is plain), the rest as they were. \"adaptive\": start from \
+                 adaptive layers for the plate's objects, from `min` (the project's `min_layer_height`) to `max` (its `layer_height`) mm. \
+                 \"smooth\": soften the steps, over `radius` mm (2). \"clear\": back to the profile's heights. The first layer stays \
+                 `first_layer_height`, and each height is kept to 0.8 of the nozzle. Returns {layer_heights ([z, height] points, or null), \
+                 layers (how many the tallest object has with the project's settings), thinnest, thickest}",
+        run: layer_heights,
+        undoable: true,
+        files: Files::None,
+    },
+    Command {
         id: "slicer_presets",
         params: "{} the built-in presets: {printers:[{name, about, fields}], filaments:[...], processes:[...]}. Pass a name as `printer`, \
                  `filament` or `process` to `slice` or `slice_check`; a printer sets the machine's fields, a filament its temperatures and fan, \
@@ -145,7 +158,7 @@ fn run(s: &Session, ids: Option<&[u32]>, settings: Settings) -> Result<print::Ou
         Some(ids) => ids.iter().map(|&id| s.scene.get(id)).collect::<Result<_, _>>()?,
         None => s.scene.objects.iter().collect(),
     };
-    Job::of(&chosen, &profile)?.gcode(&profile)
+    Job::of(&chosen, s.scene.layer_heights.as_deref().map(Vec::as_slice), &profile)?.gcode(&profile)
 }
 
 /// What the slicer needs from the plate, gathered from its objects and owned, so a thread can take it: the parts where they stand
@@ -157,11 +170,13 @@ pub struct Job {
     pub ranges: print::RangeProfiles,
     pub paint: Vec<Option<std::sync::Arc<Vec<u8>>>>,
     pub modifiers: Vec<(lamina_core::Modifier, Mesh)>,
+    pub heights: Vec<[f64; 2]>,
 }
 
 impl Job {
-    /// The job for these objects with the plate's `profile` under each object's own settings.
-    pub fn of(objects: &[&lamina_core::Object], profile: &Profile) -> Result<Job, String> {
+    /// The job for these objects with the plate's layer heights by hand (`Scene::layer_heights`) and `profile` under each
+    /// object's own settings.
+    pub fn of(objects: &[&lamina_core::Object], heights: Option<&[[f64; 2]]>, profile: &Profile) -> Result<Job, String> {
         let (parts, modifiers) = split(objects);
         let own = own(&parts, profile)?;
         Ok(Job {
@@ -170,11 +185,19 @@ impl Job {
             paint: parts.iter().map(|o| o.paint.clone()).collect(),
             own,
             modifiers,
+            heights: heights.map(<[_]>::to_vec).unwrap_or_default(),
         })
     }
 
     pub fn plate(&self) -> print::Plate<'_> {
-        print::Plate { objects: &self.objects, own: &self.own, ranges: &self.ranges, paint: &self.paint, modifiers: &self.modifiers }
+        print::Plate {
+            objects: &self.objects,
+            own: &self.own,
+            ranges: &self.ranges,
+            paint: &self.paint,
+            modifiers: &self.modifiers,
+            heights: &self.heights,
+        }
     }
 
     pub fn gcode(&self, profile: &Profile) -> Result<print::Output, String> {
@@ -300,6 +323,110 @@ fn set_height_range(s: &mut Session, p: &Value) -> Result<Value, String> {
     let o = s.scene_mut().get_mut(a.id)?;
     o.ranges = if ranges.is_empty() { None } else { Some(std::sync::Arc::new(value.clone())) };
     Ok(json!({ "ranges": value }))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LayerHeights {
+    action: String,
+    from: Option<f64>,
+    to: Option<f64>,
+    height: Option<f64>,
+    radius: Option<f64>,
+    min: Option<f64>,
+    max: Option<f64>,
+}
+
+/// The project's print settings (what `open` read, or what the window shows), over the defaults.
+fn project_profile(s: &Session) -> Result<Profile, String> {
+    match s.print.get("profile") {
+        Some(v @ Value::Object(_)) => Profile::from_json(v),
+        _ => Ok(Profile::default()),
+    }
+}
+
+fn layer_heights(s: &mut Session, p: &Value) -> Result<Value, String> {
+    use lamina_core::scene::{LAYER_HEIGHTS, check_heights};
+    let a = LayerHeights::deserialize(p).map_err(|e| format!("bad parameters: {e}"))?;
+    let profile = project_profile(s)?;
+    let (lo, hi) = LAYER_HEIGHTS;
+    let number = |name: &str, v: Option<f64>, range: std::ops::RangeInclusive<f64>| -> Result<f64, String> {
+        let v = v.ok_or_else(|| format!("`{name}` is needed for \"{}\"", a.action))?;
+        if v.is_finite() && range.contains(&v) {
+            Ok(v)
+        } else {
+            Err(format!("`{name}` is from {} to {}, not {v}", range.start(), range.end()))
+        }
+    };
+    let parts: Vec<Mesh> = s.scene.objects.iter().filter(|o| o.modifier.is_none()).map(|o| o.world()).collect();
+    let top = parts.iter().filter_map(Mesh::bounds).map(|(_, hi)| hi[2]).fold(0.0, f64::max);
+    let now = s.scene.layer_heights.as_deref().cloned().unwrap_or_default();
+    // Each action takes its own fields and no others, so a field meant for another one is not quietly ignored.
+    let (band, radius, bounds) =
+        (a.from.is_some() || a.to.is_some() || a.height.is_some(), a.radius.is_some(), a.min.is_some() || a.max.is_some());
+    let (stray, takes) = match a.action.as_str() {
+        "set" => (radius || bounds, "`from`, `to` and `height`"),
+        "adaptive" => (band || radius, "`min` and `max`"),
+        "smooth" => (band || bounds, "`radius`"),
+        "clear" => (band || radius || bounds, "nothing more"),
+        other => return Err(format!("`action` is set, adaptive, smooth or clear, not `{other}`")),
+    };
+    if stray {
+        return Err(format!("\"{}\" takes {takes}", a.action));
+    }
+    let points = match a.action.as_str() {
+        "set" => {
+            let from = number("from", a.from, 0.0..=lamina_core::mesh::MAX_COORD)?;
+            let to = number("to", a.to, 0.0..=lamina_core::mesh::MAX_COORD)?;
+            if to <= from {
+                return Err(format!("`to` ({to}) is above `from` ({from})"));
+            }
+            let height = number("height", a.height, lo..=hi)?;
+            Some(crate::heights::set(&now, profile.layer_height, from, to, height))
+        }
+        "adaptive" => {
+            let min = a.min.map_or(Ok(profile.min_layer_height), |v| number("min", Some(v), lo..=hi))?;
+            let max = a.max.map_or(Ok(profile.layer_height), |v| number("max", Some(v), lo..=hi))?;
+            if parts.is_empty() {
+                return Err("adaptive layers follow the objects' surfaces, and the plate has none".into());
+            }
+            let meshes: Vec<&Mesh> = parts.iter().collect();
+            Some(crate::heights::from_tops(&crate::slice::adaptive_tops(&meshes, profile.first_layer_height, min, max)?))
+        }
+        "smooth" => {
+            let radius = number("radius", a.radius.or(Some(2.0)), 0.1..=50.0)?;
+            if now.is_empty() {
+                return Err("there are no layer heights by hand to smooth: \"set\" or \"adaptive\" first".into());
+            }
+            Some(crate::heights::smooth(&now, radius, top))
+        }
+        _ => None,
+    };
+    if let Some(points) = &points {
+        check_heights(points)?;
+    }
+    s.scene_mut().layer_heights = points.clone().map(std::sync::Arc::new);
+    // What the tallest object gets: its layer count and the thinnest and thickest of them.
+    let nozzle_hi = (0.8 * profile.nozzle).min(hi);
+    let tops = match &points {
+        Some(c) => crate::heights::tops(c, profile.first_layer_height, top, lo, nozzle_hi)?,
+        None => {
+            let n = if top <= profile.first_layer_height {
+                1
+            } else {
+                1 + ((top - profile.first_layer_height) / profile.layer_height).ceil() as usize
+            };
+            (0..n).map(|k| profile.first_layer_height + profile.layer_height * k as f64).collect()
+        }
+    };
+    let thick: Vec<f64> = tops.windows(2).map(|w| w[1] - w[0]).collect();
+    let micron = |x: f64| (x * 1000.0).round() / 1000.0;
+    Ok(json!({
+        "layer_heights": points,
+        "layers": tops.len(),
+        "thinnest": micron(thick.iter().copied().fold(profile.first_layer_height, f64::min)),
+        "thickest": micron(thick.iter().copied().fold(profile.first_layer_height, f64::max)),
+    }))
 }
 
 #[derive(Deserialize)]
@@ -730,6 +857,65 @@ mod tests {
         // Rubbed out, it is back at the rear.
         s.execute("paint", &json!({"id": 1, "kind": "none"})).unwrap();
         assert_eq!(start(&sliced(&mut s, profile)), rear);
+    }
+
+    /// Each layer's height on the plate, as the G-code moves to it.
+    fn layer_zs(g: &str) -> Vec<f64> {
+        (0..)
+            .map_while(|k| g.contains(&format!(";LAYER:{k}\n")).then(|| layer(g, k)))
+            .map(|l| l.lines().find_map(|x| x.strip_prefix("G1 Z")?.split(' ').next()?.parse::<f64>().ok()).unwrap_or(f64::NAN))
+            .collect()
+    }
+
+    #[test]
+    fn layer_heights_by_hand_print_as_set_are_kept_in_projects_and_undo() {
+        let mut s = session();
+        s.execute("add_primitive", &json!({"kind": "box", "size": [10, 10, 10]})).unwrap();
+        // 0.2 mm layers, and 0.1 mm from 4 to 6 mm up: 20 + 20 + 20.
+        let r = s.execute("layer_heights", &json!({"action": "set", "from": 4, "to": 6, "height": 0.1})).unwrap();
+        assert_eq!((r["layers"].clone(), r["thinnest"].as_f64().unwrap()), (json!(60), 0.1), "{r}");
+        let zs = layer_zs(&sliced(&mut s, json!({"skirt_loops": 0})));
+        assert_eq!(zs.len(), 60, "{zs:?}");
+        for w in zs.windows(2) {
+            let (middle, h) = ((w[0] + w[1]) / 2.0, w[1] - w[0]);
+            let want = if (4.0..6.0).contains(&middle) { 0.1 } else { 0.2 };
+            assert!((h - want).abs() < 2e-3, "the layer at {} is {h} thick", w[1]);
+        }
+        assert!(s.execute("info", &json!({})).unwrap()["layer_heights"].is_array());
+        // Kept in a project; one undo takes it back, and the box slices as before.
+        let path = std::env::temp_dir().join(format!("lamina-heights-{}.lamina", std::process::id()));
+        s.execute("save", &json!({"path": path})).unwrap();
+        let mut t = session();
+        t.execute("open", &json!({"path": path})).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(t.scene.layer_heights, s.scene.layer_heights);
+        s.execute("undo", &json!({})).unwrap();
+        assert!(s.scene.layer_heights.is_none());
+        assert_eq!(layer_zs(&sliced(&mut s, json!({"skirt_loops": 0}))).len(), 50);
+        // Adaptive on a ball, then smoothed: thinner layers near its top and bottom, all within the limits.
+        s.execute("add_primitive", &json!({"kind": "sphere", "radius": 8})).unwrap();
+        s.execute("delete", &json!({"id": 1})).unwrap();
+        let r = s.execute("layer_heights", &json!({"action": "adaptive", "min": 0.08, "max": 0.3})).unwrap();
+        assert!(r["thinnest"].as_f64().unwrap() < 0.1 && r["thickest"].as_f64().unwrap() > 0.25, "{r}");
+        let r = s.execute("layer_heights", &json!({"action": "smooth", "radius": 1})).unwrap();
+        // Between what 0.3 mm and 0.08 mm layers give a ball 16 mm tall.
+        let layers = r["layers"].as_u64().unwrap();
+        assert!(layers > 16 * 10 / 3 && layers < 16 * 100 / 8, "{layers}");
+        s.execute("layer_heights", &json!({"action": "clear"})).unwrap();
+        assert!(s.scene.layer_heights.is_none());
+        for bad in [
+            json!({"action": "set", "from": 4, "to": 6}),
+            json!({"action": "set", "from": 6, "to": 4, "height": 0.1}),
+            json!({"action": "set", "from": 4, "to": 6, "height": 5}),
+            json!({"action": "set", "from": -1, "to": 6, "height": 0.1}),
+            json!({"action": "smooth"}),
+            json!({"action": "clear", "radius": 2}),
+            json!({"action": "adaptive", "height": 0.1}),
+            json!({"action": "thinner"}),
+            json!({"action": "clear", "colour": 1}),
+        ] {
+            assert!(s.execute("layer_heights", &bad).is_err(), "{bad}");
+        }
     }
 
     #[test]

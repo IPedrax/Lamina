@@ -5,6 +5,7 @@ pub mod commands;
 pub mod expr;
 pub mod gap;
 pub mod geom;
+pub mod heights;
 pub mod import;
 pub mod infill;
 pub mod paint;

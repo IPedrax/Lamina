@@ -150,11 +150,13 @@ pub struct Plate<'a> {
     pub paint: &'a [Option<std::sync::Arc<Vec<u8>>>],
     /// The support enforcers and blockers where they stand.
     pub modifiers: &'a [(Modifier, Mesh)],
+    /// Layer heights by hand (`heights`), for the whole plate; empty for the profile's.
+    pub heights: &'a [[f64; 2]],
 }
 
 /// The same, with all the plate holds: settings by height, paint and modifiers.
 pub fn gcode_plate<'a>(plate: &Plate<'a>, p: &'a Profile) -> Result<Output, String> {
-    let Plate { objects, own, ranges, paint, modifiers } = *plate;
+    let Plate { objects, own, ranges, paint, modifiers, heights } = *plate;
     for r in ranges.iter().flatten() {
         r.2.check()?;
     }
@@ -198,8 +200,13 @@ pub fn gcode_plate<'a>(plate: &Plate<'a>, p: &'a Profile) -> Result<Output, Stri
         (0..objects.len()).map(|i| own.get(i).and_then(Option::as_ref).unwrap_or(p).extruder.saturating_sub(1) as usize).collect();
     let sequence = if p.sequential { Some(one_at_a_time(objects, &tools, p)?) } else { None };
     let w = p.line_width();
-    // Adaptive layers are the plate's, chosen from every object's surfaces, so the objects' layers stay level with each other.
-    let tops = if p.adaptive_layers {
+    // Layers by hand, or adaptive layers, are the plate's (adaptive ones chosen from every object's surfaces), so the objects'
+    // layers stay level with each other. Each height by hand is kept to what the nozzle prints.
+    let tops = if !heights.is_empty() {
+        let top = objects.iter().filter_map(|(_, m)| m.bounds()).map(|(_, hi)| hi[2]).fold(0.0, f64::max);
+        let (lo, hi) = (lamina_core::scene::LAYER_HEIGHTS.0, (0.8 * p.nozzle).min(lamina_core::scene::LAYER_HEIGHTS.1));
+        Some(crate::heights::tops(heights, p.first_layer_height, top, lo, hi)?)
+    } else if p.adaptive_layers {
         let meshes: Vec<&Mesh> = objects.iter().map(|(_, m)| m).collect();
         Some(slice::adaptive_tops(&meshes, p.first_layer_height, p.min_layer_height, p.layer_height)?)
     } else {
