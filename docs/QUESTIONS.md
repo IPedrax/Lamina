@@ -143,11 +143,9 @@ Every P0 and P1 item is done except 0.2 (below). Of P2, these were left for a de
   measuring them needs calipers. Not possible from a cloud session; nothing here has touched a printer. The golden G-code tests
   (0.1) guard the output meanwhile. `lamina-cli slice` makes the three files when you are ready.
 
-## Not run: the picture of the window
+## The picture of the window: drawn on a software adapter
 
-- `picture_of_the_window` (apps/lamina) needs a graphics adapter, which the session lacks, so no new screenshot was made of the
-  File menu, the printer connection or the new print settings. `docs/lamina-window.png` is the old one. Installing Mesa's software
-  Vulkan driver to get an adapter was not allowed in this session.
-- So the user guide (8.3) shows pictures from Lamina's own CPU renderer instead: the plate in the 3D view and the 3D G-code preview
-  (`docs/images/`, drawn by `cargo test -p lamina --lib -- --ignored docs_pictures`). A picture of the whole window should be added
-  to it from a machine with a graphics card.
+- Since the 2026-11-24 run the window is drawn to pictures with Mesa's software Vulkan driver (lavapipe, `apt-get install
+  mesa-vulkan-drivers`), which the session was allowed to install: `picture_of_the_window` made a new `docs/lamina-window.png`,
+  and `pictures_of_menus_and_dialogs` draws every menu, the dialogs and the settings in each language. The GPU path of the 3D view
+  (`gpu.rs`) is still drawn by the processor in a test harness, so its ignored comparison tests were not run on a real card.

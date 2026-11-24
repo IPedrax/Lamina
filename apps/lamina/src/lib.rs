@@ -498,8 +498,10 @@ impl App {
             ui.horizontal(|ui| self.preset_picker(ui, Kind::Process));
             ui.end_row();
         });
-        ui.horizontal(|ui| {
-            ui.add(egui::TextEdit::singleline(&mut self.preset_name).hint_text(t("Preset name")).desired_width(110.0));
+        // The name on a row of its own and the buttons wrapping, so longer words in a translation neither cut the hint short nor
+        // widen the panel.
+        ui.add(egui::TextEdit::singleline(&mut self.preset_name).hint_text(t("Preset name")).desired_width(f32::INFINITY));
+        ui.horizontal_wrapped(|ui| {
             let name = self.preset_name.clone();
             if ui.button(t("Save printer")).on_hover_text(t("Save the plate, nozzle, G-code and retraction shown")).clicked() {
                 self.save_preset(Kind::Printer, &name);
@@ -2438,6 +2440,24 @@ mod tests {
         }
     }
 
+    /// The plate panel grows to its widest row, so a translation's longer words take room from the 3D view: in Portuguese and
+    /// Spanish it keeps at least 90 % of the width it has in English, with a picked object's tools and the print settings shown.
+    #[test]
+    fn translations_leave_the_3d_view_most_of_its_width() {
+        let width = |language: lang::Lang| {
+            let mut h = window();
+            h.state_mut().lang = language;
+            h.run();
+            press(&mut h, t("Add box"));
+            h.state().view.rect.unwrap().width()
+        };
+        let english = width(lang::Lang::English);
+        for language in [lang::Lang::Portuguese, lang::Lang::Spanish] {
+            let w = width(language);
+            assert!(w >= 0.9 * english, "{language:?}: the 3D view is {w} wide, against {english} in English");
+        }
+    }
+
     #[test]
     fn open_sections_stay_open_and_closed_ones_closed_when_the_language_changes() {
         // Tall, so the plate panel needs no scrolling to the headers clicked.
@@ -3001,5 +3021,90 @@ fill_angle = 45
         h.run();
         press(&mut h, "Slice");
         h.render().unwrap().save(out.replace(".png", "-preview.png")).unwrap();
+    }
+
+    /// Pictures of the menus, the dialogs and every section open, in each language, to see that the longer words of a translation
+    /// still fit: `target/lamina-ui/<language>-<what>.png`, or under `LAMINA_PICTURES`. Ignored, as it needs a graphics adapter
+    /// (Mesa's lavapipe will do: `cargo test -p lamina --lib -- --ignored pictures_of_menus_and_dialogs`).
+    #[test]
+    #[ignore = "needs a graphics adapter"]
+    fn pictures_of_menus_and_dialogs() {
+        let dir = std::path::PathBuf::from(std::env::var("LAMINA_PICTURES").unwrap_or_else(|_| "target/lamina-ui".into()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for language in lang::Lang::ALL {
+            let app = App::new(session(), Arc::new(lamina_assistant::testing::Fake::default()));
+            let mut h = Harness::builder().with_size([1400.0, 860.0]).build_ui_state(|ui, app: &mut App| app.show(ui), app);
+            h.state_mut().lang = language;
+            h.run();
+            let shot = |h: &mut Harness<App>, what: &str| {
+                h.run();
+                h.render().unwrap().save(dir.join(format!("{}-{what}.png", language.code()))).unwrap();
+            };
+            // `t` reads the language the window last drew in, so each label is clicked by its translation.
+            let click = |h: &mut Harness<App>, english: &str| {
+                let label = t(english).to_string();
+                h.get_by_label(&label).click();
+                h.run();
+            };
+            let close = |h: &mut Harness<App>| {
+                h.key_press(Key::Escape);
+                h.run();
+            };
+            click(&mut h, "Add box");
+            click(&mut h, "Add cylinder");
+            for menu in ["File", "Edit", "View"] {
+                click(&mut h, menu);
+                shot(&mut h, &menu.to_lowercase());
+                if menu == "View" {
+                    h.get_by_label_contains(t("Keyboard shortcuts")).hover();
+                    shot(&mut h, "shortcuts");
+                }
+                close(&mut h);
+            }
+            click(&mut h, "More shapes");
+            shot(&mut h, "shapes");
+            close(&mut h);
+            let row = h.state().session.scene.objects[0].name.clone();
+            h.get_by_label_contains(&format!("{row}  ")).click_secondary();
+            shot(&mut h, "object-menu");
+            close(&mut h);
+            // Every section of the plate panel open, scrolled down a screen at a time.
+            for section in ["This object's settings", "Cut into pieces", "Printer connection", "Agents"] {
+                click(&mut h, section);
+            }
+            for (k, group) in [
+                "Speeds",
+                "Retraction and travel",
+                "Skirt",
+                "Cooling",
+                "Surface",
+                "Support details",
+                "Extruders",
+                "One at a time",
+                "Machine",
+            ]
+            .into_iter()
+            .chain(["Start and end G-code"])
+            .enumerate()
+            {
+                h.get_by_label(t(group)).scroll_to_me();
+                h.run();
+                click(&mut h, group);
+                if k % 3 == 2 {
+                    shot(&mut h, &format!("settings-{}", k / 3));
+                }
+            }
+            shot(&mut h, "settings-end");
+            h.state_mut().ask = Some(files::Pending::Close);
+            shot(&mut h, "unsaved");
+            h.state_mut().ask = None;
+            h.state_mut().recovery = Some(PathBuf::from("autosave.lamina"));
+            shot(&mut h, "recovery");
+            h.state_mut().recovery = None;
+            h.get_by_label(t("Slice")).click();
+            h.step();
+            h.state_mut().wait();
+            shot(&mut h, "preview");
+        }
     }
 }
