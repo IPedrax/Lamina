@@ -431,6 +431,39 @@ impl Transform {
         self.m.iter().flatten().chain(self.t.iter()).all(|c| c.is_finite())
     }
 
+    /// The matrix split into a turn and a stretch, `m = turn x stretch` (the polar decomposition, by Newton's iteration on the turn:
+    /// the mean of it and its inverse transposed). The turn is a rotation (its determinant 1); a mirror stays in the stretch, as a
+    /// negative scale does in Blender. None for a matrix that flattens.
+    pub fn polar(&self) -> Option<(Transform, [[f64; 3]; 3])> {
+        let det = self.det();
+        if !det.is_finite() || det.abs() <= 1e-12 {
+            return None;
+        }
+        let sign = det.signum();
+        let mut r = self.m.map(|row| row.map(|v| v * sign));
+        for _ in 0..64 {
+            let d = Transform { m: r, t: [0.0; 3] }.det();
+            if d.abs() <= 1e-300 {
+                return None;
+            }
+            // The inverse transposed is the cofactor matrix over the determinant.
+            let c = |i: usize, j: usize| {
+                let (a, b) = ((i + 1) % 3, (i + 2) % 3);
+                let (x, y) = ((j + 1) % 3, (j + 2) % 3);
+                r[a][x] * r[b][y] - r[a][y] * r[b][x]
+            };
+            let next: [[f64; 3]; 3] = std::array::from_fn(|i| std::array::from_fn(|j| (r[i][j] + c(i, j) / d) / 2.0));
+            let moved = (0..3).flat_map(|i| (0..3).map(move |j| (i, j))).map(|(i, j)| (next[i][j] - r[i][j]).abs()).fold(0.0, f64::max);
+            r = next;
+            if moved < 1e-14 {
+                break;
+            }
+        }
+        // stretch = turn transposed x m
+        let stretch: [[f64; 3]; 3] = std::array::from_fn(|i| std::array::from_fn(|j| (0..3).map(|k| r[k][i] * self.m[k][j]).sum()));
+        Some((Transform { m: r, t: [0.0; 3] }, stretch))
+    }
+
     /// The determinant of the matrix: how much it scales volume, negative when it mirrors.
     pub fn det(&self) -> f64 {
         let m = &self.m;
@@ -591,5 +624,22 @@ mod tests {
             .map(|v| f64::from(v[0]).hypot(f64::from(v[1])))
             .collect();
         assert!(ends.iter().all(|r| (r - (4.0 - depth)).abs() < 1e-4), "{ends:?}");
+    }
+
+    #[test]
+    fn a_matrix_splits_into_its_turn_and_its_stretch() {
+        let xf = Transform::scale([2.0, 1.0, 0.5]).then(&Transform::rotate_axis([1.0, 2.0, 3.0], 40.0));
+        let (turn, stretch) = xf.polar().unwrap();
+        assert!((turn.det() - 1.0).abs() < 1e-12);
+        let back = Transform { m: stretch, t: [0.0; 3] }.then(&turn);
+        for (r, c) in (0..3).flat_map(|r| (0..3).map(move |c| (r, c))) {
+            assert!((back.m[r][c] - xf.m[r][c]).abs() < 1e-12);
+            assert!((stretch[r][c] - stretch[c][r]).abs() < 1e-12, "the stretch is symmetric");
+        }
+        let flat = Transform::scale([1.0, 0.0, 1.0]);
+        assert!(flat.polar().is_none());
+        let mirrored = Transform::scale([-1.0, 1.0, 1.0]).then(&Transform::rotate(2, 30.0));
+        let (turn, stretch) = mirrored.polar().unwrap();
+        assert!(turn.det() > 0.0 && Transform { m: stretch, t: [0.0; 3] }.det() < 0.0, "the mirror stays in the stretch");
     }
 }

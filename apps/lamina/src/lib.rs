@@ -1709,21 +1709,9 @@ impl App {
             (self.failed, self.status) = (true, note);
         }
         if let Some((ids, change)) = &shown.moved {
-            use crate::view3d::Change;
-            // One command for each picked object, in one transaction, so one undo takes the whole drag back.
-            let (label, commands): (&str, Vec<(&str, Value)>) = match *change {
-                Change::Move(by) => ("move", ids.iter().map(|&id| ("move", json!({ "id": id, "by": by }))).collect()),
-                Change::Turn(axis, degrees) => {
-                    let axis = ["x", "y", "z"][axis.min(2)];
-                    ("rotate", ids.iter().map(|&id| ("rotate", json!({ "id": id, "axis": axis, "degrees": degrees }))).collect())
-                }
-                Change::Scale(f) => ("scale", ids.iter().map(|&id| ("scale", json!({ "id": id, "factor": f }))).collect()),
-                Change::Stretch(axis, f) => {
-                    let mut by = [1.0; 3];
-                    by[axis.min(2)] = f;
-                    ("scale", ids.iter().map(|&id| ("scale", json!({ "id": id, "by": by }))).collect())
-                }
-            };
+            // One command (or two, about the middle of them all) for each picked object, in one transaction, so one undo takes the
+            // whole drag back.
+            let (label, commands) = view3d::commands_for(*change, ids, &self.session.scene, self.view.pivot, &self.view.axes);
             self.run_all(label, commands);
         }
         if let Some((id, face)) = shown.face
@@ -2569,6 +2557,67 @@ mod tests {
         h.key_press(Key::G);
         h.run();
         assert!(h.state().view.modal.is_none() && h.state().view.tool == view3d::Tool::Move);
+    }
+
+    #[test]
+    fn a_turn_goes_about_each_middle_or_the_middle_of_all_and_moves_go_along_an_objects_own_axes() {
+        let mut h = window();
+        let app = h.state_mut();
+        app.run("add_primitive", json!({"kind": "box", "size": [20, 10, 10], "at": [-20, 0]}));
+        app.run("add_primitive", json!({"kind": "box", "size": [20, 10, 10], "at": [20, 0]}));
+        app.selected = vec![1, 2];
+        h.run();
+        let middle = h.state().view.rect.unwrap().center();
+        let keyed = |h: &mut Harness<App>, keys: &[Key], text: &str| {
+            h.hover_at(middle);
+            h.run();
+            for &k in keys {
+                h.key_press(k);
+                h.run();
+            }
+            h.event(egui::Event::Text(text.to_string()));
+            h.run();
+            h.key_press(Key::Enter);
+            h.run();
+        };
+        let centre = |h: &Harness<App>, id: u32| {
+            let (lo, hi) = h.state().session.scene.get(id).unwrap().bounds().unwrap();
+            [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, hi[0] - lo[0]]
+        };
+        let near = |a: [f64; 3], b: [f64; 3]| a.iter().zip(&b).all(|(x, y)| (x - y).abs() < 1e-4);
+        // Each about its own middle: they turn where they stand.
+        keyed(&mut h, &[Key::R], "90");
+        assert!(near(centre(&h, 1), [-20.0, 0.0, 10.0]) && near(centre(&h, 2), [20.0, 0.0, 10.0]), "{:?}", centre(&h, 1));
+        press(&mut h, "Undo");
+        // About the middle of both: they swing round it, in one undo step.
+        h.state_mut().view.pivot = view3d::Pivot::Middle;
+        keyed(&mut h, &[Key::R], "90");
+        assert!(
+            near(centre(&h, 1), [0.0, -20.0, 10.0]) && near(centre(&h, 2), [0.0, 20.0, 10.0]),
+            "{:?} {:?}",
+            centre(&h, 1),
+            centre(&h, 2)
+        );
+        press(&mut h, "Undo");
+        assert!(near(centre(&h, 1), [-20.0, 0.0, 20.0]), "one step: {:?}", centre(&h, 1));
+        // Along its own axes: a box turned 30 degrees moves 10 mm along its own x.
+        h.state_mut().view.pivot = view3d::Pivot::Each;
+        h.state_mut().run("rotate", json!({"id": 1, "axis": "z", "degrees": 30}));
+        h.state_mut().selected = vec![1];
+        h.state_mut().view.orientation = view3d::Orientation::Own;
+        h.run();
+        let before = centre(&h, 1);
+        keyed(&mut h, &[Key::G, Key::X], "10");
+        let after = centre(&h, 1);
+        let (c, s) = (30f64.to_radians().cos(), 30f64.to_radians().sin());
+        assert!((after[0] - before[0] - 10.0 * c).abs() < 1e-4 && (after[1] - before[1] - 10.0 * s).abs() < 1e-4, "{before:?} {after:?}");
+        // Alt+R takes its turn away, Alt+G puts it in the middle of the plate.
+        h.key_press_modifiers(egui::Modifiers::ALT, Key::R);
+        h.run();
+        assert!(near([0.0, 0.0, centre(&h, 1)[2]], [0.0, 0.0, 20.0]), "{:?}", centre(&h, 1));
+        h.key_press_modifiers(egui::Modifiers::ALT, Key::G);
+        h.run();
+        assert!(near(centre(&h, 1), [0.0, 0.0, 20.0]), "{:?}", centre(&h, 1));
     }
 
     #[test]

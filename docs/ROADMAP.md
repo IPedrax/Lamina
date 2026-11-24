@@ -137,6 +137,14 @@ Priorities:
   tool for a tapped hole, `clearance` (0.2 mm a side) wider. At most 24,000 triangles, so a boolean with it stays within its limit.
   Tested: every corner on the profile, the volume of the profile's area swept round within 2 %, an M8 nut cut and an M6 bolt joined,
   both closed and of the right volume; in More shapes and the modelling skill. Not printed.
+- **3.16 Pivot, orientation and clearing a transform.** `reset_transform {id, what}` clears an object's location, turn or scale
+  (Blender's Alt+G, R, S, which the window binds), from the polar decomposition of its matrix (`Transform::polar`: a turn and a
+  symmetric stretch, a mirror kept in the stretch); `rotate` takes a vector axis. In the window, View chooses what turns and scales
+  go about (each object's own middle, or the middle of all picked, which swings them round together through a move of each) and
+  which axes the gizmo and the X, Y, Z keys follow (the plate's, or the picked object's own, its turn without its scale); a
+  one-axis stretch stays along the plate's axes. Tested: the decomposition puts its matrix back, reset clears each part and keeps
+  the rest (a mirror too), two boxes turned about their shared middle swap ends in one undo step, a box turned 30 degrees moves
+  along its own x, and Alt+R and Alt+G clear its turn and place.
 - **4.1 Supports.** `crates/slicer/src/support.rs`: where a layer leans past `support_angle` from vertical, all of it that is over
   air is held up; overhangs are carried down to the model or the plate (`support`: `off`, `everywhere`, `from_plate`), keep
   `support_xy_gap` from the walls and stop `support_z_gap` below the model, with `support_interface_layers` of denser lines on top.
@@ -473,12 +481,6 @@ and one Klipper printer, measure with calipers, fill in the tables, and fix what
 ## 2. Meshes
 
 ## 3. Modelling
-
-**3.16 Pivot, orientation and clearing a transform (P2).** Blender turns and scales about the median point, the box's centre, each
-object's own origin or the 3D cursor (its Pivot Point menu), moves along the global or the object's own axes (Transform
-Orientations), and clears location, rotation or scale with Alt+G, R, S. Lamina turns each object about its own centre and moves
-along the plate's axes. How: a pivot choice in the view (median, each its own) for the gizmo's rings and square; local axes for the
-gizmo from the object's transform; `reset_transform {id, what}`.
 
 ## 4. Slicer
 

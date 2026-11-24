@@ -33,7 +33,9 @@ with `move {id, by: [x, y, 0]}`.
   Say so when a part needs a fillet these cannot give.
 - Place and reshape: `move`, `rotate` (about the object's centre, then it is set back on the plate), `scale` (positive factors,
   one per axis with `by`, so a sphere can become an ellipsoid and a cylinder a disc), `mirror {id, axis}` (a left part from a right
-  one), `drop_to_bed`, `delete`, `undo`, `redo`.
+  one), `drop_to_bed`, `delete`, `undo`, `redo`. `rotate` also takes a vector axis (`axis: [1, 1, 0]`) for a tilted turn.
+  `reset_transform {id, what: "rotation"}` takes back every turn since the object was made (`"scale"` its scaling, `"location"`
+  puts it in the middle of the plate, `"all"` the three).
 - `lay_flat {id, face}` turns an object so one of its triangles lies on the plate (the user usually clicks the face in the window);
   `measure {a, b}` gives the distance between two points.
 - Several parts: `duplicate {id, count?}` makes copies and lays the plate out; `arrange {}` lays every object out in rows, none

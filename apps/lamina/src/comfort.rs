@@ -37,6 +37,7 @@ pub const SHORTCUTS: &[(&str, &str)] = &[
     ("Ctrl", ui_msg!("While moving, turning or scaling: snap to steps")),
     ("1, 3, 7", ui_msg!("Over the 3D view: look from the front, the right, the top; with Ctrl, the back, the left, the bottom")),
     ("Home, .", ui_msg!("Frame everything, or the picked objects")),
+    ("Alt+G, Alt+R, Alt+S", ui_msg!("Clear the picked objects' place, turn or scale")),
     ("G", ui_msg!("Move tool: pick and drag, turn with the rings, scale with the square")),
     ("L", ui_msg!("Lay flat tool: click a face to turn it down")),
     ("M", ui_msg!("Measure tool: click two points")),
@@ -60,6 +61,14 @@ impl App {
             return;
         }
         let plain = |k: Key| ctx.input(|i| i.modifiers.is_none() && i.key_pressed(k));
+        // Alt+G, Alt+R and Alt+S clear the picked objects' place, turn or scale, as Blender's do.
+        for (key, what) in [(Key::G, "location"), (Key::R, "rotation"), (Key::S, "scale")] {
+            if ctx.input(|i| i.modifiers.alt && !i.modifiers.command && !i.modifiers.shift && i.key_pressed(key)) {
+                let commands = self.selected.iter().map(|&id| ("reset_transform", json!({ "id": id, "what": what }))).collect();
+                self.run_all("reset_transform", commands);
+                return;
+            }
+        }
         // G, R and S with the pointer over the 3D view and objects picked: a transform that follows the pointer, as Blender's.
         let over = ctx.input(|i| i.pointer.hover_pos()).filter(|p| self.view.rect.is_some_and(|r| r.contains(*p)));
         if let Some(start) = over
@@ -255,6 +264,14 @@ impl App {
             for language in Lang::ALL {
                 ui.radio_value(&mut self.lang, language, language.label());
             }
+            ui.separator();
+            use crate::view3d::{Orientation, Pivot};
+            ui.label(t("Turn and scale about"));
+            ui.radio_value(&mut self.view.pivot, Pivot::Each, t("Each object's own middle"));
+            ui.radio_value(&mut self.view.pivot, Pivot::Middle, t("The middle of all picked"));
+            ui.label(t("Move and turn along"));
+            ui.radio_value(&mut self.view.orientation, Orientation::Plate, t("The plate's axes"));
+            ui.radio_value(&mut self.view.orientation, Orientation::Own, t("The picked object's own axes"));
             ui.separator();
             let processor = ui
                 .checkbox(&mut self.view.card.cpu, t("Draw the 3D view on the processor"))

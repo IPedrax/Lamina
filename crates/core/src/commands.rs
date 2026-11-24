@@ -62,8 +62,15 @@ pub static ALL: &[Command] = &[
     cmd("move", "{id, by:[x,y,z]} moves an object by mm", move_by, true, Files::None),
     cmd(
         "rotate",
-        "{id, axis:\"x\"|\"y\"|\"z\", degrees} turns an object about its own centre, then sets it back on the plate",
+        "{id, axis:\"x\"|\"y\"|\"z\"|[x,y,z] (a vector, for a tilted axis), degrees} turns an object about its own centre, then sets it back on the plate",
         rotate,
+        true,
+        Files::None,
+    ),
+    cmd(
+        "reset_transform",
+        "{id, what:\"location\"|\"rotation\"|\"scale\"|\"all\"} clears what moves, turns or scales an object since it was made, as Blender's Alt+G, Alt+R and Alt+S: location puts it in the middle of the plate; rotation keeps its size and place but takes its turn away; scale keeps its turn and place but its own size; all does the three. It is set back on the plate. A mirror is kept by rotation and lost by scale",
+        reset_transform,
         true,
         Files::None,
     ),
@@ -659,8 +666,16 @@ fn move_by(s: &mut Session, p: &Value) -> Result<Value, String> {
 #[serde(deny_unknown_fields)]
 struct Rotate {
     id: u32,
-    axis: String,
+    axis: Axis,
     degrees: f64,
+}
+
+/// An axis by name, or as a vector (an object's own axis, as the window's local orientation gives it).
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Axis {
+    Named(String),
+    Vector([f64; 3]),
 }
 
 fn rotate(s: &mut Session, p: &Value) -> Result<Value, String> {
@@ -668,13 +683,54 @@ fn rotate(s: &mut Session, p: &Value) -> Result<Value, String> {
     if !a.degrees.is_finite() {
         return Err("`degrees` must be a finite number".into());
     }
-    let axis = match a.axis.as_str() {
-        "x" => 0,
-        "y" => 1,
-        "z" => 2,
-        other => return Err(format!("unknown axis `{other}`: x, y or z")),
+    let turn = match a.axis {
+        Axis::Named(name) => match name.as_str() {
+            "x" => Transform::rotate(0, a.degrees),
+            "y" => Transform::rotate(1, a.degrees),
+            "z" => Transform::rotate(2, a.degrees),
+            other => return Err(format!("unknown axis `{other}`: x, y or z, or a vector [x, y, z]")),
+        },
+        Axis::Vector(v) => {
+            let len = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+            if !(1e-9..=1e6).contains(&len) {
+                return Err("an axis vector must be finite and not zero".into());
+            }
+            Transform::rotate_axis(v, a.degrees)
+        }
     };
-    about_centre(s.scene_mut().get_mut(a.id)?, &Transform::rotate(axis, a.degrees))?;
+    about_centre(s.scene_mut().get_mut(a.id)?, &turn)?;
+    Ok(json!({}))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Reset {
+    id: u32,
+    what: String,
+}
+
+/// Clears an object's location, its turn or its scale, as Blender's Alt+G, Alt+R and Alt+S do. Its turn and its scale are the
+/// polar decomposition of its matrix (`Transform::polar`); clearing one keeps the other, about the object's middle, and it is set
+/// back on the plate. Its location is the middle of the plate.
+fn reset_transform(s: &mut Session, p: &Value) -> Result<Value, String> {
+    let a: Reset = parse(p)?;
+    let o = s.scene_mut().get_mut(a.id)?;
+    let (turn, stretch) = o.xf.polar().ok_or("the object's transform flattens it")?;
+    let m = match a.what.as_str() {
+        "location" => o.xf.m,
+        "rotation" => stretch,
+        "scale" => turn.m,
+        "all" => Transform::IDENTITY.m,
+        other => return Err(format!("`what` is location, rotation, scale or all, not `{other}`")),
+    };
+    let (lo, hi) = size_of(o)?;
+    let middle = [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, (lo[2] + hi[2]) / 2.0];
+    o.xf = Transform { m, t: o.xf.t };
+    let (lo, hi) = size_of(o)?;
+    let now = [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0];
+    let to = if matches!(a.what.as_str(), "location" | "all") { [0.0, 0.0] } else { [middle[0], middle[1]] };
+    o.xf = o.xf.then(&Transform::translate([to[0] - now[0], to[1] - now[1], 0.0]));
+    settle(o)?;
     Ok(json!({}))
 }
 
@@ -1644,5 +1700,53 @@ mod tests {
         assert!(s.execute("set_modifier", &json!({"id": 9, "kind": "none"})).is_err());
         s.undo().unwrap();
         assert_eq!(s.scene.get(2).unwrap().modifier, Some(crate::Modifier::SupportBlocker), "one undo step");
+    }
+
+    #[test]
+    fn reset_transform_clears_location_turn_or_scale_and_keeps_the_rest() {
+        let mut s = Session::new();
+        s.execute("add_primitive", &json!({"kind": "box", "size": [20, 20, 10]})).unwrap();
+        let size = |s: &Session| {
+            let (lo, hi) = s.scene.get(1).unwrap().bounds().unwrap();
+            [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]]
+        };
+        let middle = |s: &Session| {
+            let (lo, hi) = s.scene.get(1).unwrap().bounds().unwrap();
+            [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, lo[2]]
+        };
+        let near = |a: [f64; 3], b: [f64; 3]| a.iter().zip(&b).all(|(x, y)| (x - y).abs() < 1e-4);
+        s.execute("scale", &json!({"id": 1, "by": [2, 1, 1]})).unwrap();
+        s.execute("rotate", &json!({"id": 1, "axis": [0, 0, 1], "degrees": 30})).unwrap();
+        s.execute("move", &json!({"id": 1, "by": [30, 10, 0]})).unwrap();
+        let (turned, at) = (size(&s), middle(&s));
+        assert!(near(turned, [40.0 * 30f64.to_radians().cos() + 20.0 * 0.5, 40.0 * 0.5 + 20.0 * 30f64.to_radians().cos(), 10.0]));
+        // Its turn taken away: 40 x 20 again, where it stood.
+        s.execute("reset_transform", &json!({"id": 1, "what": "rotation"})).unwrap();
+        assert!(near(size(&s), [40.0, 20.0, 10.0]) && near(middle(&s), at), "{:?} {:?}", size(&s), middle(&s));
+        s.undo().unwrap();
+        // Its scale taken away: the 20 mm square, still turned 30 degrees.
+        s.execute("reset_transform", &json!({"id": 1, "what": "scale"})).unwrap();
+        let w = 20.0 * (30f64.to_radians().cos() + 0.5);
+        assert!(near(size(&s), [w, w, 10.0]) && near(middle(&s), at), "{:?}", size(&s));
+        s.undo().unwrap();
+        s.execute("reset_transform", &json!({"id": 1, "what": "location"})).unwrap();
+        assert!(near(middle(&s), [0.0, 0.0, 0.0]) && near(size(&s), turned));
+        s.execute("reset_transform", &json!({"id": 1, "what": "all"})).unwrap();
+        assert!(near(size(&s), [20.0, 20.0, 10.0]) && near(middle(&s), [0.0, 0.0, 0.0]));
+        // A mirror stays when the turn goes.
+        s.execute("mirror", &json!({"id": 1, "axis": "x"})).unwrap();
+        s.execute("rotate", &json!({"id": 1, "axis": "z", "degrees": 45})).unwrap();
+        s.execute("reset_transform", &json!({"id": 1, "what": "rotation"})).unwrap();
+        assert!(s.scene.get(1).unwrap().xf.det() < 0.0 && near(size(&s), [20.0, 20.0, 10.0]));
+        // A named axis and its vector turn alike; bad requests change nothing.
+        let mut t = Session::new();
+        t.execute("add_primitive", &json!({"kind": "box", "size": [30, 10, 10]})).unwrap();
+        t.execute("rotate", &json!({"id": 1, "axis": [0, 0, 2], "degrees": 90})).unwrap();
+        assert!(near(size(&t), [10.0, 30.0, 10.0]));
+        for bad in [json!({"id": 1, "what": "colour"}), json!({"id": 7, "what": "all"})] {
+            assert!(t.execute("reset_transform", &bad).is_err());
+        }
+        assert!(t.execute("rotate", &json!({"id": 1, "axis": [0, 0, 0], "degrees": 9})).is_err());
+        assert!(t.execute("rotate", &json!({"id": 1, "axis": "w", "degrees": 9})).is_err());
     }
 }

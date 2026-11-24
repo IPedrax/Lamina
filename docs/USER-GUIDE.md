@@ -82,6 +82,10 @@ all, set the environment variable `LAMINA_NO_UPDATE_CHECK=1`: the menu items and
   (about z) and S scales them; X, Y or Z keeps to that axis (press it again to free it), typed numbers give the exact amount (12.5
   mm, 90 degrees, 1.5 times), Ctrl snaps, and Enter or a click applies it as one undo step while Escape or a right click puts it
   back. G 12.5 Enter after X moves 12.5 mm along x; S Z 2 Enter makes them twice as tall.
+- **Alt+G**, **Alt+R** and **Alt+S** clear the picked objects' place (back to the middle of the plate), turn or scale. View, Turn
+  and scale about chooses each object's own middle or the middle of all picked (they then swing round it together), and Move and
+  turn along chooses the plate's axes or the picked object's own, for the gizmo and the G, R and X, Y, Z keys. A stretch along one
+  axis (S then X, Y or Z) is always along the plate's.
 - Over the 3D view, **1**, **3** and **7** look from the front, the right and the top (with Ctrl, the back, the left and the
   bottom), as Blender's numpad does; **Home** frames everything and **.** the picked objects.
 - Away from the 3D view, **R** turns the picked objects 90 degrees, **F** frames them, **A** arranges the plate, **Ctrl+D** duplicates, **Delete**

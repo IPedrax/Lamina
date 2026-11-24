@@ -87,13 +87,14 @@ impl Change {
         }
     }
 
-    /// The transform that makes this change to an object whose middle is `c`.
-    fn about(&self, c: P3) -> lamina_core::Transform {
+    /// The same, a turn about one of `axes`.
+    pub fn about_in(&self, c: P3, axes: &Axes) -> lamina_core::Transform {
         use lamina_core::Transform;
         let around = |t: Transform| Transform::translate(c.map(|v| -v)).then(&t).then(&Transform::translate(c));
         match *self {
             Change::Move(by) => Transform::translate(by),
-            Change::Turn(axis, degrees) => around(Transform::rotate(axis, degrees)),
+            Change::Turn(axis, degrees) if *axes == PLATE_AXES => around(Transform::rotate(axis, degrees)),
+            Change::Turn(axis, degrees) => around(Transform::rotate_axis(axes[axis.min(2)], degrees)),
             Change::Scale(f) => around(Transform::scale([f; 3])),
             Change::Stretch(axis, f) => {
                 let mut by = [1.0; 3];
@@ -102,6 +103,80 @@ impl Change {
             }
         }
     }
+}
+
+/// Three unit vectors: the axes moves and turns go along, the plate's or an object's own.
+pub type Axes = [P3; 3];
+pub const PLATE_AXES: Axes = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+
+/// What the picked objects turn and scale about: each its own middle, or the middle of them all (Blender's Individual Origins and
+/// Median Point).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Pivot {
+    #[default]
+    Each,
+    Middle,
+}
+
+/// Which axes the gizmo and the X, Y and Z keys go along: the plate's, or the picked object's own (Blender's Global and Local).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Orientation {
+    #[default]
+    Plate,
+    Own,
+}
+
+/// The commands that make `change` to the objects `ids` of `scene`, about `pivot`, along `axes`, with the undo step's label: a
+/// move, turn or scale of each (a turn about a tilted axis given as a vector), and about the middle of them all a move of each
+/// as well, so they turn or spread together. The z of that move is left to the turn or scale, which sets each object on the plate.
+pub fn commands_for(
+    change: Change,
+    ids: &[u32],
+    scene: &Scene,
+    pivot: Pivot,
+    axes: &Axes,
+) -> (&'static str, Vec<(&'static str, serde_json::Value)>) {
+    use serde_json::json;
+    let middle = |id: u32| {
+        scene.get(id).ok().and_then(|o| o.bounds()).map(|(lo, hi)| [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, (lo[2] + hi[2]) / 2.0])
+    };
+    let all = ids.iter().filter_map(|&id| scene.get(id).ok().and_then(|o| o.bounds())).reduce(|(alo, ahi), (blo, bhi)| {
+        ([alo[0].min(blo[0]), alo[1].min(blo[1]), alo[2].min(blo[2])], [ahi[0].max(bhi[0]), ahi[1].max(bhi[1]), ahi[2].max(bhi[2])])
+    });
+    let g = all.map_or([0.0; 3], |(lo, hi)| [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, (lo[2] + hi[2]) / 2.0]);
+    let mut out = Vec::new();
+    let label = match change {
+        Change::Move(_) => "move",
+        Change::Turn(..) => "rotate",
+        Change::Scale(_) | Change::Stretch(..) => "scale",
+    };
+    for &id in ids {
+        match change {
+            Change::Move(by) => out.push(("move", json!({ "id": id, "by": by }))),
+            Change::Turn(k, degrees) => {
+                let axis = if *axes == PLATE_AXES { json!(["x", "y", "z"][k.min(2)]) } else { json!(axes[k.min(2)]) };
+                out.push(("rotate", json!({ "id": id, "axis": axis, "degrees": degrees })));
+            }
+            Change::Scale(f) => out.push(("scale", json!({ "id": id, "factor": f }))),
+            Change::Stretch(k, f) => {
+                let mut by = [1.0; 3];
+                by[k.min(2)] = f;
+                out.push(("scale", json!({ "id": id, "by": by })));
+            }
+        }
+        // About the middle of them all, each object's own middle goes where the change takes it about that middle.
+        if pivot == Pivot::Middle
+            && !matches!(change, Change::Move(_))
+            && let Some(c) = middle(id)
+        {
+            let to = change.about_in(g, axes).apply(c);
+            let by = [to[0] - c[0], to[1] - c[1], 0.0];
+            if by.iter().any(|v| v.abs() > 1e-9) {
+                out.push(("move", json!({ "id": id, "by": by })));
+            }
+        }
+    }
+    (label, out)
 }
 
 /// What a transform key started: G moves, R turns, S scales.
@@ -129,14 +204,10 @@ pub struct Modal {
 
 impl Modal {
     /// The change the pointer at `now` asks for, or the typed amount when one is typed.
-    fn change(&self, camera: &Camera, rect: Rect, now: Pos2, snap: bool) -> Change {
+    fn change(&self, camera: &Camera, rect: Rect, now: Pos2, snap: bool, axes: &Axes) -> Change {
         let typed = crate::lang::parse_number(crate::lang::get(), &self.typed);
         match (self.kind, self.axis, typed) {
-            (Keyed::Move, axis, Some(v)) => {
-                let mut by = [0.0; 3];
-                by[axis.unwrap_or(0)] = v;
-                Change::Move(by)
-            }
+            (Keyed::Move, axis, Some(v)) => Change::Move(axes[axis.unwrap_or(0).min(2)].map(|c| c * v)),
             (Keyed::Turn, axis, Some(v)) => Change::Turn(axis.unwrap_or(2), v),
             (Keyed::Scale, None, Some(v)) => Change::Scale(v.clamp(0.001, 1000.0)),
             (Keyed::Scale, Some(k), Some(v)) => Change::Stretch(k, v.clamp(0.001, 1000.0)),
@@ -147,7 +218,7 @@ impl Modal {
                     (Keyed::Turn, k) => Handle::Ring(k.unwrap_or(2)),
                     (Keyed::Scale, _) => Handle::Scale,
                 };
-                match (drag_change(camera, rect, self.at, handle, self.start, now, !snap), axis) {
+                match (drag_change_in(camera, rect, self.at, handle, self.start, now, !snap, axes), axis) {
                     (Change::Scale(f), Some(k)) => Change::Stretch(k, f),
                     (c, _) => c,
                 }
@@ -205,27 +276,27 @@ pub const RING: usize = 48;
 impl Gizmo {
     /// The gizmo at `at`, seen through `camera` in `rect`; none when it is behind the eye.
     pub fn at(camera: &Camera, rect: Rect, at: P3) -> Option<Gizmo> {
+        Gizmo::at_in(camera, rect, at, &PLATE_AXES)
+    }
+
+    /// The same, its arrows and rings along `axes` (the plate's, or an object's own).
+    pub fn at_in(camera: &Camera, rect: Rect, at: P3, axes: &Axes) -> Option<Gizmo> {
         let (w, h) = (f64::from(rect.width()), f64::from(rect.height()));
         let to = |p: [f64; 3]| pos2(rect.min.x + p[0] as f32, rect.min.y + p[1] as f32);
         let o = camera.project(at, w, h)?;
         let f = (h / 2.0) / (FOV.to_radians() / 2.0).tan();
         // An arrow of `length` mm at that depth is ARROW points long on screen.
         let length = ARROW / (f * o[2]);
-        let tip = |k: usize| {
-            let mut p = at;
-            p[k] += length;
-            camera.project(p, w, h).map(to)
-        };
+        let tip = |k: usize| camera.project(add(at, axes[k].map(|v| v * length)), w, h).map(to);
         let s = length * 0.35;
         let corner = |dx: f64, dy: f64| camera.project([at[0] + dx, at[1] + dy, at[2]], w, h).map(to);
         let ring = |axis: usize| -> Option<[Pos2; RING]> {
-            let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
+            let (u, v) = (axes[(axis + 1) % 3], axes[(axis + 2) % 3]);
             let mut out = [Pos2::ZERO; RING];
             for (i, slot) in out.iter_mut().enumerate() {
                 let a = std::f64::consts::TAU * i as f64 / RING as f64;
-                let mut p = at;
-                p[u] += length * 0.8 * a.cos();
-                p[v] += length * 0.8 * a.sin();
+                let (cu, cv) = (length * 0.8 * a.cos(), length * 0.8 * a.sin());
+                let p = [at[0] + u[0] * cu + v[0] * cv, at[1] + u[1] * cu + v[1] * cv, at[2] + u[2] * cu + v[2] * cv];
                 *slot = camera.project(p, w, h).map(to)?;
             }
             Some(out)
@@ -243,7 +314,7 @@ impl Gizmo {
             length,
             rings: [ring(0)?, ring(1)?, ring(2)?],
             scale,
-            facing: [forward[0] < 0.0, forward[1] < 0.0, forward[2] < 0.0],
+            facing: axes.map(|a| forward[0] * a[0] + forward[1] * a[1] + forward[2] * a[2] < 0.0),
         })
     }
 
@@ -296,7 +367,13 @@ impl Gizmo {
 /// the pointer swept round the middle on screen, the way the axis is seen; the scale square scales by how much farther from the middle
 /// the pointer is. Snapped (to [`STEP`] mm, [`TURN_STEP`] degrees or [`SCALE_STEP`]) unless `free`.
 pub fn drag_change(camera: &Camera, rect: Rect, at: P3, handle: Handle, start: Pos2, now: Pos2, free: bool) -> Change {
-    let Some(g) = Gizmo::at(camera, rect, at) else { return Change::Move([0.0; 3]) };
+    drag_change_in(camera, rect, at, handle, start, now, free, &PLATE_AXES)
+}
+
+/// The same with the gizmo along `axes`.
+#[allow(clippy::too_many_arguments)]
+pub fn drag_change_in(camera: &Camera, rect: Rect, at: P3, handle: Handle, start: Pos2, now: Pos2, free: bool, axes: &Axes) -> Change {
+    let Some(g) = Gizmo::at_in(camera, rect, at, axes) else { return Change::Move([0.0; 3]) };
     let angle = |p: Pos2| f64::from(-(p.y - g.origin.y)).atan2(f64::from(p.x - g.origin.x));
     match handle {
         Handle::Ring(axis) => {
@@ -310,15 +387,21 @@ pub fn drag_change(camera: &Camera, rect: Rect, at: P3, handle: Handle, start: P
             let f = if a > 1.0 { f64::from(b / a).clamp(0.05, 20.0) } else { 1.0 };
             Change::Scale(if free { f } else { ((f / SCALE_STEP).round() * SCALE_STEP).max(SCALE_STEP) })
         }
-        _ => Change::Move(drag_offset(camera, rect, at, handle, start, now, free)),
+        _ => Change::Move(drag_offset_in(camera, rect, at, handle, start, now, free, axes)),
     }
 }
 
 /// How far a drag on `handle` from `start` to `now` (screen points in `rect`) moves the object standing at `at`: along the arrow's
 /// line on screen for an axis, across the level plane through `at` for the plate square. Snapped to [`STEP`] unless `free`.
 pub fn drag_offset(camera: &Camera, rect: Rect, at: P3, handle: Handle, start: Pos2, now: Pos2, free: bool) -> P3 {
+    drag_offset_in(camera, rect, at, handle, start, now, free, &PLATE_AXES)
+}
+
+/// The same with the gizmo's arrows along `axes`: the move is along the arrow dragged, in the plate's frame.
+#[allow(clippy::too_many_arguments)]
+pub fn drag_offset_in(camera: &Camera, rect: Rect, at: P3, handle: Handle, start: Pos2, now: Pos2, free: bool, axes: &Axes) -> P3 {
     let snap = |v: f64| if free { v } else { (v / STEP).round() * STEP };
-    let Some(g) = Gizmo::at(camera, rect, at) else { return [0.0; 3] };
+    let Some(g) = Gizmo::at_in(camera, rect, at, axes) else { return [0.0; 3] };
     let axis = match handle {
         Handle::X => 0,
         Handle::Y => 1,
@@ -337,9 +420,8 @@ pub fn drag_offset(camera: &Camera, rect: Rect, at: P3, handle: Handle, start: P
     if along.length_sq() < 1.0 {
         return [0.0; 3]; // the axis points at the eye: it cannot be dragged along from here
     }
-    let mut by = [0.0; 3];
-    by[axis] = snap(f64::from((now - start).dot(along) / along.length_sq()) * g.length);
-    by
+    let amount = snap(f64::from((now - start).dot(along) / along.length_sq()) * g.length);
+    axes[axis].map(|v| v * amount)
 }
 
 fn distance_to_segment(p: Pos2, a: Pos2, b: Pos2) -> f32 {
@@ -410,6 +492,10 @@ pub struct View {
     moving: Option<Moving>,
     /// A transform from the keyboard (G, R, S), while it lasts.
     pub modal: Option<Modal>,
+    /// What turns and scales go about, and along which axes the gizmo and the keys go; `axes` is worked out each frame.
+    pub pivot: Pivot,
+    pub orientation: Orientation,
+    pub axes: Axes,
     /// The gizmo as last drawn, for a test to find its handles.
     pub gizmo: Option<Gizmo>,
     pub tool: Tool,
@@ -470,7 +556,7 @@ impl View {
             m.typed.pop();
         }
         if let Some(now) = pointer.or(Some(m.start)) {
-            m.change = m.change(&self.camera, rect, now, ctrl);
+            m.change = m.change(&self.camera, rect, now, ctrl, &self.axes);
         }
         if escape || response.secondary_clicked() {
             self.modal = None;
@@ -485,6 +571,13 @@ impl View {
         self.rect = Some(rect);
         let response = ui.allocate_rect(rect, Sense::click_and_drag());
         let mut shown = Shown::default();
+        // The axes: the plate's, or the first picked object's own (its turn, without its scale).
+        self.axes = match (self.orientation, selected.first().and_then(|&id| scene.get(id).ok())) {
+            (Orientation::Own, Some(o)) => {
+                o.xf.polar().map_or(PLATE_AXES, |(turn, _)| std::array::from_fn(|k| [turn.m[0][k], turn.m[1][k], turn.m[2][k]]))
+            }
+            _ => PLATE_AXES,
+        };
         // The gizmo stands at the middle of what is picked (one object or several), while the move tool is in hand.
         let bounds = selected.iter().filter_map(|&id| scene.get(id).ok().and_then(|o| o.bounds())).reduce(|(alo, ahi), (blo, bhi)| {
             ([alo[0].min(blo[0]), alo[1].min(blo[1]), alo[2].min(blo[2])], [ahi[0].max(bhi[0]), ahi[1].max(bhi[1]), ahi[2].max(bhi[2])])
@@ -500,14 +593,14 @@ impl View {
         if !keyed
             && response.drag_started_by(PointerButton::Primary)
             && let (Some(at), Some(start)) = (one, press)
-            && let Some(handle) = Gizmo::at(&self.camera, rect, at).and_then(|g| g.handle_at(start))
+            && let Some(handle) = Gizmo::at_in(&self.camera, rect, at, &self.axes).and_then(|g| g.handle_at(start))
         {
             self.moving = Some(Moving { ids: selected.to_vec(), handle, start, at, change: Change::Move([0.0; 3]) });
         }
         if let Some(m) = &mut self.moving {
             if let Some(now) = response.interact_pointer_pos() {
                 let free = ui.input(|i| i.modifiers.shift);
-                m.change = drag_change(&self.camera, rect, m.at, m.handle, m.start, now, free);
+                m.change = drag_change_in(&self.camera, rect, m.at, m.handle, m.start, now, free, &self.axes);
             }
             if response.drag_stopped() || !response.dragged() {
                 shown.moved = Some((m.ids.clone(), m.change)).filter(|(_, c)| !c.is_nothing());
@@ -522,6 +615,12 @@ impl View {
         // While a drag is under way the object is drawn where it would go; the scene itself changes only when the window runs the move.
         let moving =
             self.moving.as_ref().map(|m| (m.ids.clone(), m.change)).or_else(|| self.modal.as_ref().map(|m| (m.ids.clone(), m.change)));
+        // What each object turns and scales about: its own middle, or the middle of everything picked.
+        let middle_of = |lo: P3, hi: P3| [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, (lo[2] + hi[2]) / 2.0];
+        let pivot_of = |lo: P3, hi: P3| match (self.pivot, bounds) {
+            (Pivot::Middle, Some((glo, ghi))) => middle_of(glo, ghi),
+            _ => middle_of(lo, hi),
+        };
         let (size, ppp) = picture_size(ui, rect);
         let now = Drawn {
             scene: Arc::as_ptr(scene) as usize,
@@ -533,13 +632,14 @@ impl View {
             cpu: self.card.cpu,
         };
         if self.drawn.as_ref() != Some(&now) {
-            // A drag's preview on the card: each object moved about its own middle, as the processor's copy of the scene has it.
+            // A drag's preview on the card: each object moved about its pivot, as the processor's copy of the scene has it.
             let moved: Vec<(u32, lamina_core::Transform)> = moving
                 .iter()
                 .flat_map(|(ids, change)| {
                     ids.iter().filter_map(|&id| {
                         let (lo, hi) = scene.get(id).ok()?.bounds()?;
-                        Some((id, change.about([(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, (lo[2] + hi[2]) / 2.0])))
+                        let c = pivot_of(lo, hi);
+                        Some((id, change.about_in(c, &self.axes)))
                     })
                 })
                 .collect();
@@ -555,8 +655,7 @@ impl View {
                         if let Ok(o) = seen.get_mut(id)
                             && let Some((lo, hi)) = o.bounds()
                         {
-                            let c = [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, (lo[2] + hi[2]) / 2.0];
-                            o.xf = o.xf.then(&change.about(c));
+                            o.xf = o.xf.then(&change.about_in(pivot_of(lo, hi), &self.axes));
                         }
                     }
                     draw(&seen, selected, &self.camera, bed, size)
@@ -578,7 +677,7 @@ impl View {
             Some(Change::Move(by)) => by,
             _ => [0.0; 3],
         };
-        self.gizmo = one.and_then(|at| Gizmo::at(&self.camera, rect, add(at, shift)));
+        self.gizmo = one.and_then(|at| Gizmo::at_in(&self.camera, rect, add(at, shift), &self.axes));
         if let Some(g) = self.gizmo {
             let active = self.moving.as_ref().map(|m| m.handle).or_else(|| response.hover_pos().and_then(|p| g.handle_at(p)));
             paint_gizmo(&painter, &g, active);
