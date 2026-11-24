@@ -1718,6 +1718,11 @@ impl App {
                     ("rotate", ids.iter().map(|&id| ("rotate", json!({ "id": id, "axis": axis, "degrees": degrees }))).collect())
                 }
                 Change::Scale(f) => ("scale", ids.iter().map(|&id| ("scale", json!({ "id": id, "factor": f }))).collect()),
+                Change::Stretch(axis, f) => {
+                    let mut by = [1.0; 3];
+                    by[axis.min(2)] = f;
+                    ("scale", ids.iter().map(|&id| ("scale", json!({ "id": id, "by": by }))).collect())
+                }
             };
             self.run_all(label, commands);
         }
@@ -2506,6 +2511,64 @@ mod tests {
             let w = width(language);
             assert!(w >= 0.9 * english, "{language:?}: the 3D view is {w} wide, against {english} in English");
         }
+    }
+
+    #[test]
+    fn g_r_and_s_move_turn_and_scale_with_an_axis_and_a_typed_amount_as_blender_does() {
+        let mut h = window();
+        press(&mut h, "Add box");
+        h.state_mut().run("scale", json!({"id": 1, "by": [2, 1, 1]})); // 40 x 20 x 20
+        h.state_mut().selected = vec![1];
+        h.run();
+        let middle = h.state().view.rect.unwrap().center();
+        let keys = |h: &mut Harness<App>, text: &str, end: Key| {
+            h.hover_at(middle);
+            h.run();
+            for c in text.chars() {
+                match c {
+                    'G' | 'R' | 'S' | 'X' | 'Y' | 'Z' => {
+                        h.key_press([Key::G, Key::R, Key::S, Key::X, Key::Y, Key::Z]["GRSXYZ".find(c).unwrap()])
+                    }
+                    c => h.event(egui::Event::Text(c.to_string())),
+                }
+                h.run();
+            }
+            h.key_press(end);
+            h.run();
+        };
+        let bounds = |h: &Harness<App>| h.state().session.scene.get(1).unwrap().bounds().unwrap();
+        let (lo, _) = bounds(&h);
+        keys(&mut h, "GX12.5", Key::Enter);
+        assert!((bounds(&h).0[0] - lo[0] - 12.5).abs() < 1e-6, "moved 12.5 mm along x: {:?}", bounds(&h));
+        assert!(h.state().view.modal.is_none(), "Enter ends it");
+        press(&mut h, "Undo");
+        assert!((bounds(&h).0[0] - lo[0]).abs() < 1e-6, "one undo takes it back");
+        // A quarter turn about z typed, as R then 90 (z is the axis when none is chosen).
+        keys(&mut h, "R90", Key::Enter);
+        let (a, b) = bounds(&h);
+        assert!((b[0] - a[0] - 20.0).abs() < 1e-3 && (b[1] - a[1] - 40.0).abs() < 1e-3, "{a:?} {b:?}");
+        // Twice as tall: S, Z, 2.
+        keys(&mut h, "SZ2", Key::Enter);
+        let (a, b) = bounds(&h);
+        assert!((b[2] - a[2] - 40.0).abs() < 1e-3 && (b[0] - a[0] - 20.0).abs() < 1e-3, "only z: {a:?} {b:?}");
+        // Escape puts it back, whatever was typed.
+        let before = bounds(&h);
+        keys(&mut h, "GY30", Key::Escape);
+        assert_eq!(bounds(&h), before);
+        assert!(h.state().view.modal.is_none());
+        // In Portuguese a comma is the decimal mark.
+        h.state_mut().lang = lang::Lang::Portuguese;
+        h.run();
+        keys(&mut h, "GX1,5", Key::Enter);
+        assert!((bounds(&h).0[0] - before.0[0] - 1.5).abs() < 1e-6, "{:?}", bounds(&h));
+        // With nothing picked, G picks the move tool as before.
+        h.state_mut().selected.clear();
+        h.state_mut().view.tool = view3d::Tool::Measure;
+        h.run();
+        h.hover_at(middle);
+        h.key_press(Key::G);
+        h.run();
+        assert!(h.state().view.modal.is_none() && h.state().view.tool == view3d::Tool::Move);
     }
 
     #[test]

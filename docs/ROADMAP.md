@@ -384,6 +384,13 @@ Priorities:
   GitHub's release hosts. The third crate allowed on the network, and a dependency of the window alone (`network_boundary`).
   Tested on a fake network, a server on this machine and stand-in scripts for msiexec, hdiutil and the rest; not yet against a
   real release, as none has been tagged.
+- **7.10 Blender's transform keys.** With objects picked and the pointer over the 3D view, G, R and S start a move, a turn (about z
+  unless an axis is chosen) or a scale that follows the pointer from where it was (`view3d::Modal`, through the gizmo's own
+  `drag_change`); X, Y and Z keep it to that axis (again to free it; S with an axis stretches along it alone, `scale {by}`); digits, a
+  point or a comma (by the language), a minus and Backspace type the amount; Ctrl snaps; Enter or a click applies it as one undo
+  step, Escape or a right click puts it back. Away from the view, or with nothing picked, the old keys stay (G the move tool, R a
+  quarter turn). Tested with egui_kittest: G X 12.5, R 90, S Z 2 and, in Portuguese, G X 1,5; Escape changes nothing; one undo takes
+  a move back.
 - **8.2 Benchmarks.** Ignored tests that print their times: `crates/slicer/tests/bench.rs` (about 100,000 triangles, three ways)
   and `crates/csg/tests/bench.rs` (a 5,120-triangle sphere with a 384-triangle cylinder, each boolean), plus
   `simplify::tests::heavy`. First run, on the session's machine in a dev build: slicing 6.1 s with the defaults, 9.4 s with gyroid
@@ -501,13 +508,6 @@ modifier's slice and plans each part with its settings.
 which Bambu's 2025 authorization keeps to Bambu Connect or a printer in Developer Mode. Its own module in `crates/printer` if done.
 
 ## 7. Desktop
-
-**7.10 Blender's transform keys (P1).** Blender moves, turns and scales with G, R and S, then X, Y or Z to keep to one axis, numbers
-typed for an exact amount, Enter to apply and Escape or a right click to cancel; Ctrl while moving snaps to increments. Lamina's G
-picks the move tool and only the gizmo transforms. How: G, R and S over the 3D view start a transform of the picked objects that
-follows the pointer; X, Y and Z (and again to free it) keep it to an axis; digits, a point or comma, a minus and Backspace type the
-amount (mm, degrees, a factor); Enter or a click applies it as one undo step, Escape or a right click puts it back. Ctrl snaps a
-move to whole millimetres, a turn to 15 degrees, a scale to tenths. The status bar shows what is typed.
 
 **7.11 Blender's view keys (P1).** Numpad 1, 3 and 7 look from the front, the right and the top (with Ctrl, the back, the left and
 the bottom), Home frames everything and the numpad's point frames the picked objects. How: the camera's azimuth and elevation set
