@@ -299,6 +299,14 @@ Priorities:
   raft the first layer's temperatures never ended; they now end on the third layer printed (the golden rafted case gains its
   `M104 S210`). Tested through G-code: hotter from the range's first layer and back after, its own retraction, four walls and
   denser infill inside its range, pressure advance and fan set and set back on Klipper; checks refused; kept in projects.
+- **4.28 Calibration prints.** `calibration {kind, from?, to?, step?}` puts a part on the plate with its settings by height (4.27),
+  one undo step: a temperature tower (8 mm blocks, a 45 degree overhang each, 230 to 190 C by default), two retraction towers
+  (5 mm bands), a hollow square pressure advance tower (a value a millimetre) or a row of flow blocks (a flow ratio each). It
+  returns each band's value and what to judge; the calibration skill teaches each and how to read the result back, and the window
+  has them under More shapes, Calibration. OrcaSlicer's tolerance and maximum volumetric speed tests and a ringing tower for input
+  shaping are not made; input shaping stays the firmware's (Klipper's TEST_RESONANCES and SHAPER_CALIBRATE). Tested through G-code:
+  the tower's nine temperatures in order, the retraction lengths, Klipper's pressure advance values, each flow block pushing more
+  than the one before by its ratio; bad kinds, steps and values refused; one undo takes every block back. Not printed.
 - **5.1 Process presets.** A third kind in `presets.rs`, setting only the layers and the strength (`PROCESS_FIELDS`): 0.12 mm Fine,
   0.20 mm Standard, 0.28 mm Draft and Strong. `slice` and `slice_check` take `process` (after the printer and the filament, before
   `profile`); `slicer_presets` lists them; the window has a Process picker and Save process, kept in the settings file and the
@@ -492,12 +500,6 @@ and one Klipper printer, measure with calipers, fill in the tables, and fix what
 ## 3. Modelling
 
 ## 4. Slicer
-
-**4.28 Calibration prints (P2).** OrcaSlicer's calibration menu makes a temperature tower (5 C steps), flow ratio blocks, pressure
-advance tower, line and pattern, a retraction tower, a tolerance test and a maximum volumetric speed test; Klipper documents a
-tuning tower for pressure advance and an accelerometer for input shaping. How: commands that build each part and its settings by
-height (4.27), with the calibration skill reading the result back into the presets. Input shaping stays the firmware's (Klipper's
-TEST_RESONANCES and SHAPER_CALIBRATE), with a ringing tower part for printers without an accelerometer.
 
 **4.29 Painted seams and supports (P2).** PrusaSlicer (since 2.3) and OrcaSlicer paint seams and supports on the model's faces. How:
 a per-triangle tag on the object (kept in projects), a brush in the 3D view over the picked faces, the seam choosing among painted

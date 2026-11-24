@@ -92,6 +92,9 @@ all, set the environment variable `LAMINA_NO_UPDATE_CHECK=1`: the menu items and
   deletes. View, Keyboard shortcuts lists them all.
 - With one object picked, the panel also has Move by, Rotate, Mirror, Scale, Cut into pieces, Duplicate and Drop to plate. With
   several, Union, Subtract and Intersect. A boolean that cannot give a sound solid says so and changes nothing.
+- **Calibration**, in More shapes, puts a temperature tower, two retraction towers, a pressure advance tower or a row of flow
+  blocks on the plate, each with its settings changing by height (or by block); the status bar says what to look for. Ask the
+  assistant for another range.
 - **By height**, under This object's settings, gives the layers between two heights their own nozzle temperature, infill or walls
   (Add range); the assistant can set more (fan, pressure advance, retraction, flow, speeds) with `set_height_range`.
 - **This object's settings** lets one object print differently from the rest: its own walls, infill, seam, speeds or supports,

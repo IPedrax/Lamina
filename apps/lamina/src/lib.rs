@@ -891,6 +891,43 @@ impl App {
                         "round_holes": [[-24, -14, 3.4], [24, -14, 3.4], [24, 14, 3.4], [-24, 14, 3.4]]});
                     self.add_with("extrude", plate, 60.0);
                 }
+                ui.separator();
+                ui.menu_button(t("Calibration"), |ui| {
+                    let parts = [
+                        (
+                            ui_msg!("Temperature tower, 230 to 190 C"),
+                            "temperature",
+                            ui_msg!("Hottest at the bottom, 5 C a block: take the coolest block that bonds well and stays clean."),
+                        ),
+                        (
+                            ui_msg!("Retraction towers, 0.4 to 2 mm"),
+                            "retraction",
+                            ui_msg!("0.4 mm more every 5 mm up: take the lowest band with no hairs between the towers."),
+                        ),
+                        (
+                            ui_msg!("Pressure advance tower, 0 to 0.1"),
+                            "pressure_advance",
+                            ui_msg!("0.005 more every millimetre up: the height of the sharpest corners, in mm, times 0.005."),
+                        ),
+                        (
+                            ui_msg!("Flow blocks, 0.90 to 1.10"),
+                            "flow",
+                            ui_msg!("0.90, 0.95, 1.00, 1.05 and 1.10 from left to right: take the block with the smoothest top."),
+                        ),
+                    ];
+                    for (label, kind, look) in parts {
+                        if ui
+                            .button(t(label))
+                            .on_hover_text(t("Its settings change with height; the assistant can change the range"))
+                            .clicked()
+                            && let Some(v) = self.run("calibration", json!({ "kind": kind }))
+                        {
+                            self.selected = v["ids"].as_array().into_iter().flatten().filter_map(Value::as_u64).map(|i| i as u32).collect();
+                            self.status = t(look).into();
+                            self.frame_all();
+                        }
+                    }
+                });
             });
             if ui.button(t("Import mesh...")).clicked()
                 && let Some(p) = rfd::FileDialog::new().add_filter(t("Mesh"), files::MESHES).pick_file()
@@ -2744,6 +2781,20 @@ mod tests {
         h.key_press(Key::Period);
         h.run();
         assert!(h.state().view.camera.distance < 500.0, "framed on the picked box again");
+    }
+
+    #[test]
+    fn the_calibration_menu_puts_a_tower_on_the_plate_and_says_what_to_look_for() {
+        let mut h = window();
+        press(&mut h, "More shapes");
+        h.get_by_label_contains("Calibration").hover();
+        h.run();
+        press(&mut h, "Temperature tower, 230 to 190 C");
+        let s = &h.state().session.scene;
+        assert_eq!(s.objects.len(), 1);
+        assert_eq!(s.objects[0].ranges.as_deref().and_then(Value::as_array).map(Vec::len), Some(9));
+        assert!(h.state().status.contains("coolest block"), "{}", h.state().status);
+        assert_eq!(h.state().selected, vec![1]);
     }
 
     #[test]

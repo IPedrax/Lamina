@@ -64,6 +64,13 @@ pub static COMMANDS: &[Command] = &[
         files: Files::None,
     },
     Command {
+        id: "calibration",
+        params: "{kind: \"temperature\" | \"retraction\" | \"pressure_advance\" | \"flow\", from?, to?, step?} puts a calibration part on the plate with its settings by height, as one undo step: a temperature tower (blocks 8 mm tall with a 45 degree overhang each, nozzle_temp from `from` at the bottom to `to`, default 230 to 190 by 5), two retraction towers (retract_length by 5 mm, default 0.4 to 2.0 by 0.4), a hollow square pressure advance tower (pressure_advance by 1 mm, default 0 to 0.1 by 0.005) or a row of flow blocks (flow_ratio, left to right, default 0.90 to 1.10 by 0.05). Returns {ids, steps: [{from, to, value}] (heights in mm, or for flow the blocks left to right), look (what to judge)}",
+        run: calibration,
+        undoable: true,
+        files: Files::None,
+    },
+    Command {
         id: "slicer_profile",
         params: "{} every profile field with its default value: the printer (bed, nozzle, start_gcode), the process (layer_height, perimeters, infill_density) and speeds, temperatures and retraction",
         run: profile,
@@ -263,6 +270,114 @@ fn set_height_range(s: &mut Session, p: &Value) -> Result<Value, String> {
     let o = s.scene_mut().get_mut(a.id)?;
     o.ranges = if ranges.is_empty() { None } else { Some(std::sync::Arc::new(value.clone())) };
     Ok(json!({ "ranges": value }))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Calibrate {
+    kind: String,
+    from: Option<f64>,
+    to: Option<f64>,
+    step: Option<f64>,
+}
+
+/// Puts a mesh on the plate stood as it is, its footprint in the middle of the plate shifted by `x`, its bottom on the plate.
+fn place(s: &mut Session, name: &str, mesh: Mesh, turn: lamina_core::Transform, x: f64) -> Result<u32, String> {
+    use lamina_core::Transform;
+    let (lo, hi) = mesh.transformed(&turn).bounds().ok_or("internal: an empty calibration part")?;
+    let to = Transform::translate([x - (lo[0] + hi[0]) / 2.0, -(lo[1] + hi[1]) / 2.0, -lo[2]]);
+    s.scene_mut().add_transformed(name, mesh, turn.then(&to))
+}
+
+/// Calibration parts: each kind's part, and the values its heights (or blocks) print with.
+fn calibration(s: &mut Session, p: &Value) -> Result<Value, String> {
+    use lamina_core::Transform;
+    let a = Calibrate::deserialize(p).map_err(|e| format!("bad parameters: {e}"))?;
+    let (field, from, to, step, most, look) = match a.kind.as_str() {
+        "temperature" => (
+            "nozzle_temp",
+            230.0,
+            190.0,
+            5.0,
+            12,
+            "the coolest block whose layers still bond (try to snap it) with a clean overhang and little stringing",
+        ),
+        "retraction" => ("retract_length", 0.4, 2.0, 0.4, 12, "the lowest height band with no hairs between the towers"),
+        "pressure_advance" => {
+            ("pressure_advance", 0.0, 0.1, 0.005, 40, "the height where the corners are sharpest, neither bulging nor rounded: its value")
+        }
+        "flow" => ("flow_ratio", 0.9, 1.1, 0.05, 9, "the block whose top is smooth and closed with no ridges: its flow ratio"),
+        other => return Err(format!("`kind` is temperature, retraction, pressure_advance or flow, not `{other}`")),
+    };
+    let (from, to, step) = (a.from.unwrap_or(from), a.to.unwrap_or(to), a.step.unwrap_or(step).abs());
+    if !(from.is_finite() && to.is_finite() && step.is_finite() && step > 0.0) {
+        return Err("`from`, `to` and `step` must be finite numbers, the step above 0".into());
+    }
+    let count = ((to - from).abs() / step).round() as usize + 1;
+    if count > most || count < 2 {
+        return Err(format!("{count} steps: a {} test takes from 2 to {most}; change `step`", a.kind));
+    }
+    let values: Vec<f64> = (0..count).map(|i| from + (to - from).signum() * step * i as f64).collect();
+    let mut steps = Vec::new();
+    let mut ids = Vec::new();
+    let ranges = |s: &mut Session, id: u32, cuts: &[(f64, f64, f64)]| -> Result<(), String> {
+        let list: Vec<Range> = cuts
+            .iter()
+            .map(|&(lo, hi, v)| Range { from: lo, to: hi, profile: serde_json::Map::from_iter([(field.to_string(), json!(v))]) })
+            .collect();
+        check_ranges(&list)?;
+        s.scene_mut().get_mut(id)?.ranges = Some(std::sync::Arc::new(serde_json::to_value(&list).map_err(|e| e.to_string())?));
+        Ok(())
+    };
+    match a.kind.as_str() {
+        "temperature" => {
+            // The side seen from the front: a block 20 mm wide for each value, each with a 45 degree overhang on its right.
+            let h = 8.0;
+            let mut outline = vec![[0.0, 0.0], [20.0, 0.0]];
+            for i in 0..count {
+                let b = i as f64 * h;
+                outline.extend([[20.0, b + h / 2.0], [20.0 + h / 2.0, b + h], [20.0, b + h]]);
+            }
+            outline.push([0.0, count as f64 * h]);
+            outline.dedup();
+            let mesh = lamina_core::sketch::extrude(&outline, &[], 10.0)?;
+            let id = place(s, "temperature tower", mesh, Transform::rotate(0, 90.0), 0.0)?;
+            let cuts: Vec<(f64, f64, f64)> = values.iter().enumerate().map(|(i, &v)| (i as f64 * h, (i + 1) as f64 * h, v)).collect();
+            ranges(s, id, &cuts)?;
+            ids.push(id);
+            steps = cuts.iter().map(|c| json!({"from": c.0, "to": c.1, "value": c.2})).collect();
+        }
+        "retraction" | "pressure_advance" => {
+            let h = if a.kind == "retraction" { 5.0 } else { 1.0 };
+            let cuts: Vec<(f64, f64, f64)> = values.iter().enumerate().map(|(i, &v)| (i as f64 * h, (i + 1) as f64 * h, v)).collect();
+            let tall = count as f64 * h;
+            let parts: Vec<(Mesh, f64)> = if a.kind == "retraction" {
+                vec![(Mesh::cylinder(3.0, tall, 32), -20.0), (Mesh::cylinder(3.0, tall, 32), 20.0)]
+            } else {
+                // A hollow square, walls 1.2 mm: sharp corners at every height.
+                let hole: Vec<[f64; 2]> = vec![[1.2, 1.2], [1.2, 38.8], [38.8, 38.8], [38.8, 1.2]];
+                vec![(lamina_core::sketch::extrude(&[[0.0, 0.0], [40.0, 0.0], [40.0, 40.0], [0.0, 40.0]], &[hole], tall)?, 0.0)]
+            };
+            for (k, (mesh, x)) in parts.into_iter().enumerate() {
+                let name = if a.kind == "retraction" { format!("retraction tower {}", k + 1) } else { "pressure advance tower".into() };
+                let id = place(s, &name, mesh, Transform::IDENTITY, x)?;
+                ranges(s, id, &cuts)?;
+                ids.push(id);
+            }
+            steps = cuts.iter().map(|c| json!({"from": c.0, "to": c.1, "value": c.2})).collect();
+        }
+        _ => {
+            // Flow: a block 20 x 20 x 3 mm for each value, left to right, each one range from its bottom to its top.
+            for (i, &v) in values.iter().enumerate() {
+                let x = (i as f64 - (count as f64 - 1.0) / 2.0) * 25.0;
+                let id = place(s, &format!("flow {v:.2}"), Mesh::cuboid([20.0, 20.0, 3.0]), Transform::IDENTITY, x)?;
+                ranges(s, id, &[(0.0, 3.0, v)])?;
+                ids.push(id);
+                steps.push(json!({"from": 0.0, "to": 3.0, "value": v}));
+            }
+        }
+    }
+    Ok(json!({ "ids": ids, "steps": steps, "look": look }))
 }
 
 /// Each object's height ranges as profiles: each range's fields laid over the object's own profile (or the plate's).
@@ -614,5 +729,63 @@ mod tests {
         let g = sliced(&mut s, json!({"firmware": "klipper", "pressure_advance": 0.02, "skirt_loops": 0}));
         assert!(layer(&g, 10).contains("SET_PRESSURE_ADVANCE ADVANCE=0.05") && layer(&g, 10).contains("M106 S100"));
         assert!(layer(&g, 15).contains("SET_PRESSURE_ADVANCE ADVANCE=0.02") && layer(&g, 15).contains("M106 S255"), "set back above");
+    }
+
+    #[test]
+    fn calibration_parts_carry_their_settings_by_height() {
+        // A temperature tower: nine blocks of 8 mm from 230 C down to 190 C, each set once in the G-code, in that order.
+        let mut s = session();
+        let r = s.execute("calibration", &json!({"kind": "temperature"})).unwrap();
+        assert_eq!(r["steps"].as_array().unwrap().len(), 9);
+        let o = &s.execute("info", &json!({})).unwrap()["objects"][0];
+        assert_eq!(o["size"], json!([24.0, 10.0, 72.0]), "standing, 72 mm tall with its overhangs");
+        assert_eq!(o["watertight"], true);
+        let g = sliced(&mut s, json!({"skirt_loops": 0}));
+        let temps: Vec<&str> = g.lines().filter(|l| l.starts_with("M104 S")).collect();
+        let want: Vec<String> = (0..9).map(|i| format!("M104 S{}", 230 - 5 * i)).collect();
+        let from = temps.iter().position(|t| *t == "M104 S230").unwrap();
+        assert_eq!(temps[from..from + 9], want, "each block hotter than the one above: {temps:?}");
+        // Retraction: two towers, each 5 mm band retracting its own length.
+        let mut s = session();
+        let r = s.execute("calibration", &json!({"kind": "retraction"})).unwrap();
+        assert_eq!(r["ids"].as_array().unwrap().len(), 2);
+        let g = sliced(&mut s, json!({"skirt_loops": 0}));
+        for v in ["0.400", "1.200", "2.000"] {
+            assert!(g.contains(&format!("G1 E-{v} ")), "retracts {v}");
+        }
+        // Pressure advance on Klipper, a step a millimetre.
+        let mut s = session();
+        s.execute("calibration", &json!({"kind": "pressure_advance", "to": 0.04, "step": 0.01})).unwrap();
+        let g = sliced(&mut s, json!({"skirt_loops": 0, "firmware": "klipper"}));
+        for v in ["0.01", "0.02", "0.03", "0.04"] {
+            assert!(g.contains(&format!("SET_PRESSURE_ADVANCE ADVANCE={v}")), "{v}");
+        }
+        // Flow: five blocks, each pushing more plastic than the one on its left.
+        let mut s = session();
+        let r = s.execute("calibration", &json!({"kind": "flow"})).unwrap();
+        let ids: Vec<u64> = r["ids"].as_array().unwrap().iter().filter_map(Value::as_u64).collect();
+        assert_eq!(ids.len(), 5);
+        let g = sliced(&mut s, json!({"skirt_loops": 0, "firmware": "klipper"}));
+        let pushed = |id: u64| -> f64 {
+            g.split(&format!("EXCLUDE_OBJECT_START NAME=object_{id}\n"))
+                .skip(1)
+                .map(|part| part.split("EXCLUDE_OBJECT_END").next().unwrap_or(""))
+                .flat_map(|part| part.lines())
+                .filter(|l| l.starts_with("G1 X"))
+                .filter_map(|l| l.split(" E").nth(1)?.split(' ').next()?.parse::<f64>().ok())
+                .sum()
+        };
+        let e: Vec<f64> = ids.iter().map(|&id| pushed(id)).collect();
+        assert!(e.windows(2).all(|w| w[1] > w[0]), "{e:?}");
+        assert!((e[4] / e[0] - 1.10 / 0.90).abs() < 0.01, "{e:?}");
+        // What cannot be calibrated, or with too many steps, or out of the setting's range, is refused and adds nothing.
+        let mut s = session();
+        for bad in [json!({"kind": "speed"}), json!({"kind": "temperature", "step": 0.5}), json!({"kind": "temperature", "from": 600})] {
+            assert!(s.execute("calibration", &bad).is_err(), "{bad}");
+        }
+        assert!(s.scene.objects.is_empty());
+        s.execute("calibration", &json!({"kind": "flow"})).unwrap();
+        s.undo().unwrap();
+        assert!(s.scene.objects.is_empty(), "one undo takes every block back");
     }
 }
