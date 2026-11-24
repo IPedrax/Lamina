@@ -99,6 +99,29 @@ Takeaways that carry over: infer and list assumptions rather than interviewing; 
 a clearance is a default and not a measurement; modify an existing mesh instead of rebuilding it. Not yet possible in Lamina: a
 render the model can look at (see the roadmap).
 
+## Gap analysis (2026-11-24)
+
+What the best slicers and Blender document that Lamina lacked, read from their documentation and help pages (no code), and the
+roadmap item each became. Items marked done were built in the same run.
+
+| Finding | Source | Roadmap |
+|---|---|---|
+| Support enforcers and blockers as modifier meshes: supports where an enforcer intersects the model, none where a blocker does; a height range modifier has its own layer height | Prusa Knowledge Base, "Modifier meshes: custom supports and other magic" (help.prusa3d.com/article/modifier-meshes-custom-supports-and-other-magic_114258) | 4.24 (P1), 4.27 (P2) |
+| Cura's per-model Mesh Type: infill mesh, cutting mesh, support mesh, anti-overhang mesh; only settings marked settable per mesh can change | UltiMaker community answers and the Cura wiki's "Profiles & Settings" (github.com/Ultimaker/Cura/wiki/Profiles-&-Settings); no official page listing every type was found | 4.24, 4.31 (P2) |
+| Paint-on supports and seam painting (PrusaSlicer since 2.3) | Prusa Knowledge Base, "Seam painting" (help.prusa3d.com/article/seam-painting_168620) and its paint-on supports article | 4.29 (P2) |
+| Variable layer height: adaptive as a start, then add or remove detail by hand and smooth | Prusa Knowledge Base, "Variable layer height" (help.prusa3d.com/article/variable-layer-height_1750) | 4.30 (P2); adaptive layers were 4.15 |
+| Calibration: flow ratio blocks, pressure advance tower, line and pattern, temperature tower in 5 C steps, retraction test, tolerance test, maximum volumetric speed | OrcaSlicer wiki, Calibration guide (orcaslicer.com/wiki/guides/calibration_guide), pressure advance and volumetric speed pages | 4.25, 4.26 (P1), 4.28 (P2) |
+| Input shaping is measured and set by the firmware (an accelerometer, TEST_RESONANCES, SHAPER_CALIBRATE), pressure advance tuned with a tuning tower | Klipper, "Measuring Resonances" (klipper3d.org/Measuring_Resonances.html); OrcaSlicer's input shaping calibration page | 4.28 (P2) |
+| Ironing, fuzzy skin, arc fitting, pressure advance per firmware | PrusaSlicer and OrcaSlicer settings pages | done before (4.16, 4.16b, 4.12) |
+| Numeric input during a transform, combined with axis locking; Tab between axes | Blender manual, "Numeric Input" (docs.blender.org/manual/en/dev/scene_layout/object/editing/transform/control/numeric_input.html) | 7.10 (P1) |
+| Pivot point: median point, bounding box centre, individual origins, 3D cursor, active element; the Period key picks it | Blender manual, "Transform Pivot Point" (docs.blender.org/manual/en/dev/editors/3dview/controls/pivot_point/) | 3.16 (P2) |
+| Snapping, transform orientations (global, local), the sidebar (N) with the item's transform | Blender manual's Transform Control pages (listed in its table of contents; their text was not fetched) | 7.10 (snapping, P1), 3.16 (P2); Lamina's position and size fields are its sidebar today |
+| View keys: numpad 1, 3 and 7 for front, right and top, numpad 5 orthographic, Home to frame all | Blender's keymap as its manual's navigation pages give it (not fetched in this run; the keys are long-standing) | 7.11 (P1), orthographic left for later |
+| ISO metric threads: a symmetric V of 60 degrees, H = 0.866025 P, the outer H/8 and inner H/4 cut off, depth 5H/8 = 0.541266 P; external minor diameter d - 1.226869 P on the design profile | ISO 68-1:1998 sample pages (standards.iteh.ai), ISO 724:2023 abstract, Wikipedia "ISO metric screw thread" | 3.15 (P1) |
+
+Not checked: the paint-on supports article's body, Blender's snapping and sidebar pages, and how Cura's mesh types behave in its
+current release.
+
 ## Risks
 
 1. **Real meshes.** Turning messy meshes (non-manifold, self-intersecting, tiny features) into valid layer polygons, then offsetting them
