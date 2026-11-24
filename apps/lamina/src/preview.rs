@@ -197,8 +197,7 @@ pub fn show_3d(ui: &mut Ui, state: &mut Preview3d, layers: &[Layer], at: usize, 
         state.framed = slice;
     }
     crate::view3d::steer(&mut state.camera, &response, ui, true);
-    let ppp = ui.ctx().pixels_per_point();
-    let size = [(view.width() * ppp).round().max(1.0) as usize, (view.height() * ppp).round().max(1.0) as usize];
+    let (size, _) = crate::view3d::picture_size(ui, view);
     let key = (state.camera, at, size, slice, travels);
     if state.drawn != Some(key) {
         let lines = paths(layers, at, m, travels);

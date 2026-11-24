@@ -326,7 +326,7 @@ pub struct View {
     texture: Option<TextureHandle>,
     /// The picture shown: the processor's (`texture`, and `picture` to pick in) or the card's.
     shown: Option<egui::TextureId>,
-    picture: Option<Picture>,
+    pub(crate) picture: Option<Picture>,
     drawn: Option<Drawn>,
     moving: Option<Moving>,
     /// The gizmo as last drawn, for a test to find its handles.
@@ -383,8 +383,7 @@ impl View {
         }
         // While a drag is under way the object is drawn where it would go; the scene itself changes only when the window runs the move.
         let moving = self.moving.as_ref().map(|m| (m.ids.clone(), m.change));
-        let ppp = ui.ctx().pixels_per_point();
-        let size = [(rect.width() * ppp).round().max(1.0) as usize, (rect.height() * ppp).round().max(1.0) as usize];
+        let (size, ppp) = picture_size(ui, rect);
         let now = Drawn {
             scene: Arc::as_ptr(scene) as usize,
             camera: self.camera,
@@ -510,6 +509,16 @@ impl View {
         let id = (hit.id != 0).then_some(hit.id);
         (id, id.map(|id| (id, hit.tri as usize)), self.camera.at_depth(x, y, hit.size, hit.inv))
     }
+}
+
+/// The picture's size in pixels for `rect`, and the pixels it has per point: the screen's, unless that would make it wider or
+/// higher than the graphics card takes a texture (a tall window on a large screen), when it is drawn smaller and stretched.
+pub(crate) fn picture_size(ui: &Ui, rect: Rect) -> ([usize; 2], f32) {
+    let most = ui.ctx().input(|i| i.max_texture_side).max(1) as f32;
+    let ppp = ui.ctx().pixels_per_point();
+    let ppp = ppp.min(most / rect.width().max(1.0)).min(most / rect.height().max(1.0));
+    let side = |points: f32| ((points * ppp).round() as usize).clamp(1, most as usize);
+    ([side(rect.width()), side(rect.height())], ppp)
 }
 
 fn paint_gizmo(painter: &egui::Painter, g: &Gizmo, active: Option<Handle>) {
