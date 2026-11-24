@@ -132,7 +132,7 @@ msgstr ""
 msgid "Adaptive, from"
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:229
+#: apps/lamina/src/comfort.rs:259
 #: apps/lamina/src/lib.rs:830
 msgid "Add box"
 msgstr ""
@@ -165,16 +165,16 @@ msgstr ""
 msgid "Arc tolerance, mm"
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:233
+#: apps/lamina/src/comfort.rs:263
 #: apps/lamina/src/lib.rs:888
 msgid "Arrange"
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:40
+#: apps/lamina/src/comfort.rs:43
 msgid "Arrange the plate"
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:189
+#: apps/lamina/src/comfort.rs:219
 msgid "As the system"
 msgstr ""
 
@@ -220,6 +220,10 @@ msgstr ""
 msgid "Autosave failed: {}"
 msgstr ""
 
+#: apps/lamina/src/comfort.rs:41
+msgid "Away from the 3D view: turn the picked objects 90 degrees about z"
+msgstr ""
+
 #: apps/lamina/src/lib.rs:1545
 msgid "Back to the defaults"
 msgstr ""
@@ -244,7 +248,7 @@ msgstr ""
 msgid "Bring back the last plate?"
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:156
+#: apps/lamina/src/comfort.rs:186
 msgid "Bring back up to this step"
 msgstr ""
 
@@ -373,12 +377,12 @@ msgstr ""
 msgid "Cut the others out of the first one picked"
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:189
+#: apps/lamina/src/comfort.rs:219
 msgid "Dark"
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:173
-#: apps/lamina/src/comfort.rs:269
+#: apps/lamina/src/comfort.rs:203
+#: apps/lamina/src/comfort.rs:299
 #: apps/lamina/src/lib.rs:480
 #: apps/lamina/src/lib.rs:1153
 msgid "Delete"
@@ -388,7 +392,7 @@ msgstr ""
 msgid "Delete all"
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:43
+#: apps/lamina/src/comfort.rs:46
 msgid "Delete the picked objects"
 msgstr ""
 
@@ -440,7 +444,7 @@ msgstr ""
 msgid "Downloads the update and checks it; Lamina then closes, updates and starts again."
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:200
+#: apps/lamina/src/comfort.rs:230
 msgid "Draw the 3D view on the processor"
 msgstr ""
 
@@ -448,22 +452,22 @@ msgstr ""
 msgid "Drop doubled faces, turn flipped ones, close cracks and small holes"
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:256
+#: apps/lamina/src/comfort.rs:286
 #: apps/lamina/src/lib.rs:1150
 msgid "Drop to plate"
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:170
-#: apps/lamina/src/comfort.rs:250
+#: apps/lamina/src/comfort.rs:200
+#: apps/lamina/src/comfort.rs:280
 #: apps/lamina/src/lib.rs:1144
 msgid "Duplicate"
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:41
+#: apps/lamina/src/comfort.rs:44
 msgid "Duplicate the picked objects"
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:140
+#: apps/lamina/src/comfort.rs:170
 msgid "Edit"
 msgstr ""
 
@@ -475,7 +479,7 @@ msgstr ""
 msgid "End"
 msgstr ""
 
-#: apps/lamina/src/lib.rs:1772
+#: apps/lamina/src/lib.rs:1777
 msgid "Every layer up to this one, coloured by what it prints"
 msgstr ""
 
@@ -560,17 +564,17 @@ msgstr ""
 msgid "Forget this preset of yours"
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:184
-#: apps/lamina/src/comfort.rs:261
+#: apps/lamina/src/comfort.rs:214
+#: apps/lamina/src/comfort.rs:291
 msgid "Frame"
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:237
+#: apps/lamina/src/comfort.rs:267
 #: apps/lamina/src/lib.rs:885
 msgid "Frame all"
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:39
+#: apps/lamina/src/comfort.rs:42
 msgid "Frame the picked objects, or everything"
 msgstr ""
 
@@ -650,7 +654,7 @@ msgstr ""
 msgid "Hexagonal prism"
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:153
+#: apps/lamina/src/comfort.rs:183
 msgid "History"
 msgstr ""
 
@@ -841,11 +845,11 @@ msgstr ""
 msgid "Kept in the settings file, sealed under a secret built into Lamina: scrambled, not protected from anyone who has Lamina."
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:206
+#: apps/lamina/src/comfort.rs:236
 msgid "Keyboard shortcuts"
 msgstr ""
 
-#: apps/lamina/src/lib.rs:1728
+#: apps/lamina/src/lib.rs:1733
 msgid "Laid flat on the face clicked."
 msgstr ""
 
@@ -882,7 +886,7 @@ msgstr ""
 msgid "Lamina {} is up to date."
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:194
+#: apps/lamina/src/comfort.rs:224
 msgid "Language"
 msgstr ""
 
@@ -899,15 +903,15 @@ msgstr ""
 msgid "Lay flat"
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:260
+#: apps/lamina/src/comfort.rs:290
 msgid "Lay flat on a face..."
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:36
+#: apps/lamina/src/comfort.rs:39
 msgid "Lay flat tool: click a face to turn it down"
 msgstr ""
 
-#: apps/lamina/src/lib.rs:1773
+#: apps/lamina/src/lib.rs:1778
 msgid "Layer"
 msgstr ""
 
@@ -935,7 +939,7 @@ msgstr ""
 msgid "Lift the nozzle by this much while it travels, mm, so it does not knock the part; 0 for none."
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:189
+#: apps/lamina/src/comfort.rs:219
 msgid "Light"
 msgstr ""
 
@@ -971,7 +975,7 @@ msgstr ""
 msgid "Measure"
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:37
+#: apps/lamina/src/comfort.rs:40
 msgid "Measure tool: click two points"
 msgstr ""
 
@@ -992,7 +996,7 @@ msgstr ""
 msgid "Mirror across the plane square to the axis chosen"
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:252
+#: apps/lamina/src/comfort.rs:282
 msgid "Mirror left to right"
 msgstr ""
 
@@ -1017,7 +1021,7 @@ msgstr ""
 msgid "Move by, mm"
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:35
+#: apps/lamina/src/comfort.rs:38
 msgid "Move tool: pick and drag, turn with the rings, scale with the square"
 msgstr ""
 
@@ -1105,6 +1109,10 @@ msgstr ""
 msgid "Opens the release page on GitHub. This copy cannot update itself."
 msgstr ""
 
+#: apps/lamina/src/comfort.rs:35
+msgid "Over the 3D view: move, turn or scale the picked objects with the pointer, as Blender does"
+msgstr ""
+
 #: apps/lamina/src/chat.rs:141
 #: apps/lamina/src/chat.rs:190
 msgid "Passphrase"
@@ -1118,11 +1126,11 @@ msgstr ""
 msgid "Pegs on one piece and sockets in the other: nothing loose"
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:176
+#: apps/lamina/src/comfort.rs:206
 msgid "Pick all"
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:42
+#: apps/lamina/src/comfort.rs:45
 msgid "Pick every object"
 msgstr ""
 
@@ -1239,12 +1247,12 @@ msgstr ""
 msgid "Ready"
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:148
+#: apps/lamina/src/comfort.rs:178
 #: apps/lamina/src/lib.rs:882
 msgid "Redo"
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:148
+#: apps/lamina/src/comfort.rs:178
 msgid "Redo {}"
 msgstr ""
 
@@ -1256,7 +1264,7 @@ msgstr ""
 msgid "Remember the key"
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:263
+#: apps/lamina/src/comfort.rs:293
 #: apps/lamina/src/lib.rs:1038
 msgid "Repair"
 msgstr ""
@@ -1452,7 +1460,7 @@ msgstr ""
 msgid "Slice the plate into a G-code file"
 msgstr ""
 
-#: apps/lamina/src/lib.rs:1752
+#: apps/lamina/src/lib.rs:1757
 msgid "Slice the plate to see its layers."
 msgstr ""
 
@@ -1468,7 +1476,7 @@ msgstr ""
 msgid "Slicing"
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:201
+#: apps/lamina/src/comfort.rs:231
 msgid "Slower with large meshes. The graphics card draws it otherwise, where the window has one."
 msgstr ""
 
@@ -1544,7 +1552,7 @@ msgstr ""
 msgid "Surface"
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:162
+#: apps/lamina/src/comfort.rs:192
 msgid "Take back this step and those after it"
 msgstr ""
 
@@ -1649,7 +1657,7 @@ msgstr ""
 msgid "The pattern of the sparse infill: lines, grid, triangles, gyroid or honeycomb."
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:184
+#: apps/lamina/src/comfort.rs:214
 msgid "The picked objects, or everything"
 msgstr ""
 
@@ -1661,7 +1669,7 @@ msgstr ""
 msgid "The plate as a 3MF or an OBJ, each object its own, or as one STL"
 msgstr ""
 
-#: apps/lamina/src/lib.rs:1758
+#: apps/lamina/src/lib.rs:1763
 msgid "The plate changed since this slice: slice again."
 msgstr ""
 
@@ -1757,15 +1765,19 @@ msgstr ""
 msgid "The update check's setting was left out: it is not true or false"
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:188
+#: apps/lamina/src/comfort.rs:218
 msgid "Theme"
+msgstr ""
+
+#: apps/lamina/src/comfort.rs:36
+msgid "Then keep to one axis (again to free it); type an amount; Enter or a click applies, Escape puts back"
 msgstr ""
 
 #: apps/lamina/src/chat.rs:98
 msgid "There is no saved key to unlock."
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:124
+#: apps/lamina/src/comfort.rs:154
 msgid "They do not all fit the plate: some stand off it."
 msgstr ""
 
@@ -1773,7 +1785,7 @@ msgstr ""
 msgid "Thin layers where a surface is nearly flat, so its steps hardly show, and thick ones on walls, to save time."
 msgstr ""
 
-#: apps/lamina/src/lib.rs:1773
+#: apps/lamina/src/lib.rs:1778
 msgid "This layer alone, from above"
 msgstr ""
 
@@ -1837,7 +1849,7 @@ msgstr ""
 msgid "Travel, mm/s"
 msgstr ""
 
-#: apps/lamina/src/lib.rs:1769
+#: apps/lamina/src/lib.rs:1774
 msgid "Travels"
 msgstr ""
 
@@ -1865,24 +1877,20 @@ msgstr ""
 msgid "Tube"
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:251
+#: apps/lamina/src/comfort.rs:281
 msgid "Turn 90 degrees"
-msgstr ""
-
-#: apps/lamina/src/comfort.rs:38
-msgid "Turn the picked objects 90 degrees about z"
 msgstr ""
 
 #: apps/lamina/src/chat.rs:77
 msgid "Type a valid key first."
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:144
+#: apps/lamina/src/comfort.rs:174
 #: apps/lamina/src/lib.rs:879
 msgid "Undo"
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:144
+#: apps/lamina/src/comfort.rs:174
 msgid "Undo {}"
 msgstr ""
 
@@ -1890,7 +1898,7 @@ msgstr ""
 msgid "Undo {} (Ctrl+Z)"
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:44
+#: apps/lamina/src/comfort.rs:47
 msgid "Undo, redo"
 msgstr ""
 
@@ -1931,7 +1939,7 @@ msgstr ""
 msgid "Vase mode: above the bottom, one wall that climbs without stopping, with no infill and an open top."
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:183
+#: apps/lamina/src/comfort.rs:213
 msgid "View"
 msgstr ""
 
@@ -1971,6 +1979,10 @@ msgstr ""
 
 #: crates/slicer/src/profile.rs:378
 msgid "Whether the printer's zero is the middle of the plate (most delta printers) instead of its front left corner."
+msgstr ""
+
+#: apps/lamina/src/comfort.rs:37
+msgid "While moving, turning or scaling: snap to steps"
 msgstr ""
 
 #: apps/lamina/src/lib.rs:1582
@@ -2073,7 +2085,7 @@ msgstr ""
 msgid "its print settings were left out ({}), so the ones shown stay"
 msgstr ""
 
-#: apps/lamina/src/lib.rs:1767
+#: apps/lamina/src/lib.rs:1772
 msgid "layer"
 msgstr ""
 
@@ -2085,7 +2097,7 @@ msgstr ""
 msgid "no agent yet"
 msgstr ""
 
-#: apps/lamina/src/comfort.rs:160
+#: apps/lamina/src/comfort.rs:190
 msgid "now"
 msgstr ""
 
@@ -2209,7 +2221,8 @@ msgstr ""
 msgid "{} connected"
 msgstr ""
 
-#: apps/lamina/src/view3d.rs:454
+#: apps/lamina/src/view3d.rs:171
+#: apps/lamina/src/view3d.rs:594
 msgid "{} deg about {}"
 msgstr ""
 

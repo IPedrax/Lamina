@@ -12,7 +12,7 @@
 use std::sync::Arc;
 
 use egui::{
-    Color32, ColorImage, FontId, PointerButton, Pos2, Rect, Sense, Shape, Stroke, TextureHandle, TextureOptions, Ui, Vec2, pos2, vec2,
+    Color32, ColorImage, FontId, Key, PointerButton, Pos2, Rect, Sense, Shape, Stroke, TextureHandle, TextureOptions, Ui, Vec2, pos2, vec2,
 };
 use lamina_core::Scene;
 
@@ -74,6 +74,8 @@ pub enum Change {
     Move(P3),
     Turn(usize, f64),
     Scale(f64),
+    /// A scale along one axis alone (Blender's S then X, Y or Z).
+    Stretch(usize, f64),
 }
 
 impl Change {
@@ -81,7 +83,7 @@ impl Change {
         match *self {
             Change::Move(by) => by.iter().all(|c| *c == 0.0),
             Change::Turn(_, d) => d == 0.0,
-            Change::Scale(f) => f == 1.0,
+            Change::Scale(f) | Change::Stretch(_, f) => f == 1.0,
         }
     }
 
@@ -93,7 +95,84 @@ impl Change {
             Change::Move(by) => Transform::translate(by),
             Change::Turn(axis, degrees) => around(Transform::rotate(axis, degrees)),
             Change::Scale(f) => around(Transform::scale([f; 3])),
+            Change::Stretch(axis, f) => {
+                let mut by = [1.0; 3];
+                by[axis.min(2)] = f;
+                around(Transform::scale(by))
+            }
         }
+    }
+}
+
+/// What a transform key started: G moves, R turns, S scales.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Keyed {
+    Move,
+    Turn,
+    Scale,
+}
+
+/// A transform started from the keyboard, as Blender's G, R and S are: it follows the pointer from where it was when the key went
+/// down, keeps to `axis` once X, Y or Z is pressed (again to free it), takes a typed amount over the pointer (mm, degrees, a
+/// factor), and ends with Enter or a click, which applies it as one step, or Escape or a right click, which puts it back. Ctrl
+/// snaps as the gizmo does.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Modal {
+    pub kind: Keyed,
+    pub axis: Option<usize>,
+    pub typed: String,
+    pub change: Change,
+    ids: Vec<u32>,
+    start: Pos2,
+    at: P3,
+}
+
+impl Modal {
+    /// The change the pointer at `now` asks for, or the typed amount when one is typed.
+    fn change(&self, camera: &Camera, rect: Rect, now: Pos2, snap: bool) -> Change {
+        let typed = crate::lang::parse_number(crate::lang::get(), &self.typed);
+        match (self.kind, self.axis, typed) {
+            (Keyed::Move, axis, Some(v)) => {
+                let mut by = [0.0; 3];
+                by[axis.unwrap_or(0)] = v;
+                Change::Move(by)
+            }
+            (Keyed::Turn, axis, Some(v)) => Change::Turn(axis.unwrap_or(2), v),
+            (Keyed::Scale, None, Some(v)) => Change::Scale(v.clamp(0.001, 1000.0)),
+            (Keyed::Scale, Some(k), Some(v)) => Change::Stretch(k, v.clamp(0.001, 1000.0)),
+            (kind, axis, None) => {
+                let handle = match (kind, axis) {
+                    (Keyed::Move, None) => Handle::Plate,
+                    (Keyed::Move, Some(k)) => [Handle::X, Handle::Y, Handle::Z][k.min(2)],
+                    (Keyed::Turn, k) => Handle::Ring(k.unwrap_or(2)),
+                    (Keyed::Scale, _) => Handle::Scale,
+                };
+                match (drag_change(camera, rect, self.at, handle, self.start, now, !snap), axis) {
+                    (Change::Scale(f), Some(k)) => Change::Stretch(k, f),
+                    (c, _) => c,
+                }
+            }
+        }
+    }
+
+    /// What it does, for the label beside the pointer: the amount and the axis.
+    fn describe(&self) -> String {
+        let axis = |k: usize| ["x", "y", "z"][k.min(2)];
+        let n = |v: f64| crate::lang::mark(format!("{v:.2}"));
+        let typed = if self.typed.is_empty() { String::new() } else { format!("  [{}]", self.typed) };
+        let what = match self.change {
+            Change::Move(by) => match self.axis {
+                Some(k) => format!("{} {} mm", axis(k), n(by[k])),
+                None => {
+                    let sep = if crate::lang::get().decimal_comma() { "; " } else { ", " };
+                    format!("x {} mm{sep}y {} mm", n(by[0]), n(by[1]))
+                }
+            },
+            Change::Turn(k, d) => crate::lang::tf("{} deg about {}", &[&n(d), axis(k)]),
+            Change::Scale(f) => format!("x {}", n(f)),
+            Change::Stretch(k, f) => format!("{} x {}", axis(k), n(f)),
+        };
+        format!("{what}{typed}")
     }
 }
 
@@ -329,6 +408,8 @@ pub struct View {
     pub(crate) picture: Option<Picture>,
     drawn: Option<Drawn>,
     moving: Option<Moving>,
+    /// A transform from the keyboard (G, R, S), while it lasts.
+    pub modal: Option<Modal>,
     /// The gizmo as last drawn, for a test to find its handles.
     pub gizmo: Option<Gizmo>,
     pub tool: Tool,
@@ -346,6 +427,59 @@ pub struct View {
 impl View {
     /// Draws the view in the space left in `ui`, moves the camera or the gizmo with the pointer, and says what a click picked and how
     /// far a gizmo drag moved its object.
+    /// Starts a transform from the keyboard of the objects `ids`, whose middle is `at`, from the pointer at `start`.
+    pub fn start_keyed(&mut self, kind: Keyed, ids: Vec<u32>, at: P3, start: Pos2) {
+        let change = match kind {
+            Keyed::Move => Change::Move([0.0; 3]),
+            Keyed::Turn => Change::Turn(2, 0.0),
+            Keyed::Scale => Change::Scale(1.0),
+        };
+        self.modal = Some(Modal { kind, axis: None, typed: String::new(), change, ids, start, at });
+    }
+
+    /// The keys and the pointer while a keyed transform lasts: what it becomes, and whether it ended (applied or put back).
+    fn keyed(&mut self, ui: &Ui, rect: Rect, response: &egui::Response, shown: &mut Shown) {
+        let Some(m) = self.modal.as_mut() else { return };
+        let (keys, text, back, enter, escape, ctrl, pointer) = ui.input(|i| {
+            let keys = [Key::X, Key::Y, Key::Z].map(|k| i.key_pressed(k));
+            let text: String = i
+                .events
+                .iter()
+                .filter_map(|e| match e {
+                    egui::Event::Text(t) => Some(t.clone()),
+                    _ => None,
+                })
+                .collect();
+            (
+                keys,
+                text,
+                i.key_pressed(Key::Backspace),
+                i.key_pressed(Key::Enter),
+                i.key_pressed(Key::Escape),
+                i.modifiers.command,
+                i.pointer.hover_pos(),
+            )
+        });
+        for (k, pressed) in keys.into_iter().enumerate() {
+            if pressed {
+                m.axis = if m.axis == Some(k) { None } else { Some(k) };
+            }
+        }
+        m.typed.extend(text.chars().filter(|c| c.is_ascii_digit() || matches!(c, '.' | ',' | '-')));
+        if back {
+            m.typed.pop();
+        }
+        if let Some(now) = pointer.or(Some(m.start)) {
+            m.change = m.change(&self.camera, rect, now, ctrl);
+        }
+        if escape || response.secondary_clicked() {
+            self.modal = None;
+        } else if enter || response.clicked() {
+            shown.moved = Some((m.ids.clone(), m.change)).filter(|(_, c)| !c.is_nothing());
+            self.modal = None;
+        }
+    }
+
     pub fn show(&mut self, ui: &mut Ui, scene: &Arc<Scene>, selected: &[u32], bed: [f64; 2]) -> Shown {
         let rect = ui.available_rect_before_wrap();
         self.rect = Some(rect);
@@ -359,8 +493,12 @@ impl View {
             Some((lo, hi)) if self.tool == Tool::Move => Some([(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, (lo[2] + hi[2]) / 2.0]),
             _ => None,
         };
+        // A transform from the keyboard takes the pointer, the keys and the clicks while it lasts.
+        let keyed = self.modal.is_some();
+        self.keyed(ui, rect, &response, &mut shown);
         let press = ui.input(|i| i.pointer.press_origin());
-        if response.drag_started_by(PointerButton::Primary)
+        if !keyed
+            && response.drag_started_by(PointerButton::Primary)
             && let (Some(at), Some(start)) = (one, press)
             && let Some(handle) = Gizmo::at(&self.camera, rect, at).and_then(|g| g.handle_at(start))
         {
@@ -375,14 +513,15 @@ impl View {
                 shown.moved = Some((m.ids.clone(), m.change)).filter(|(_, c)| !c.is_nothing());
                 self.moving = None;
             }
-        } else {
+        } else if !keyed {
             steer(&mut self.camera, &response, ui, true);
         }
         if self.moving.is_some() {
             steer(&mut self.camera, &response, ui, false);
         }
         // While a drag is under way the object is drawn where it would go; the scene itself changes only when the window runs the move.
-        let moving = self.moving.as_ref().map(|m| (m.ids.clone(), m.change));
+        let moving =
+            self.moving.as_ref().map(|m| (m.ids.clone(), m.change)).or_else(|| self.modal.as_ref().map(|m| (m.ids.clone(), m.change)));
         let (size, ppp) = picture_size(ui, rect);
         let now = Drawn {
             scene: Arc::as_ptr(scene) as usize,
@@ -445,6 +584,7 @@ impl View {
             paint_gizmo(&painter, &g, active);
             if let (Some(m), Some(p)) = (self.moving.as_ref(), response.interact_pointer_pos()) {
                 let text = match m.change {
+                    Change::Stretch(axis, f) => format!("{} x {}", ["x", "y", "z"][axis.min(2)], crate::lang::mark(format!("{f:.2}"))),
                     Change::Move(by) => {
                         // With a decimal comma, the three are kept apart by semicolons, as Portuguese and Spanish write a list of them.
                         let sep = if crate::lang::get().decimal_comma() { "; " } else { ", " };
@@ -476,7 +616,14 @@ impl View {
         if let [a, b] = marks[..] {
             painter.line_segment([a, b], Stroke::new(2.0, Color32::from_rgb(255, 230, 90)));
         }
-        if response.clicked()
+        if let Some(m) = &self.modal
+            && let Some(p) = ui.input(|i| i.pointer.hover_pos())
+        {
+            let font = FontId::proportional(13.0);
+            painter.text(p + vec2(16.0, -16.0), egui::Align2::LEFT_BOTTOM, m.describe(), font, Color32::WHITE);
+        }
+        if !keyed
+            && response.clicked()
             && let Some(p) = response.interact_pointer_pos()
             && self.gizmo.and_then(|g| g.handle_at(p)).is_none()
         {
@@ -488,7 +635,8 @@ impl View {
                 Tool::Measure => shown.point = point,
             }
         }
-        if response.secondary_clicked()
+        if !keyed
+            && response.secondary_clicked()
             && let Some(p) = response.interact_pointer_pos()
         {
             let (x, y) = (((p.x - rect.min.x) * ppp).max(0.0) as usize, ((p.y - rect.min.y) * ppp).max(0.0) as usize);

@@ -32,10 +32,13 @@ impl Look {
 
 /// The single-key shortcuts, as the View menu lists them (the keys as the keyboard names them, what they do translated).
 pub const SHORTCUTS: &[(&str, &str)] = &[
+    ("G, R, S", ui_msg!("Over the 3D view: move, turn or scale the picked objects with the pointer, as Blender does")),
+    ("X, Y, Z", ui_msg!("Then keep to one axis (again to free it); type an amount; Enter or a click applies, Escape puts back")),
+    ("Ctrl", ui_msg!("While moving, turning or scaling: snap to steps")),
     ("G", ui_msg!("Move tool: pick and drag, turn with the rings, scale with the square")),
     ("L", ui_msg!("Lay flat tool: click a face to turn it down")),
     ("M", ui_msg!("Measure tool: click two points")),
-    ("R", ui_msg!("Turn the picked objects 90 degrees about z")),
+    ("R", ui_msg!("Away from the 3D view: turn the picked objects 90 degrees about z")),
     ("F", ui_msg!("Frame the picked objects, or everything")),
     ("A", ui_msg!("Arrange the plate")),
     ("Ctrl+D", ui_msg!("Duplicate the picked objects")),
@@ -50,10 +53,26 @@ const SELECT_ALL: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, K
 impl App {
     /// The single-key shortcuts, while no text field has the keyboard.
     pub(crate) fn shortcuts(&mut self, ctx: &egui::Context) {
-        if ctx.egui_wants_keyboard_input() {
+        // While a keyed transform lasts its keys are its own (the view reads them).
+        if ctx.egui_wants_keyboard_input() || self.view.modal.is_some() {
             return;
         }
         let plain = |k: Key| ctx.input(|i| i.modifiers.is_none() && i.key_pressed(k));
+        // G, R and S with the pointer over the 3D view and objects picked: a transform that follows the pointer, as Blender's.
+        let over = ctx.input(|i| i.pointer.hover_pos()).filter(|p| self.view.rect.is_some_and(|r| r.contains(*p)));
+        if let Some(start) = over
+            && !self.selected.is_empty()
+        {
+            use crate::view3d::Keyed;
+            for (key, kind) in [(Key::G, Keyed::Move), (Key::R, Keyed::Turn), (Key::S, Keyed::Scale)] {
+                if plain(key)
+                    && let Some(at) = self.middle_of_selected()
+                {
+                    self.view.start_keyed(kind, self.selected.clone(), at, start);
+                    return;
+                }
+            }
+        }
         if ctx.input_mut(|i| i.consume_shortcut(&DUPLICATE)) {
             self.duplicate_selected();
         }
@@ -75,6 +94,17 @@ impl App {
         if plain(Key::A) {
             self.arrange();
         }
+    }
+
+    /// The middle of the picked objects' bounds, where a transform turns and scales them about.
+    fn middle_of_selected(&self) -> Option<[f64; 3]> {
+        self.selected
+            .iter()
+            .filter_map(|&id| self.session.scene.get(id).ok().and_then(|o| o.bounds()))
+            .reduce(|(alo, ahi), (blo, bhi)| {
+                ([alo[0].min(blo[0]), alo[1].min(blo[1]), alo[2].min(blo[2])], [ahi[0].max(bhi[0]), ahi[1].max(bhi[1]), ahi[2].max(bhi[2])])
+            })
+            .map(|(lo, hi)| [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, (lo[2] + hi[2]) / 2.0])
     }
 
     /// Turns every picked object `degrees` about z, as one undo step.
