@@ -292,12 +292,15 @@ pub fn gcode_each(objects: &[(u32, Mesh)], own: &[Option<Profile>], p: &Profile)
         .flatten()
         .map(|pts| Stroke { pts, closed: true, speed: p.first_layer_speed, kind: Feature::Brim, flow: 1.0, spiral: false })
         .collect();
-    // The skirt: outward from the brim or the raft, or from the footprint when there is neither.
+    // The skirt: outward from the brim or the raft, or from the footprint when there is neither, round their convex hull, as other
+    // slicers draw it: one loop round everything, not into each notch or round each object apart.
     let skirt_base = match (raft.is_empty(), brim_loops) {
         (false, _) => geom::inset(&footprint, -RAFT_MARGIN),
         (true, 0) => footprint.clone(),
         (true, n) => geom::inset(&footprint, -(n as f64 * w)),
     };
+    let hull = geom::hull(skirt_base.iter().flatten().flatten().copied());
+    let skirt_base = if hull.len() >= 3 { geom::region(&[hull]) } else { skirt_base };
     let skirt: Vec<Stroke> = (0..p.skirt_loops)
         .flat_map(|i| geom::inset(&skirt_base, -(p.skirt_distance + (f64::from(i) + 0.5) * w)))
         .filter_map(|shape| shape.into_iter().next())
@@ -1681,6 +1684,67 @@ mod tests {
             .filter_map(|l| l[4..].split(' ').next()?.parse::<f64>().ok())
             .map(|x| (x - 110.0).abs())
             .fold(0.0, f64::max)
+    }
+
+    /// The plate-frame points each extrusion of `kind` on the first layer passes through, each run of them a list of its own (a
+    /// travel starts the next), with the point it starts from.
+    fn first_layer_runs(g: &str, kind: &str, p: &Profile) -> Vec<Vec<P2>> {
+        let (dx, dy) = if p.origin_center { (0.0, 0.0) } else { (p.bed[0] / 2.0, p.bed[1] / 2.0) };
+        let (mut runs, mut at, mut inside, mut extruding): (Vec<Vec<P2>>, Option<P2>, bool, bool) = (Vec::new(), None, false, false);
+        for l in g.split(";LAYER:1\n").next().unwrap_or("").lines() {
+            if let Some(t) = l.strip_prefix(";TYPE:") {
+                (inside, extruding) = (t == kind, false);
+                continue;
+            }
+            if !l.starts_with("G1 ") && !l.starts_with("G0 ") {
+                continue;
+            }
+            let word = |c: char| l.split(' ').find_map(|w| w.strip_prefix(c)?.parse::<f64>().ok());
+            let (Some(x), Some(y)) = (word('X'), word('Y')) else { continue };
+            let here = [x - dx, y - dy];
+            let pushes = word('E').is_some_and(|e| e > 0.0);
+            if inside && pushes {
+                if !extruding {
+                    runs.push(at.into_iter().collect());
+                }
+                if let Some(run) = runs.last_mut() {
+                    run.push(here);
+                }
+            }
+            extruding = inside && pushes;
+            at = Some(here);
+        }
+        runs
+    }
+
+    /// Whether every point of `pts` is on the boundary of their convex hull, within `tol` mm.
+    fn convex(pts: &[P2], tol: f64) -> bool {
+        let hull = geom::region(&[geom::hull(pts.iter().copied())]);
+        pts.iter().all(|&q| geom::nearest(&hull, q).is_some_and(|n| dist(n, q) <= tol))
+    }
+
+    #[test]
+    fn the_skirt_goes_once_round_the_convex_hull_of_the_first_layer() {
+        let p = Profile { skirt_loops: 2, ..Profile::default() };
+        // An L: two bars, its notch facing the front right.
+        let bar = |size: [f64; 3], at: [f64; 3]| Mesh::cuboid(size).transformed(&lamina_core::Transform::translate(at));
+        let l = vec![(1, Mesh::merged([&bar([30.0, 6.0, 5.0], [0.0, -12.0, 0.0]), &bar([6.0, 30.0, 5.0], [-12.0, 0.0, 0.0])]))];
+        // Two cubes 30 mm apart, which the old skirt ringed one by one.
+        let apart = vec![(1, bar([10.0, 10.0, 5.0], [-20.0, 0.0, 0.0])), (2, bar([10.0, 10.0, 5.0], [20.0, 0.0, 0.0]))];
+        for (name, objects) in [("an L", l), ("two cubes", apart)] {
+            let out = gcode(&objects, &p).unwrap();
+            let runs = first_layer_runs(&out.gcode, "skirt", &p);
+            assert_eq!(runs.len(), 2, "{name}: one loop for each of the two skirt loops: {}", runs.len());
+            for run in &runs {
+                assert!(convex(run, 0.01), "{name}: the loop is convex");
+            }
+            // Nothing of the first layer is outside the inner loop, and it keeps `skirt_distance` from what it rings.
+            let inner = geom::region(&[geom::hull(runs[0].iter().copied())]);
+            let walls: Vec<P2> = first_layer_runs(&out.gcode, "outer-wall", &p).into_iter().flatten().collect();
+            assert!(!walls.is_empty() && walls.iter().all(|&q| geom::contains(&inner, q)), "{name}: the skirt rings the walls");
+            let gap = walls.iter().filter_map(|&q| geom::nearest(&inner, q).map(|n| dist(n, q))).fold(f64::MAX, f64::min);
+            assert!((gap - (p.skirt_distance + p.line_width())).abs() < 0.05, "{name}: {gap} from the outer wall's middle");
+        }
     }
 
     #[test]

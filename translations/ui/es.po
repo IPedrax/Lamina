@@ -56,7 +56,7 @@ msgstr "350 x 350 x 340 mm, boquilla de 0,4 mm; la configuración de la impresor
 msgid "A PrusaSlicer .ini, or an OrcaSlicer or Bambu Studio .json preset"
 msgstr "Un .ini de PrusaSlicer, o un preajuste .json de OrcaSlicer o Bambu Studio"
 
-#: crates/slicer/src/profile.rs:429
+#: crates/slicer/src/profile.rs:434
 msgid "A bridge's flow as a share of the normal flow: under 1 makes thinner strands that sag less."
 msgstr "El flujo de un puente como fracción del flujo normal: por debajo de 1 hace hilos más finos que se comban menos."
 
@@ -64,7 +64,7 @@ msgstr "El flujo de un puente como fracción del flujo normal: por debajo de 1 h
 msgid "A copy beside it; the plate is laid out again"
 msgstr "Una copia al lado; la cama se organiza de nuevo"
 
-#: crates/slicer/src/profile.rs:425
+#: crates/slicer/src/profile.rs:430
 msgid "A layer that would print faster than this, s, is slowed so it cools before the next."
 msgstr "Una capa que se imprimiría en menos tiempo que esto, s, se ralentiza para que se enfríe antes de la siguiente."
 
@@ -96,11 +96,11 @@ msgstr "Una segunda pasada sobre cada superficie superior con un hilo de plásti
 msgid "A square peg or hole cannot turn in its socket"
 msgstr "Un pasador o agujero cuadrado no gira en su alojamiento"
 
-#: crates/slicer/src/profile.rs:432
+#: crates/slicer/src/profile.rs:437
 msgid "A surface leaning further than this from vertical, degrees, is held up."
 msgstr "Una superficie más inclinada que esto respecto a la vertical, grados, recibe soporte."
 
-#: crates/slicer/src/profile.rs:419
+#: crates/slicer/src/profile.rs:424
 msgid "A travel shorter than this is made without retracting, mm."
 msgstr "Un desplazamiento más corto que esto se hace sin retraer, mm."
 
@@ -297,7 +297,7 @@ msgstr "Haz clic en dos puntos para medir entre ellos (M)"
 msgid "Columns"
 msgstr "Columnas"
 
-#: crates/slicer/src/profile.rs:439
+#: crates/slicer/src/profile.rs:444
 msgid "Columns under the whole overhang, or trees: thin branches that merge on the way down, less plastic and smaller marks."
 msgstr "Columnas bajo todo el voladizo, o árboles: ramas finas que se unen al bajar, menos plástico y marcas más pequeñas."
 
@@ -380,7 +380,7 @@ msgstr "Eliminar los objetos seleccionados"
 msgid "Delete the picked objects, as one undo step"
 msgstr "Eliminar los objetos seleccionados, en un solo paso de deshacer"
 
-#: crates/slicer/src/profile.rs:436
+#: crates/slicer/src/profile.rs:441
 msgid "Denser layers at the top of a support, under the part, for a cleaner underside."
 msgstr "Capas más densas en la parte superior de un soporte, bajo la pieza, para una cara inferior más limpia."
 
@@ -578,7 +578,7 @@ msgstr "Espaciado de la piel difusa, mm"
 msgid "Fuzzy thickness, mm"
 msgstr "Grosor de la piel difusa, mm"
 
-#: crates/slicer/src/profile.rs:464
+#: crates/slicer/src/profile.rs:469
 msgid "G-code run at each tool change, before the T: [previous_tool], [next_tool] and [layer_z] as well as the settings."
 msgstr "G-code que se ejecuta en cada cambio de herramienta, antes de la T: [previous_tool], [next_tool] y [layer_z], además de los ajustes."
 
@@ -642,11 +642,11 @@ msgstr "Panal"
 msgid "How far a fuzzy skin's bumps stand in or out, mm."
 msgstr "Cuánto entran o salen los bultos de la piel difusa, mm."
 
-#: crates/slicer/src/profile.rs:444
+#: crates/slicer/src/profile.rs:449
 msgid "How far a tree's branches may lean from vertical, degrees, as they gather into trunks and go round the part."
 msgstr "Cuánto pueden inclinarse las ramas de un árbol respecto a la vertical, grados, al reunirse en troncos y rodear la pieza."
 
-#: crates/slicer/src/profile.rs:486
+#: crates/slicer/src/profile.rs:491
 msgid "How far above the nozzle's tip the gantry that carries the head runs, mm: only the last object printed one at a time may be taller."
 msgstr "A qué altura sobre la punta de la boquilla pasa el pórtico que lleva el cabezal, mm: solo el último objeto impreso de uno en uno puede ser más alto."
 
@@ -654,7 +654,7 @@ msgstr "A qué altura sobre la punta de la boquilla pasa el pórtico que lleva e
 msgid "How far an arc may stray from the points it replaces, mm."
 msgstr "Cuánto puede apartarse un arco de los puntos que sustituye, mm."
 
-#: crates/slicer/src/profile.rs:460
+#: crates/slicer/src/profile.rs:465
 msgid "How far an idle extruder cools below its own temperature while another prints, C; it heats again before it prints."
 msgstr "Cuánto se enfría un extrusor inactivo por debajo de su temperatura mientras otro imprime, C; se vuelve a calentar antes de imprimir."
 
@@ -662,7 +662,7 @@ msgstr "Cuánto se enfría un extrusor inactivo por debajo de su temperatura mie
 msgid "How far apart a fuzzy skin's bumps are along the wall, mm."
 msgstr "La distancia entre los bultos de la piel difusa a lo largo de la pared, mm."
 
-#: crates/slicer/src/profile.rs:441
+#: crates/slicer/src/profile.rs:446
 msgid "How far apart a tree's tips touch the overhang, mm: closer holds a flatter underside."
 msgstr "La distancia entre las puntas de un árbol donde tocan el voladizo, mm: más cerca sostiene una cara inferior más plana."
 
@@ -670,23 +670,23 @@ msgstr "La distancia entre las puntas de un árbol donde tocan el voladizo, mm: 
 msgid "How far apart the ironing lines are, mm: much closer than the line width."
 msgstr "La distancia entre las líneas del alisado, mm: mucho menor que el ancho de línea."
 
-#: crates/slicer/src/profile.rs:417
+#: crates/slicer/src/profile.rs:422
 msgid "How far the filament is pulled back before a travel, mm, so it does not ooze and string."
 msgstr "Cuánto se retrae el filamento antes de un desplazamiento, mm, para que no gotee ni forme hilos."
 
-#: crates/slicer/src/profile.rs:481
+#: crates/slicer/src/profile.rs:486
 msgid "How far the print head reaches round the nozzle, mm: objects printed one at a time stand at least this far apart."
 msgstr "Hasta dónde se extiende el cabezal alrededor de la boquilla, mm: los objetos impresos de uno en uno quedan al menos a esta distancia entre sí."
 
-#: crates/slicer/src/profile.rs:406
+#: crates/slicer/src/profile.rs:411
 msgid "How far the skirt stands from the part, mm."
 msgstr "La distancia de la falda a la pieza, mm."
 
-#: crates/slicer/src/profile.rs:428
+#: crates/slicer/src/profile.rs:433
 msgid "How fast a bridge (solid infill over air) prints, mm/s."
 msgstr "La velocidad de un puente (relleno sólido sobre el vacío), mm/s."
 
-#: crates/slicer/src/profile.rs:410
+#: crates/slicer/src/profile.rs:415
 msgid "How fast infill and support print, mm/s."
 msgstr "La velocidad del relleno y del soporte, mm/s."
 
@@ -694,15 +694,15 @@ msgstr "La velocidad del relleno y del soporte, mm/s."
 msgid "How fast ironing moves, mm/s."
 msgstr "La velocidad del alisado, mm/s."
 
-#: crates/slicer/src/profile.rs:418
+#: crates/slicer/src/profile.rs:423
 msgid "How fast the filament is pulled back and pushed again, mm/s."
 msgstr "La velocidad con que el filamento se retrae y se vuelve a empujar, mm/s."
 
-#: crates/slicer/src/profile.rs:411
+#: crates/slicer/src/profile.rs:416
 msgid "How fast the first layer prints, mm/s: slower sticks better."
 msgstr "La velocidad de la primera capa, mm/s: más lento se adhiere mejor."
 
-#: crates/slicer/src/profile.rs:412
+#: crates/slicer/src/profile.rs:417
 msgid "How fast the head moves when it is not printing, mm/s."
 msgstr "La velocidad del cabezal cuando no imprime, mm/s."
 
@@ -710,7 +710,7 @@ msgstr "La velocidad del cabezal cuando no imprime, mm/s."
 msgid "How fast the printer takes corners (Marlin's junction deviation, mm); used for the time estimate."
 msgstr "La velocidad con que la impresora toma las esquinas (junction deviation de Marlin, mm); se usa para estimar el tiempo."
 
-#: crates/slicer/src/profile.rs:409
+#: crates/slicer/src/profile.rs:414
 msgid "How fast walls print, mm/s."
 msgstr "La velocidad de las paredes, mm/s."
 
@@ -719,7 +719,7 @@ msgstr "La velocidad de las paredes, mm/s."
 msgid "How many"
 msgstr "Cantidad"
 
-#: crates/slicer/src/profile.rs:450
+#: crates/slicer/src/profile.rs:455
 msgid "How many extruders or tools the printer has; T0 is the first. The firmware applies each tool's offset, and Klipper needs a T0, T1... macro for each."
 msgstr "Cuántos extrusores o herramientas tiene la impresora; T0 es el primero. El firmware aplica el desplazamiento de cada herramienta, y Klipper necesita una macro T0, T1... para cada uno."
 
@@ -727,7 +727,7 @@ msgstr "Cuántos extrusores o herramientas tiene la impresora; T0 es el primero.
 msgid "How much of the inside is filled, from 0 to 1 (the window shows it in %)."
 msgstr "Cuánto del interior se rellena, de 0 a 1 (la ventana lo muestra en %)."
 
-#: crates/slicer/src/profile.rs:433
+#: crates/slicer/src/profile.rs:438
 msgid "How much of the support's area its lines fill, from 0 to 1."
 msgstr "Cuánto del área del soporte rellenan sus líneas, de 0 a 1."
 
@@ -887,7 +887,7 @@ msgstr "Capa"
 msgid "Layer height, mm"
 msgstr "Altura de capa, mm"
 
-#: crates/slicer/src/profile.rs:408
+#: crates/slicer/src/profile.rs:413
 msgid "Layers of lines under the part, which is lifted onto them; 0 for none."
 msgstr "Capas de líneas bajo la pieza, que se eleva sobre ellas; 0 para ninguna."
 
@@ -903,7 +903,7 @@ msgstr "Deja que un agente de IA (Claude Code, Codex, cualquier cliente MCP) tra
 msgid "Lettering, 10 mm capitals, 1 mm deep; the assistant or `text` writes any"
 msgstr "Letras, mayúsculas de 10 mm, 1 mm de profundidad; el asistente o `text` escribe cualquiera"
 
-#: crates/slicer/src/profile.rs:421
+#: crates/slicer/src/profile.rs:426
 msgid "Lift the nozzle by this much while it travels, mm, so it does not knock the part; 0 for none."
 msgstr "Levantar la boquilla esto durante el desplazamiento, mm, para que no golpee la pieza; 0 para nada."
 
@@ -927,13 +927,13 @@ msgstr "Ver todo lo que hay en la cama (F encuadra los objetos seleccionados)"
 msgid "Loops"
 msgstr "Vueltas"
 
-#: crates/slicer/src/profile.rs:407
+#: crates/slicer/src/profile.rs:408
+msgid "Loops round everything on the first layer, outside its convex outline and not touching it, to start the flow; 0 for none."
+msgstr "Vueltas alrededor de todo en la primera capa, por fuera de su contorno convexo y sin tocarlo, para iniciar el flujo; 0 para ninguna."
+
+#: crates/slicer/src/profile.rs:412
 msgid "Loops round the first layer, touching it, that hold its edges down, mm wide; 0 for none."
 msgstr "Vueltas alrededor de la primera capa, tocándola, que sujetan sus bordes, ancho en mm; 0 para ninguna."
-
-#: crates/slicer/src/profile.rs:405
-msgid "Loops round the part on the first layer, not touching it, to start the flow; 0 for none."
-msgstr "Vueltas alrededor de la pieza en la primera capa, sin tocarla, para iniciar el flujo; 0 para ninguna."
 
 #: apps/lamina/src/lib.rs:1596
 msgid "Machine"
@@ -1110,7 +1110,7 @@ msgstr "Pasadores"
 msgid "Placeholders: {}"
 msgstr "Marcadores: {}"
 
-#: crates/slicer/src/profile.rs:472
+#: crates/slicer/src/profile.rs:477
 msgid "Plastic each tool change lays on the purge tower, mm3, so the new nozzle prints clean."
 msgstr "Plástico que cada cambio de herramienta deposita en la torre de purga, mm3, para que la nueva boquilla imprima limpia."
 
@@ -1151,7 +1151,7 @@ msgstr "Avance de presión"
 msgid "Preview"
 msgstr "Vista previa"
 
-#: crates/slicer/src/profile.rs:476
+#: crates/slicer/src/profile.rs:481
 msgid "Print each object whole before the next, the shortest first, so a failed one spoils no other; the head needs room round each."
 msgstr "Imprimir cada objeto entero antes del siguiente, el más bajo primero, para que uno fallido no estropee los demás; el cabezal necesita espacio alrededor de cada uno."
 
@@ -1237,7 +1237,7 @@ msgstr "Reiniciar e instalar"
 msgid "Retract speed, mm/s"
 msgstr "Velocidad de retracción, mm/s"
 
-#: crates/slicer/src/profile.rs:422
+#: crates/slicer/src/profile.rs:427
 msgid "Retract while moving back along the line just printed, mm, which leaves a smaller blob; 0 for none."
 msgstr "Retraer mientras se retrocede por la línea recién impresa, mm, lo que deja una gota más pequeña; 0 para nada."
 
@@ -1492,7 +1492,7 @@ msgstr "Detalles del soporte"
 msgid "Supports"
 msgstr "Soportes"
 
-#: crates/slicer/src/profile.rs:431
+#: crates/slicer/src/profile.rs:436
 msgid "Supports under overhangs: off, everywhere, or only those that stand on the plate."
 msgstr "Soportes bajo los voladizos: desactivados, en todas partes, o solo los que se apoyan en la cama."
 
@@ -1529,7 +1529,7 @@ msgstr "No se pudo guardar el chat: {}"
 msgid "The details are in {}."
 msgstr "Los detalles están en {}."
 
-#: crates/slicer/src/profile.rs:453
+#: crates/slicer/src/profile.rs:458
 msgid "The extruder that prints, from 1: set it for one object to print that object in another filament."
 msgstr "El extrusor que imprime, desde 1: ajústalo en un objeto para imprimir ese objeto con otro filamento."
 
@@ -1557,7 +1557,7 @@ msgstr "La altura de la primera capa, mm: una más gruesa se adhiere mejor a una
 msgid "The key changed: tick Remember again to save it."
 msgstr "La clave cambió: marca Recordar de nuevo para guardarla."
 
-#: crates/slicer/src/profile.rs:424
+#: crates/slicer/src/profile.rs:429
 msgid "The layer from which the fan runs at its full setting."
 msgstr "La capa a partir de la cual el ventilador funciona a su valor máximo."
 
@@ -1569,7 +1569,7 @@ msgstr "La dirección del modelo local se omitió: no está en este ordenador"
 msgid "The local model's name was left out: it is not a model id"
 msgstr "El nombre del modelo local se omitió: no es un id de modelo"
 
-#: crates/slicer/src/profile.rs:456
+#: crates/slicer/src/profile.rs:461
 msgid "The nozzle temperature of each extruder after the first, C, in order; one left out prints at the nozzle temperature."
 msgstr "La temperatura de boquilla de cada extrusor después del primero, C, en orden; uno omitido imprime a la temperatura de boquilla."
 
@@ -1577,19 +1577,19 @@ msgstr "La temperatura de boquilla de cada extrusor después del primero, C, en 
 msgid "The nozzle's diameter, mm: lines are this wide, and layers at most 80 % of it."
 msgstr "El diámetro de la boquilla, mm: las líneas tienen este ancho, y las capas como mucho el 80 % de él."
 
-#: crates/slicer/src/profile.rs:414
+#: crates/slicer/src/profile.rs:419
 msgid "The nozzle's temperature for the first layer, C."
 msgstr "La temperatura de la boquilla en la primera capa, C."
 
-#: crates/slicer/src/profile.rs:413
+#: crates/slicer/src/profile.rs:418
 msgid "The nozzle's temperature, C."
 msgstr "La temperatura de la boquilla, C."
 
-#: crates/slicer/src/profile.rs:430
+#: crates/slicer/src/profile.rs:435
 msgid "The part-cooling fan while a bridge prints, 0 to 255."
 msgstr "El ventilador de capa mientras se imprime un puente, 0 a 255."
 
-#: crates/slicer/src/profile.rs:423
+#: crates/slicer/src/profile.rs:428
 msgid "The part-cooling fan, 0 to 255: off for the first layer, then up in steps to this."
 msgstr "El ventilador de capa, 0 a 255: apagado en la primera capa, luego sube por pasos hasta esto."
 
@@ -1617,11 +1617,11 @@ msgstr "La cama cambió desde este laminado: lamina de nuevo."
 msgid "The plate's size, mm, x then y."
 msgstr "El tamaño de la cama, mm, x y luego y."
 
-#: crates/slicer/src/profile.rs:416
+#: crates/slicer/src/profile.rs:421
 msgid "The plate's temperature for the first layer, C."
 msgstr "La temperatura de la cama en la primera capa, C."
 
-#: crates/slicer/src/profile.rs:415
+#: crates/slicer/src/profile.rs:420
 msgid "The plate's temperature, C; 0 for an unheated plate."
 msgstr "La temperatura de la cama, C; 0 para una cama sin calefacción."
 
@@ -1669,19 +1669,19 @@ msgstr "La clave guardada de {} se omitió: no es una clave sellada"
 msgid "The share of its triangles to keep"
 msgstr "La fracción de sus triángulos que se conserva"
 
-#: crates/slicer/src/profile.rs:470
+#: crates/slicer/src/profile.rs:475
 msgid "The side of the purge tower, a square each tool change purges on, mm; it prints on every layer up to the last change."
 msgstr "El lado de la torre de purga, un cuadrado donde purga cada cambio de herramienta, mm; se imprime en cada capa hasta el último cambio."
 
-#: crates/slicer/src/profile.rs:426
+#: crates/slicer/src/profile.rs:431
 msgid "The slowest a layer is slowed to cool, mm/s."
 msgstr "Lo más lento a lo que se ralentiza una capa para enfriarse, mm/s."
 
-#: crates/slicer/src/profile.rs:435
+#: crates/slicer/src/profile.rs:440
 msgid "The space between a support and the part's walls, mm."
 msgstr "El espacio entre un soporte y las paredes de la pieza, mm."
 
-#: crates/slicer/src/profile.rs:434
+#: crates/slicer/src/profile.rs:439
 msgid "The space between the top of a support and the part, mm, so it comes away."
 msgstr "El espacio entre la parte superior de un soporte y la pieza, mm, para que se despegue."
 
@@ -1693,7 +1693,7 @@ msgstr "La mayor altura que puede imprimir la impresora, mm."
 msgid "The theme was left out: it is not dark, light or system"
 msgstr "El tema se omitió: no es dark, light ni system"
 
-#: crates/slicer/src/profile.rs:446
+#: crates/slicer/src/profile.rs:451
 msgid "The thickest a tree's trunk grows, mm: a branch thickens with the tips it carries and as it goes down."
 msgstr "Lo más grueso que crece el tronco de un árbol, mm: una rama engrosa con las puntas que lleva y a medida que baja."
 
@@ -1773,7 +1773,7 @@ msgstr "Torre y, mm"
 msgid "Travel inside the part without retracting"
 msgstr "Desplazarse dentro de la pieza sin retraer"
 
-#: crates/slicer/src/profile.rs:420
+#: crates/slicer/src/profile.rs:425
 msgid "Travel inside the part without retracting, however far: it crosses no gap, so nothing strings."
 msgstr "Desplazarse dentro de la pieza sin retraer, a cualquier distancia: no cruza ningún hueco, así que nada forma hilos."
 
@@ -1897,15 +1897,15 @@ msgstr "Paredes, mm/s"
 msgid "What's new"
 msgstr "Novedades"
 
-#: crates/slicer/src/profile.rs:427
+#: crates/slicer/src/profile.rs:432
 msgid "Where each wall starts and ends, which leaves a small mark."
 msgstr "Dónde empieza y termina cada pared, lo que deja una pequeña marca."
 
-#: crates/slicer/src/profile.rs:466
+#: crates/slicer/src/profile.rs:471
 msgid "Where the purge tower's middle stands, mm east of the plate's middle."
 msgstr "Dónde está el centro de la torre de purga, mm al este del centro de la cama."
 
-#: crates/slicer/src/profile.rs:467
+#: crates/slicer/src/profile.rs:472
 msgid "Where the purge tower's middle stands, mm north of the plate's middle."
 msgstr "Dónde está el centro de la torre de purga, mm al norte del centro de la cama."
 
@@ -2197,3 +2197,6 @@ msgstr "{} triángulos ahora; su forma se conserva lo mejor posible"
 msgid "{}: Lamina opens .lamina projects, imports .stl, .3mf, .obj, .gltf and .glb meshes, and gives pictures to the assistant"
 msgstr "{}: Lamina abre proyectos .lamina, importa mallas .stl, .3mf, .obj, .gltf y .glb, y pasa las imágenes al asistente"
 
+#: crates/slicer/src/profile.rs:405
+#~ msgid "Loops round the part on the first layer, not touching it, to start the flow; 0 for none."
+#~ msgstr "Vueltas alrededor de la pieza en la primera capa, sin tocarla, para iniciar el flujo; 0 para ninguna."

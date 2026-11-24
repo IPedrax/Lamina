@@ -239,7 +239,7 @@ The same text is the tooltip in the window. The names are the ones a profile fil
 | `bottom_layers` | Solid layers at the bottom of the part. | 0 to 50 | 4 |
 | `infill_density` | How much of the inside is filled, from 0 to 1 (the window shows it in %). | 0 to 1 | 0.15 |
 | `infill_pattern` | The pattern of the sparse infill: lines, grid, triangles, gyroid or honeycomb. |  | `lines` |
-| `skirt_loops` | Loops round the part on the first layer, not touching it, to start the flow; 0 for none. | 0 to 10 | 1 |
+| `skirt_loops` | Loops round everything on the first layer, outside its convex outline and not touching it, to start the flow; 0 for none. | 0 to 10 | 1 |
 | `skirt_distance` | How far the skirt stands from the part, mm. | 0 to 50 | 3.0 |
 | `brim_width` | Loops round the first layer, touching it, that hold its edges down, mm wide; 0 for none. | 0 to 50 | 0.0 |
 | `raft_layers` | Layers of lines under the part, which is lifted onto them; 0 for none. | 0 to 10 | 0 |

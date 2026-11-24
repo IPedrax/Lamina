@@ -402,7 +402,12 @@ pub const ABOUT: &[(&str, &str)] = &[
     ("bottom_layers", ui_msg!("Solid layers at the bottom of the part.")),
     ("infill_density", ui_msg!("How much of the inside is filled, from 0 to 1 (the window shows it in %).")),
     ("infill_pattern", ui_msg!("The pattern of the sparse infill: lines, grid, triangles, gyroid or honeycomb.")),
-    ("skirt_loops", ui_msg!("Loops round the part on the first layer, not touching it, to start the flow; 0 for none.")),
+    (
+        "skirt_loops",
+        ui_msg!(
+            "Loops round everything on the first layer, outside its convex outline and not touching it, to start the flow; 0 for none."
+        ),
+    ),
     ("skirt_distance", ui_msg!("How far the skirt stands from the part, mm.")),
     ("brim_width", ui_msg!("Loops round the first layer, touching it, that hold its edges down, mm wide; 0 for none.")),
     ("raft_layers", ui_msg!("Layers of lines under the part, which is lifted onto them; 0 for none.")),
