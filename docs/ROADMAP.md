@@ -391,6 +391,10 @@ Priorities:
   step, Escape or a right click puts it back. Away from the view, or with nothing picked, the old keys stay (G the move tool, R a
   quarter turn). Tested with egui_kittest: G X 12.5, R 90, S Z 2 and, in Portuguese, G X 1,5; Escape changes nothing; one undo takes
   a move back.
+- **7.11 Blender's view keys.** Over the 3D view, 1, 3 and 7 (the number row, as Blender's numpad emulation has them) look from the
+  front, the right and the top, with Ctrl from the back, the left and the bottom, keeping the target and distance; Home frames
+  everything and the period key the picked objects. An orthographic view (Blender's numpad 5) needs the renderer's projection and
+  is not done. Tested with egui_kittest: each key's angles, Home and period framing.
 - **8.2 Benchmarks.** Ignored tests that print their times: `crates/slicer/tests/bench.rs` (about 100,000 triangles, three ways)
   and `crates/csg/tests/bench.rs` (a 5,120-triangle sphere with a 384-triangle cylinder, each boolean), plus
   `simplify::tests::heavy`. First run, on the session's machine in a dev build: slicing 6.1 s with the defaults, 9.4 s with gyroid
@@ -509,11 +513,7 @@ which Bambu's 2025 authorization keeps to Bambu Connect or a printer in Develope
 
 ## 7. Desktop
 
-**7.11 Blender's view keys (P1).** Numpad 1, 3 and 7 look from the front, the right and the top (with Ctrl, the back, the left and
-the bottom), Home frames everything and the numpad's point frames the picked objects. How: the camera's azimuth and elevation set
-by each key over the 3D view, framing kept. An orthographic view (numpad 5) needs the renderer's projection and is left for later.
-
-**7.12 Hide, show and box select (P2).** Blender hides the picked objects with H and shows them with Alt+H, and B drags a box to
+**7.12 Hide, show, box select and an orthographic view (P2).** Blender hides the picked objects with H and shows them with Alt+H, and B drags a box to
 pick. How: a hidden flag in the window (not the scene), skipped by the picture and the slice preview but not the slice; a box
 drag that picks every object whose picture pixels it covers.
 

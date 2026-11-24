@@ -82,6 +82,8 @@ all, set the environment variable `LAMINA_NO_UPDATE_CHECK=1`: the menu items and
   (about z) and S scales them; X, Y or Z keeps to that axis (press it again to free it), typed numbers give the exact amount (12.5
   mm, 90 degrees, 1.5 times), Ctrl snaps, and Enter or a click applies it as one undo step while Escape or a right click puts it
   back. G 12.5 Enter after X moves 12.5 mm along x; S Z 2 Enter makes them twice as tall.
+- Over the 3D view, **1**, **3** and **7** look from the front, the right and the top (with Ctrl, the back, the left and the
+  bottom), as Blender's numpad does; **Home** frames everything and **.** the picked objects.
 - Away from the 3D view, **R** turns the picked objects 90 degrees, **F** frames them, **A** arranges the plate, **Ctrl+D** duplicates, **Delete**
   deletes. View, Keyboard shortcuts lists them all.
 - With one object picked, the panel also has Move by, Rotate, Mirror, Scale, Cut into pieces, Duplicate and Drop to plate. With
