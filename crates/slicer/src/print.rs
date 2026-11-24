@@ -170,11 +170,19 @@ pub fn gcode_each(objects: &[(u32, Mesh)], own: &[Option<Profile>], p: &Profile)
     } else {
         None
     };
+    let profile_of = |i: usize| own.get(i).and_then(Option::as_ref).unwrap_or(p);
+    // Every object sliced first, so supports are planned for the plate: on the plate's layer k stands each object's layer k.
+    let sliced: Vec<Vec<slice::Layer>> =
+        objects.iter().enumerate().map(|(i, (_, m))| object_layers(m, profile_of(i), tops.as_deref())).collect::<Result<_, _>>()?;
+    let regions: Vec<Vec<Region>> = sliced.iter().map(|ls| ls.iter().map(|l| geom::region(&l.loops)).collect()).collect();
+    let supports = plate_supports(&sliced, &regions, &profile_of, p.sequential);
     // The plan of each object: its first layer's region, then its layers and the strokes of each.
-    let mut plans: Vec<ObjectPlan> = objects
+    let mut plans: Vec<ObjectPlan> = sliced
         .iter()
+        .zip(regions)
+        .zip(supports)
         .enumerate()
-        .map(|(i, (_, m))| plan(m, own.get(i).and_then(Option::as_ref).unwrap_or(p), w, tops.as_deref()))
+        .map(|(i, ((layers, regions), supports))| plan(layers, regions, supports, profile_of(i), w))
         .collect::<Result<_, _>>()?;
     let count = plans.iter().map(|(_, l)| l.len()).max().unwrap_or(0);
     // Each layer's extruders in the order they print (the one in use first, then the rest from the lowest, so each changes once a
@@ -648,19 +656,60 @@ fn tops_for(tops: &[f64], top: f64, min: f64) -> Vec<f64> {
     own
 }
 
-/// One object's first layer as a region, then its layers as (top z, thickness, strokes in print order). `tops`: the plate's
-/// adaptive layers, when they are on.
-fn plan(mesh: &Mesh, p: &Profile, w: f64, tops: Option<&[f64]>) -> Result<ObjectPlan, String> {
-    let layers = match tops {
+/// One object's layers: the plate's (`tops`, when adaptive layers are on) up to its top, else the profile's heights.
+fn object_layers(mesh: &Mesh, p: &Profile, tops: Option<&[f64]>) -> Result<Vec<slice::Layer>, String> {
+    match tops {
         Some(tops) => {
             let top = mesh.bounds().ok_or("the mesh is empty")?.1[2];
-            slice::layers_at(mesh, &tops_for(tops, top, p.min_layer_height))?
+            slice::layers_at(mesh, &tops_for(tops, top, p.min_layer_height))
         }
-        None => slice::layers(mesh, p.first_layer_height, p.layer_height)?,
+        None => slice::layers(mesh, p.first_layer_height, p.layer_height),
+    }
+}
+
+/// Each object's supports, planned for the plate: support for one object stands on or keeps clear of every object on each layer,
+/// not only its own, and no support is printed where an earlier object's already is. Objects printed one at a time stand apart
+/// and print alone, so each is planned by itself.
+fn plate_supports<'a>(
+    sliced: &[Vec<slice::Layer>],
+    regions: &[Vec<Region>],
+    profile_of: &dyn Fn(usize) -> &'a Profile,
+    sequential: bool,
+) -> Vec<Vec<support::Layer>> {
+    let count = regions.iter().map(Vec::len).max().unwrap_or(0);
+    let shared = !sequential && regions.len() > 1 && (0..regions.len()).any(|i| profile_of(i).support != support::Support::Off);
+    let solid: Vec<Region> = if shared {
+        (0..count).map(|k| regions.iter().filter_map(|r| r.get(k)).fold(Region::new(), |a, r| geom::union(&a, r))).collect()
+    } else {
+        Vec::new()
     };
-    let regions: Vec<Region> = layers.iter().map(|l| geom::region(&l.loops)).collect();
-    let heights: Vec<f64> = layers.iter().map(|l| l.height).collect();
-    let supports = support::plan(&regions, &heights, p);
+    let mut taken = vec![Region::new(); if shared { count } else { 0 }];
+    sliced
+        .iter()
+        .zip(regions)
+        .enumerate()
+        .map(|(i, (layers, own))| {
+            let heights: Vec<f64> = layers.iter().map(|l| l.height).collect();
+            let mut planned = support::plan(own, if shared { &solid } else { own }, &heights, profile_of(i));
+            if shared {
+                for (l, t) in planned.iter_mut().zip(taken.iter_mut()) {
+                    if geom::is_empty(&l.sparse) && geom::is_empty(&l.interface) {
+                        continue;
+                    }
+                    l.sparse = geom::difference(&l.sparse, t);
+                    l.interface = geom::difference(&l.interface, t);
+                    *t = geom::union(t, &geom::union(&l.sparse, &l.interface));
+                }
+            }
+            planned
+        })
+        .collect()
+}
+
+/// One object's first layer as a region, then its layers as (top z, thickness, strokes in print order), from its `layers`, their
+/// `regions` and its `supports` (planned for the plate).
+fn plan(layers: &[slice::Layer], regions: Vec<Region>, supports: Vec<support::Layer>, p: &Profile, w: f64) -> Result<ObjectPlan, String> {
+    let no_support = support::Layer::default();
     let walls = f64::from(p.perimeters);
     let inner: Vec<Region> =
         regions.iter().map(|r| if p.perimeters == 0 { r.clone() } else { geom::inset(r, walls * w - INFILL_OVERLAP * w) }).collect();
@@ -682,7 +731,7 @@ fn plan(mesh: &Mesh, p: &Profile, w: f64, tops: Option<&[f64]>) -> Result<Object
         }
         // Supports: sparse lines all run one way, so the layers stack into thin walls; the interface crosses them, denser, to carry
         // the overhang. The writer prints a layer's loops (the walls) before its lines.
-        let s = &supports[k];
+        let s = supports.get(k).unwrap_or(&no_support);
         // A tree's branches are walled, a loop round each, and filled inside as columns are.
         let sparse = if p.support_style == support::SupportStyle::Tree {
             strokes.extend(geom::inset(&s.sparse, w / 2.0).into_iter().flatten().map(|pts| Stroke {
@@ -1675,6 +1724,62 @@ mod tests {
         assert!(reach(&a.gcode) < 3.1 && reach(&b.gcode) > 7.0, "{} {}", reach(&a.gcode), reach(&b.gcode));
     }
 
+    #[test]
+    fn one_objects_support_stands_on_another_and_never_inside_it() {
+        // A tee 6 mm tall with arms 20 mm across, and beside its pillar a box 2 mm tall under the right arm (x 5 to 9).
+        let pillar = Mesh::cuboid([6.0, 6.0, 4.0]);
+        let arms = Mesh::cuboid([20.0, 6.0, 2.0]).transformed(&lamina_core::Transform::translate([0.0, 0.0, 4.0]));
+        let tee = (1, Mesh::merged([&pillar, &arms]));
+        let block = (2, Mesh::cuboid([4.0, 6.0, 2.0]).transformed(&lamina_core::Transform::translate([7.0, 0.0, 0.0])));
+        let inside = |q: P2| (5.0..=9.0).contains(&q[0]) && (-3.0..=3.0).contains(&q[1]);
+        // Points every 0.2 mm along each extruded segment, as lines may cross the box end to end.
+        let along = |runs: Vec<Vec<P2>>| -> Vec<P2> {
+            runs.iter()
+                .flat_map(|r| r.windows(2).map(|w| (w[0], w[1])).collect::<Vec<_>>())
+                .flat_map(|(a, b)| {
+                    let n = (dist(a, b) / 0.2).ceil().max(1.0) as usize;
+                    (0..=n).map(move |i| [a[0] + (b[0] - a[0]) * i as f64 / n as f64, a[1] + (b[1] - a[1]) * i as f64 / n as f64])
+                })
+                .collect()
+        };
+        for style in [support::SupportStyle::Columns, support::SupportStyle::Tree] {
+            let p = Profile { support: support::Support::Everywhere, support_style: style, skirt_loops: 0, ..Profile::default() };
+            let both = gcode(&[tee.clone(), block.clone()], &p).unwrap();
+            let alone = gcode(std::slice::from_ref(&tee), &p).unwrap();
+            let support_in_box = |g: &str| (0..10).flat_map(|k| along(layer_runs(g, k, "support", &p))).filter(|&q| inside(q)).count();
+            assert!(support_in_box(&alone.gcode) > 10, "{style:?}: the tee alone has support where the box would be");
+            assert_eq!(support_in_box(&both.gcode), 0, "{style:?}: none in the box beside it");
+            // Above the box, it holds the arm from the box's top.
+            let on_top = (11..18).flat_map(|k| along(layer_runs(&both.gcode, k, "support", &p))).filter(|&q| inside(q)).count();
+            assert!(on_top > 0, "{style:?}: the arm's support stands on the box");
+        }
+    }
+
+    #[test]
+    fn two_objects_supports_are_never_printed_twice_in_one_place() {
+        // Two tees, the second standing in the first's place (a copy not yet moved): the same overhangs, so the same supports.
+        let pillar = Mesh::cuboid([6.0, 6.0, 4.0]);
+        let arms = Mesh::cuboid([20.0, 6.0, 2.0]).transformed(&lamina_core::Transform::translate([0.0, 0.0, 4.0]));
+        let tee = Mesh::merged([&pillar, &arms]);
+        let p = Profile { support: support::Support::Everywhere, ..Profile::default() };
+        let layers = slice::layers(&tee, p.first_layer_height, p.layer_height).unwrap();
+        let regions: Vec<Region> = layers.iter().map(|l| geom::region(&l.loops)).collect();
+        let s = plate_supports(&[layers.clone(), layers], &[regions.clone(), regions], &|_| &p, false);
+        let area = |l: &support::Layer| geom::area(&l.sparse) + geom::area(&l.interface);
+        assert!(s[0].iter().map(area).sum::<f64>() > 100.0, "the first holds its arms");
+        assert!(s[1].iter().map(area).sum::<f64>() < 1e-6, "the second's support is the first's, not printed again");
+        for (a, b) in s[0].iter().zip(&s[1]) {
+            assert!(geom::area(&geom::intersect(&geom::union(&a.sparse, &a.interface), &geom::union(&b.sparse, &b.interface))) < 1e-6);
+        }
+        // One at a time, each prints alone, with its own.
+        let apart = plate_supports(&[slice::layers(&tee, 0.2, 0.2).unwrap()], &[layers_regions(&tee)], &|_| &p, true);
+        assert!(apart[0].iter().map(area).sum::<f64>() > 100.0);
+    }
+
+    fn layers_regions(m: &Mesh) -> Vec<Region> {
+        slice::layers(m, 0.2, 0.2).unwrap().iter().map(|l| geom::region(&l.loops)).collect()
+    }
+
     /// The farthest a first-layer extrusion reaches from the middle of the plate, in x.
     fn first_layer_reach(g: &str) -> f64 {
         let first = g.split(";LAYER:1\n").next().unwrap_or("");
@@ -1689,9 +1794,15 @@ mod tests {
     /// The plate-frame points each extrusion of `kind` on the first layer passes through, each run of them a list of its own (a
     /// travel starts the next), with the point it starts from.
     fn first_layer_runs(g: &str, kind: &str, p: &Profile) -> Vec<Vec<P2>> {
+        layer_runs(g, 0, kind, p)
+    }
+
+    /// The same on layer `k`.
+    fn layer_runs(g: &str, k: usize, kind: &str, p: &Profile) -> Vec<Vec<P2>> {
         let (dx, dy) = if p.origin_center { (0.0, 0.0) } else { (p.bed[0] / 2.0, p.bed[1] / 2.0) };
         let (mut runs, mut at, mut inside, mut extruding): (Vec<Vec<P2>>, Option<P2>, bool, bool) = (Vec::new(), None, false, false);
-        for l in g.split(";LAYER:1\n").next().unwrap_or("").lines() {
+        let layer = g.split(&format!(";LAYER:{k}\n")).nth(1).unwrap_or("").split(";LAYER:").next().unwrap_or("");
+        for l in layer.lines() {
             if let Some(t) = l.strip_prefix(";TYPE:") {
                 (inside, extruding) = (t == kind, false);
                 continue;
