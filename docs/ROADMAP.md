@@ -290,7 +290,10 @@ Priorities:
   read it or it is not the interface's: command parameters and errors (the status bar shows an error from a command as the command
   gave it), the CLI, the MCP server, the assistant's skills, prompt and notes, the printer's own status line, preset and firmware
   names, G-code, and the log's own lines. Object, file and preset names the user gave are never translated. How to add or change a
-  language: [TRANSLATING.md](TRANSLATING.md).
+  language: [TRANSLATING.md](TRANSLATING.md). Since: sections keep their English as their id (`lang::section`), so changing the
+  language leaves them open or closed; number fields and the numbers in labels have a decimal comma in Portuguese and Spanish
+  (`lang::number`, `lang::mark`); `pictures_of_menus_and_dialogs` draws every menu, dialog and settings group in each language
+  for a look, and a test keeps the 3D view at 90 % or more of its English width in each.
 - **7.7 Packaging and releases.** `packaging/` and `.github/workflows/release.yml`, lifted from BIMCraft's: on a `v*` tag, an
   MSI (WiX 5, installed and removed again in the job), an AppImage and a tarball for x86_64 and aarch64 Linux, and a universal
   DMG with the CLI zipped beside it (signed and notarized when the Apple secrets are set, else ad hoc), all tested first and
@@ -318,8 +321,8 @@ Priorities:
 - **8.3 User guide.** `docs/USER-GUIDE.md`: installing, the window, the first print, arranging and changing parts, presets of your
   own, the assistant and its key, sending to a printer, projects and autosave, where Lamina keeps things, and a table of every
   setting made from `profile::ABOUT`, `LIMITS` and the defaults (`crates/slicer/tests/guide.rs` checks it; `LAMINA_BLESS=1`
-  writes it again). Its pictures are drawn by Lamina's CPU renderer (`docs_pictures`, ignored); a picture of the whole window
-  still needs a machine with a graphics card (docs/QUESTIONS.md).
+  writes it again). Its pictures are drawn by Lamina's CPU renderer (`docs_pictures`, ignored); the picture of the whole window
+  in the README is drawn by `picture_of_the_window`, which a software Vulkan driver (lavapipe) can run.
 - **8.4 Licence and third-party notice.** MIT stays until the owner decides otherwise (docs/QUESTIONS.md). `tools/notices`
   (`lamina-notices`) reads `cargo metadata`, refuses any crate whose licence offers no permissive choice (a test runs it on the
   whole tree, every platform's crates), and writes THIRD-PARTY-NOTICES.txt: every crate with its licence and repository, then each
