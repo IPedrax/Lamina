@@ -340,7 +340,12 @@ and below, and fills with lines anchored to a global grid so layers and objects 
 line's start, straight or along the boundary both lie on, when that path is short and clipping shows it stays inside the region. `Writer` turns strokes into moves, with
 retraction on long travels and a flow model from line width, layer height and filament diameter.
 
-`support::plan` works on the layer regions of one object. A layer whose part beyond the layer below grown by `height x
+Every object is sliced before supports are planned, so `support::plan_with` works on one object's layer regions (which alone make
+overhangs) beside `solid`, everything on the plate's layers, which support stands on, keeps the xy gap from and goes round; the
+slices of the plate's support enforcers and blockers (objects with a `modifier`, never printed) add and take away overhang.
+Objects are planned in order and a later one's support leaves out what an earlier one's covers. With `wall_generator: "variable"`,
+`walls::thin` finds the parts of a layer too thin for its walls and prints each with as many lines as its width holds, before the
+classic loops, which stop where a thin part's lines take over. A layer whose part beyond the layer below grown by `height x
 tan(support_angle)` is not empty is too steep there; what is held up is all of that layer over air near the steep part, so a slope gets
 one area and not a comb of thin strips. Overhangs are carried down, clipped by the model (support rests on it), or with `from_plate`
 kept only where each layer's column continues to the plate. The printed area keeps an xy gap from the walls, a z gap of whole layers
