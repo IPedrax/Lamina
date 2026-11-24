@@ -11,7 +11,8 @@ a fit matters, say that the clearances are defaults and that the first print is 
 
 - One printed line is about 0.45 mm wide (1.125 times the nozzle). A wall thinner than that, down to about a quarter line, is
   printed as one thin line along its middle (gap fill), which is weak; with the default two walls anything under about 1.8 mm gets
-  its middle gap-filled rather than walled.
+  its middle gap-filled rather than walled. With `wall_generator: "variable"` such a part gets lines that share its width instead
+  (a 1 mm wall two lines of 0.5 mm), which prints thin ribs and tube walls more evenly.
 - Aim for walls of at least 1.4 mm where they carry load and 0.9 mm for light covers. Make floors and roofs at least 0.8 mm,
   which is four layers at 0.2 mm.
 - A pin or post thinner than 2 mm snaps easily. Thicken it or give it a wider base.

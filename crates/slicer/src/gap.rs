@@ -4,8 +4,8 @@
 //! The middle of a gap is found as a thin strip's is, without a full straight skeleton: the gap's outline is split at its two points
 //! farthest apart into two long sides, one side is walked in short steps, and each step's centre is halfway to the nearest point of
 //! the other side, the distance between them its width. For the strips walls leave this is the centreline; for a gap that branches it
-//! is a fair line through it. (A straight skeleton or a Voronoi diagram, and walls of varying width as Arachne makes them, would do
-//! better; see docs/ROADMAP.md.)
+//! is a fair line through it. (A straight skeleton or a Voronoi diagram would do better.) Walls of varying width (`walls.rs`, with
+//! `wall_generator: "variable"`) walk thin parts the same way.
 
 use crate::geom::{self, Region};
 use crate::slice::P2;
@@ -36,7 +36,7 @@ pub fn gaps(region: &Region, perimeters: u32, w: f64, inner: &Region) -> Vec<Fil
     let uncovered = geom::difference(region, &covered);
     // Narrower than a quarter of a line is left: the lines beside it flow into it.
     let gaps = geom::inset(&geom::inset(&uncovered, w / 8.0), -w / 8.0);
-    gaps.iter().filter_map(|shape| shape.first()).filter_map(|outline| middle(outline, w)).collect()
+    gaps.iter().filter_map(|shape| shape.first()).filter_map(|outline| middle(outline, w, 2.0 * w)).collect()
 }
 
 fn dist(a: P2, b: P2) -> f64 {
@@ -59,8 +59,9 @@ fn nearest(side: &[P2], p: P2) -> P2 {
     best
 }
 
-/// The line along the middle of the gap with this outline, if it is long enough to print.
-fn middle(outline: &[P2], w: f64) -> Option<Fill> {
+/// The line along the middle of the strip with this outline, where it is from a quarter line to `widest` wide, if it is long enough
+/// to print.
+pub(crate) fn middle(outline: &[P2], w: f64, widest: f64) -> Option<Fill> {
     let n = outline.len();
     if !(3..=MAX_OUTLINE).contains(&n) {
         return None;
@@ -98,7 +99,7 @@ fn middle(outline: &[P2], w: f64) -> Option<Fill> {
             let width = dist(p, q);
             // Across the gap, the other side is square to the way walked; near an end it is not, and that step is left out.
             let across = width > 1e-9 && ((q[0] - p[0]) * dir[0] + (q[1] - p[1]) * dir[1]).abs() < 0.5 * width;
-            if across && (w / 4.0..=2.0 * w).contains(&width) {
+            if across && (w / 4.0..=widest).contains(&width) {
                 pts.push([(p[0] + q[0]) / 2.0, (p[1] + q[1]) / 2.0]);
                 widths.push(width);
             }

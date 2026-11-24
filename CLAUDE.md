@@ -53,7 +53,8 @@ Linux only). A change to a string the window shows needs `cargo i18n update` and
   `bridge.rs` (what an agent may ask: execute, script, catalog; read-only access; `REPLACES`, the commands that replace the plate;
   the control port's protocol, token and bridge file, and `settings_file`, the settings folder the desktop and the CLI share).
 - `crates/slicer`: `slice.rs` (mesh to closed loops per layer), `geom.rs` (polygon booleans, offsets, line clipping on i_overlay),
-  `print.rs` (walls, skins, infill, skirt, tool changes and the purge tower, one object at a time, the G-code writer), `infill.rs` (sparse infill patterns), `gap.rs` (gap fill and thin walls), `time.rs` (the print time planner), `support.rs` (overhangs,
+  `print.rs` (walls, skins, infill, skirt, tool changes and the purge tower, one object at a time, the G-code writer), `infill.rs` (sparse infill patterns), `gap.rs` (gap fill and thin walls), `walls.rs` (walls of varying width for thin parts,
+  `wall_generator: "variable"`), `time.rs` (the print time planner), `support.rs` (overhangs,
   supports and their interface), `profile.rs` (settings, `LIMITS` and `ABOUT`, checks, `[name]` placeholders), `expr.rs` (`{expr}` in the start and end G-code), `import.rs` (PrusaSlicer and OrcaSlicer profiles through a key table), `presets.rs`
   (built-in printers and filaments, each setting only its own fields; `apply` and `capture`), `commands.rs`
   (`slice`, `slice_check`, `slicer_presets`, `slicer_profile`; an app adds them with `session.register(lamina_slicer::COMMANDS)`).

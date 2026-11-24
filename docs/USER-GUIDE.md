@@ -59,7 +59,8 @@ all, set the environment variable `LAMINA_NO_UPDATE_CHECK=1`: the menu items and
    the skirt, cooling, support details, the machine, and the start and end G-code). Supports are columns or trees: pick Tree
    beside Supports for branches that gather into a few trunks, less plastic under a tall overhang. They are planned for the whole
    plate: a support never goes through another object, and stands on it where it is in the way (From the plate only leaves those
-   out).
+   out). Beside Walls, Variable width gives a part thinner than its walls (a fin, a rib, a tube's wall) as many lines as its width
+   holds, each a share of it, where Classic folds a loop onto itself or leaves a gap to fill.
 4. **Slice.** Press Slice. The window stays usable while it works, and the Preview tab opens when it is done, with the layer count,
    the filament and the print time.
 5. **Look at the preview.** In 3D, every layer up to the one on the slider is drawn, coloured by what it prints: walls, infill,
@@ -243,6 +244,7 @@ The same text is the tooltip in the window. The names are the ones a profile fil
 | `bottom_layers` | Solid layers at the bottom of the part. | 0 to 50 | 4 |
 | `infill_density` | How much of the inside is filled, from 0 to 1 (the window shows it in %). | 0 to 1 | 0.15 |
 | `infill_pattern` | The pattern of the sparse infill: lines, grid, triangles, gyroid or honeycomb. |  | `lines` |
+| `wall_generator` | Classic walls are loops a line wide; variable gives a part too thin for its walls as many lines as its width holds, sharing it. |  | `classic` |
 | `skirt_loops` | Loops round everything on the first layer, outside its convex outline and not touching it, to start the flow; 0 for none. | 0 to 10 | 1 |
 | `skirt_distance` | How far the skirt stands from the part, mm. | 0 to 50 | 3.0 |
 | `brim_width` | Loops round the first layer, touching it, that hold its edges down, mm wide; 0 for none. | 0 to 50 | 0.0 |

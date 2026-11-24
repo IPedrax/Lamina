@@ -1368,7 +1368,23 @@ impl App {
                     .on_hover_text(hint("first_layer_height"));
                 ui.end_row();
                 ui.label(t("Walls"));
-                ui.add(crate::lang::number(&mut p.perimeters).range(0..=10)).on_hover_text(hint("perimeters"));
+                ui.horizontal(|ui| {
+                    ui.add(crate::lang::number(&mut p.perimeters).range(0..=10)).on_hover_text(hint("perimeters"));
+                    use lamina_slicer::walls::WallGenerator;
+                    let name = |g: WallGenerator| match g {
+                        WallGenerator::Classic => t("Classic"),
+                        WallGenerator::Variable => t("Variable width"),
+                    };
+                    egui::ComboBox::from_id_salt("wall_generator")
+                        .selected_text(name(p.wall_generator))
+                        .show_ui(ui, |ui| {
+                            for g in [WallGenerator::Classic, WallGenerator::Variable] {
+                                ui.selectable_value(&mut p.wall_generator, g, name(g));
+                            }
+                        })
+                        .response
+                        .on_hover_text(hint("wall_generator"));
+                });
                 ui.end_row();
                 ui.label(t("Top / bottom layers"));
                 ui.horizontal(|ui| {

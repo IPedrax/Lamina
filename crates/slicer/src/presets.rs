@@ -48,6 +48,7 @@ pub const PROCESS_FIELDS: &[&str] = &[
     "adaptive_layers",
     "min_layer_height",
     "perimeters",
+    "wall_generator",
     "top_layers",
     "bottom_layers",
     "infill_density",

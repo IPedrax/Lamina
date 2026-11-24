@@ -27,7 +27,9 @@ presets live in the app's settings panel, not in these commands.
   arcs within `arc_tolerance`; smaller files and smoother circles, but Klipper needs `[gcode_arcs]` in its config). A filament may set
   `pressure_advance`.
 - Quality: `layer_height` from 0.02 mm up to 0.8 times the nozzle (0.12 for fine detail, 0.2 normal, 0.28 draft),
-  `first_layer_height`, `perimeters` (2 normal, 3 to 4 for strength), `top_layers` and `bottom_layers` (enough for 0.8 to 1.0 mm of skin).
+  `first_layer_height`, `perimeters` (2 normal, 3 to 4 for strength), `wall_generator` (`"classic"`, the default, or
+  `"variable"`: a part too thin for its walls, a fin, a thin rib or a tube wall, gets as many lines as its width holds, each a share
+  of it, instead of loops that fold onto themselves and gap fill; try it for thin-walled parts), `top_layers` and `bottom_layers` (enough for 0.8 to 1.0 mm of skin).
   `adaptive_layers: true` varies each layer from `min_layer_height` (0.08) up to `layer_height`: thin on domes and gentle slopes,
   thick on walls; good for figures and rounded parts, little use for boxy ones.
 - Strength: `infill_density` from 0 to 1. Use 0.1 to 0.2 for looks and 0.3 to 0.5 for parts that bear load. Walls add more
@@ -106,5 +108,5 @@ figures. All on one extruder. An error names the objects; `arrange {gap: 35}` sp
 
 ## What is not there yet
 
-Walls of varying width, and a single nozzle fed several filaments (a multi-material unit): Lamina's tool changes are for printers
-with a nozzle for each extruder. Say so when a model needs one, instead of letting the user find out at the printer. Nothing has been verified on a real printer, so never promise that a print will succeed.
+A single nozzle fed several filaments (a multi-material unit): Lamina's tool changes are for printers with a nozzle for each
+extruder. Say so when a model needs one, instead of letting the user find out at the printer. Nothing has been verified on a real printer, so never promise that a print will succeed.

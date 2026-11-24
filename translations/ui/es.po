@@ -4,7 +4,7 @@ msgid ""
 msgstr "Project-Id-Version: Lamina\nMIME-Version: 1.0\nContent-Type: text/plain; charset=UTF-8\nContent-Transfer-Encoding: 8bit\nLanguage: es\n"
 
 #: apps/lamina/src/lib.rs:1069
-#: apps/lamina/src/lib.rs:1470
+#: apps/lamina/src/lib.rs:1486
 msgid " deg"
 msgstr " grados"
 
@@ -20,7 +20,7 @@ msgstr "\"{}\" es un preajuste integrado de {}: elige otro nombre."
 msgid "/dev/ttyUSB0, /dev/ttyACM0 or COM3"
 msgstr "/dev/ttyUSB0, /dev/ttyACM0 o COM3"
 
-#: apps/lamina/src/lib.rs:1623
+#: apps/lamina/src/lib.rs:1639
 msgid "0, or from 16 to 512."
 msgstr "0, o de 16 a 512."
 
@@ -32,31 +32,31 @@ msgstr "0: cualquier puerto libre"
 msgid "192.168.1.20 or http://printer.local:7125"
 msgstr "192.168.1.20 o http://printer.local:7125"
 
-#: crates/slicer/src/presets.rs:77
+#: crates/slicer/src/presets.rs:78
 msgid "220 x 220 x 250 mm, 0.4 mm nozzle, a Bowden tube, which needs a longer retraction"
 msgstr "220 x 220 x 250 mm, boquilla de 0,4 mm, tubo Bowden, que necesita una retracción más larga"
 
-#: crates/slicer/src/presets.rs:72
+#: crates/slicer/src/presets.rs:73
 msgid "220 x 220 x 250 mm, 0.4 mm nozzle, direct drive: the defaults"
 msgstr "220 x 220 x 250 mm, boquilla de 0,4 mm, extrusión directa: los valores predeterminados"
 
-#: crates/slicer/src/presets.rs:82
+#: crates/slicer/src/presets.rs:83
 msgid "250 x 210 x 210 mm, 0.4 mm nozzle, direct drive"
 msgstr "250 x 210 x 210 mm, boquilla de 0,4 mm, extrusión directa"
 
-#: crates/slicer/src/presets.rs:87
+#: crates/slicer/src/presets.rs:88
 msgid "300 x 300 x 300 mm, 0.4 mm nozzle; the printer's config must define PRINT_START and PRINT_END macros"
 msgstr "300 x 300 x 300 mm, boquilla de 0,4 mm; la configuración de la impresora debe definir las macros PRINT_START y PRINT_END"
 
-#: crates/slicer/src/presets.rs:94
+#: crates/slicer/src/presets.rs:95
 msgid "350 x 350 x 340 mm, 0.4 mm nozzle; the printer's config must define PRINT_START and PRINT_END macros"
 msgstr "350 x 350 x 340 mm, boquilla de 0,4 mm; la configuración de la impresora debe definir las macros PRINT_START y PRINT_END"
 
-#: apps/lamina/src/lib.rs:1503
+#: apps/lamina/src/lib.rs:1519
 msgid "A PrusaSlicer .ini, or an OrcaSlicer or Bambu Studio .json preset"
 msgstr "Un .ini de PrusaSlicer, o un preajuste .json de OrcaSlicer o Bambu Studio"
 
-#: crates/slicer/src/profile.rs:439
+#: crates/slicer/src/profile.rs:449
 msgid "A bridge's flow as a share of the normal flow: under 1 makes thinner strands that sag less."
 msgstr "El flujo de un puente como fracción del flujo normal: por debajo de 1 hace hilos más finos que se comban menos."
 
@@ -64,7 +64,7 @@ msgstr "El flujo de un puente como fracción del flujo normal: por debajo de 1 h
 msgid "A copy beside it; the plate is laid out again"
 msgstr "Una copia al lado; la cama se organiza de nuevo"
 
-#: crates/slicer/src/profile.rs:435
+#: crates/slicer/src/profile.rs:445
 msgid "A layer that would print faster than this, s, is slowed so it cools before the next."
 msgstr "Una capa que se imprimiría en menos tiempo que esto, s, se ralentiza para que se enfríe antes de la siguiente."
 
@@ -72,7 +72,7 @@ msgstr "Una capa que se imprimiría en menos tiempo que esto, s, se ralentiza pa
 msgid "A passphrase has at least {} characters."
 msgstr "Una frase de contraseña tiene al menos {} caracteres."
 
-#: crates/slicer/src/profile.rs:381
+#: crates/slicer/src/profile.rs:385
 msgid "A picture of the plate this many pixels square, for the printer's screen; 0 for none."
 msgstr "Una imagen cuadrada de la cama con este lado en píxeles, para la pantalla de la impresora; 0 para ninguna."
 
@@ -88,7 +88,7 @@ msgstr "Una impresora por cable USB no tiene dónde guardar un archivo: Enviar e
 msgid "A rounded plate, extruded; the assistant or `extrude` makes any outline"
 msgstr "Una placa redondeada, extruida; el asistente o `extrude` hace cualquier contorno"
 
-#: crates/slicer/src/profile.rs:391
+#: crates/slicer/src/profile.rs:395
 msgid "A second pass over each top surface with a trickle of plastic, which melts its ridges flat; slower, smoother tops."
 msgstr "Una segunda pasada sobre cada superficie superior con un hilo de plástico, que funde y aplana sus crestas; superficies más lentas y más lisas."
 
@@ -96,11 +96,11 @@ msgstr "Una segunda pasada sobre cada superficie superior con un hilo de plásti
 msgid "A square peg or hole cannot turn in its socket"
 msgstr "Un pasador o agujero cuadrado no gira en su alojamiento"
 
-#: crates/slicer/src/profile.rs:442
+#: crates/slicer/src/profile.rs:452
 msgid "A surface leaning further than this from vertical, degrees, is held up."
 msgstr "Una superficie más inclinada que esto respecto a la vertical, grados, recibe soporte."
 
-#: crates/slicer/src/profile.rs:429
+#: crates/slicer/src/profile.rs:439
 msgid "A travel shorter than this is made without retracting, mm."
 msgstr "Un desplazamiento más corto que esto se hace sin retraer, mm."
 
@@ -112,7 +112,7 @@ msgstr "Clave de API"
 msgid "API key, only if the server asks for one"
 msgstr "Clave de API, solo si el servidor la pide"
 
-#: apps/lamina/src/lib.rs:1601
+#: apps/lamina/src/lib.rs:1617
 msgid "Acceleration, mm/s2"
 msgstr "Aceleración, mm/s2"
 
@@ -149,11 +149,11 @@ msgstr "Agentes"
 msgid "Agents may change the plate"
 msgstr "Los agentes pueden cambiar la cama"
 
-#: apps/lamina/src/lib.rs:1430
+#: apps/lamina/src/lib.rs:1446
 msgid "Aligned"
 msgstr "Alineada"
 
-#: apps/lamina/src/lib.rs:1630
+#: apps/lamina/src/lib.rs:1646
 msgid "Arc tolerance, mm"
 msgstr "Tolerancia del arco, mm"
 
@@ -194,7 +194,7 @@ msgstr "Pide guardar antes si hay cambios sin guardar, luego cierra Lamina, inst
 msgid "Assistant"
 msgstr "Asistente"
 
-#: apps/lamina/src/lib.rs:1431
+#: apps/lamina/src/lib.rs:1447
 msgid "At the back"
 msgstr "Detrás"
 
@@ -212,7 +212,7 @@ msgstr "Auto"
 msgid "Autosave failed: {}"
 msgstr "El guardado automático falló: {}"
 
-#: apps/lamina/src/lib.rs:1498
+#: apps/lamina/src/lib.rs:1514
 msgid "Back to the defaults"
 msgstr "Volver a los valores predeterminados"
 
@@ -220,15 +220,15 @@ msgstr "Volver a los valores predeterminados"
 msgid "Baud"
 msgstr "Baudios"
 
-#: apps/lamina/src/lib.rs:1548
+#: apps/lamina/src/lib.rs:1564
 msgid "Bridge flow"
 msgstr "Flujo en puentes"
 
-#: apps/lamina/src/lib.rs:1525
+#: apps/lamina/src/lib.rs:1541
 msgid "Bridges, mm/s"
 msgstr "Puentes, mm/s"
 
-#: apps/lamina/src/lib.rs:1446
+#: apps/lamina/src/lib.rs:1462
 msgid "Brim, mm / raft layers"
 msgstr "Borde, mm / capas de balsa"
 
@@ -273,6 +273,14 @@ msgstr "Buscar actualizaciones ahora"
 msgid "Choose..."
 msgstr "Elegir..."
 
+#: apps/lamina/src/lib.rs:1375
+msgid "Classic"
+msgstr "Clásicas"
+
+#: crates/slicer/src/profile.rs:417
+msgid "Classic walls are loops a line wide; variable gives a part too thin for its walls as many lines as its width holds, sharing it."
+msgstr "Las paredes clásicas son vueltas del ancho de una línea; el ancho variable da a una parte demasiado delgada para sus paredes tantas líneas como quepan en su ancho, repartiéndolo."
+
 #: apps/lamina/src/chat.rs:327
 msgid "Clear"
 msgstr "Borrar"
@@ -293,11 +301,11 @@ msgstr "Haz clic en un segundo punto para medir hasta él."
 msgid "Click two points to measure between them (M)"
 msgstr "Haz clic en dos puntos para medir entre ellos (M)"
 
-#: apps/lamina/src/lib.rs:1474
+#: apps/lamina/src/lib.rs:1490
 msgid "Columns"
 msgstr "Columnas"
 
-#: crates/slicer/src/profile.rs:449
+#: crates/slicer/src/profile.rs:459
 msgid "Columns under the whole overhang, or trees: thin branches that merge on the way down, less plastic and smaller marks."
 msgstr "Columnas bajo todo el voladizo, o árboles: ramas finas que se unen al bajar, menos plástico y marcas más pequeñas."
 
@@ -309,7 +317,7 @@ msgstr "Cono"
 msgid "Connectors"
 msgstr "Conectores"
 
-#: apps/lamina/src/lib.rs:1543
+#: apps/lamina/src/lib.rs:1559
 msgid "Cooling"
 msgstr "Refrigeración"
 
@@ -333,7 +341,7 @@ msgstr "No se pudo escuchar en el puerto {} para agentes: {}"
 msgid "Ctrl-click picks several; right-click for more."
 msgstr "Ctrl+clic selecciona varios; clic derecho para más."
 
-#: apps/lamina/src/lib.rs:1628
+#: apps/lamina/src/lib.rs:1644
 msgid "Curves as arcs (G2, G3)"
 msgstr "Curvas como arcos (G2, G3)"
 
@@ -380,11 +388,11 @@ msgstr "Eliminar los objetos seleccionados"
 msgid "Delete the picked objects, as one undo step"
 msgstr "Eliminar los objetos seleccionados, en un solo paso de deshacer"
 
-#: crates/slicer/src/profile.rs:446
+#: crates/slicer/src/profile.rs:456
 msgid "Denser layers at the top of a support, under the part, for a cleaner underside."
 msgstr "Capas más densas en la parte superior de un soporte, bajo la pieza, para una cara inferior más limpia."
 
-#: apps/lamina/src/lib.rs:1562
+#: apps/lamina/src/lib.rs:1578
 msgid "Density"
 msgstr "Densidad"
 
@@ -392,7 +400,7 @@ msgstr "Densidad"
 msgid "Discard it"
 msgstr "Descartarla"
 
-#: apps/lamina/src/lib.rs:1541
+#: apps/lamina/src/lib.rs:1557
 msgid "Distance, mm"
 msgstr "Distancia, mm"
 
@@ -455,15 +463,15 @@ msgstr "Editar"
 msgid "Encrypt"
 msgstr "Cifrar"
 
-#: apps/lamina/src/lib.rs:1642
+#: apps/lamina/src/lib.rs:1658
 msgid "End"
 msgstr "Final"
 
-#: apps/lamina/src/lib.rs:1723
+#: apps/lamina/src/lib.rs:1739
 msgid "Every layer up to this one, coloured by what it prints"
 msgstr "Todas las capas hasta esta, coloreadas según lo que imprimen"
 
-#: apps/lamina/src/lib.rs:1457
+#: apps/lamina/src/lib.rs:1473
 msgid "Everywhere"
 msgstr "En todas partes"
 
@@ -480,19 +488,19 @@ msgstr "Exportar malla..."
 msgid "Extruder"
 msgstr "Extrusor"
 
-#: apps/lamina/src/lib.rs:1577
+#: apps/lamina/src/lib.rs:1593
 msgid "Extruder {} nozzle, C"
 msgstr "Boquilla del extrusor {}, C"
 
-#: apps/lamina/src/lib.rs:1570
+#: apps/lamina/src/lib.rs:1586
 msgid "Extruders"
 msgstr "Extrusores"
 
-#: apps/lamina/src/lib.rs:1547
+#: apps/lamina/src/lib.rs:1563
 msgid "Fan on bridges"
 msgstr "Ventilador en puentes"
 
-#: apps/lamina/src/lib.rs:1544
+#: apps/lamina/src/lib.rs:1560
 msgid "Fan, 0 to 255"
 msgstr "Ventilador, 0 a 255"
 
@@ -500,7 +508,7 @@ msgstr "Ventilador, 0 a 255"
 msgid "Filament"
 msgstr "Filamento"
 
-#: apps/lamina/src/lib.rs:1599
+#: apps/lamina/src/lib.rs:1615
 msgid "Filament, mm"
 msgstr "Filamento, mm"
 
@@ -508,15 +516,15 @@ msgstr "Filamento, mm"
 msgid "File"
 msgstr "Archivo"
 
-#: apps/lamina/src/lib.rs:1604
+#: apps/lamina/src/lib.rs:1620
 msgid "Firmware"
 msgstr "Firmware"
 
-#: apps/lamina/src/lib.rs:1536
+#: apps/lamina/src/lib.rs:1552
 msgid "Firmware retraction (G10, G11)"
 msgstr "Retracción por firmware (G10, G11)"
 
-#: apps/lamina/src/lib.rs:1419
+#: apps/lamina/src/lib.rs:1435
 msgid "First layer nozzle / bed"
 msgstr "Boquilla / cama, 1.ª capa"
 
@@ -524,7 +532,7 @@ msgstr "Boquilla / cama, 1.ª capa"
 msgid "First layer, mm"
 msgstr "Primera capa, mm"
 
-#: apps/lamina/src/lib.rs:1523
+#: apps/lamina/src/lib.rs:1539
 msgid "First layer, mm/s"
 msgstr "Primera capa, mm/s"
 
@@ -554,7 +562,7 @@ msgstr "Encuadrar todo"
 msgid "Frame the picked objects, or everything"
 msgstr "Encuadrar los objetos seleccionados, o todo"
 
-#: apps/lamina/src/lib.rs:1458
+#: apps/lamina/src/lib.rs:1474
 msgid "From the plate only"
 msgstr "Solo desde la cama"
 
@@ -562,43 +570,43 @@ msgstr "Solo desde la cama"
 msgid "From {} to {}."
 msgstr "De {} a {}."
 
-#: apps/lamina/src/lib.rs:1545
+#: apps/lamina/src/lib.rs:1561
 msgid "Full fan from layer"
 msgstr "Ventilador al máximo desde la capa"
 
-#: apps/lamina/src/lib.rs:1556
+#: apps/lamina/src/lib.rs:1572
 msgid "Fuzzy skin on the outer wall"
 msgstr "Piel difusa en la pared exterior"
 
-#: apps/lamina/src/lib.rs:1559
+#: apps/lamina/src/lib.rs:1575
 msgid "Fuzzy spacing, mm"
 msgstr "Espaciado de la piel difusa, mm"
 
-#: apps/lamina/src/lib.rs:1558
+#: apps/lamina/src/lib.rs:1574
 msgid "Fuzzy thickness, mm"
 msgstr "Grosor de la piel difusa, mm"
 
-#: crates/slicer/src/profile.rs:478
+#: crates/slicer/src/profile.rs:488
 msgid "G-code run at each tool change, before the T: [previous_tool], [next_tool] and [layer_z] as well as the settings."
 msgstr "G-code que se ejecuta en cada cambio de herramienta, antes de la T: [previous_tool], [next_tool] y [layer_z], además de los ajustes."
 
-#: crates/slicer/src/profile.rs:378
+#: crates/slicer/src/profile.rs:382
 msgid "G-code sent after the print; [name] is replaced by that setting, and {expression} by its value."
 msgstr "G-code enviado después de la impresión; [nombre] se sustituye por ese ajuste, y {expresión} por su valor."
 
-#: crates/slicer/src/profile.rs:377
+#: crates/slicer/src/profile.rs:381
 msgid "G-code sent before the print; [name] is replaced by that setting, and {expression} by its value."
 msgstr "G-code enviado antes de la impresión; [nombre] se sustituye por ese ajuste, y {expresión} por su valor."
 
-#: apps/lamina/src/lib.rs:1595
+#: apps/lamina/src/lib.rs:1611
 msgid "Gantry height, mm"
 msgstr "Altura del pórtico, mm"
 
-#: apps/lamina/src/lib.rs:1563
+#: apps/lamina/src/lib.rs:1579
 msgid "Gap above, mm"
 msgstr "Separación superior, mm"
 
-#: apps/lamina/src/lib.rs:1564
+#: apps/lamina/src/lib.rs:1580
 msgid "Gap beside, mm"
 msgstr "Separación lateral, mm"
 
@@ -606,23 +614,23 @@ msgstr "Separación lateral, mm"
 msgid "Give the printer's address in Printer connection first."
 msgstr "Indica primero la dirección de la impresora en Conexión de la impresora."
 
-#: apps/lamina/src/lib.rs:1397
+#: apps/lamina/src/lib.rs:1413
 msgid "Grid"
 msgstr "Rejilla"
 
-#: apps/lamina/src/lib.rs:1399
+#: apps/lamina/src/lib.rs:1415
 msgid "Gyroid"
 msgstr "Giroide"
 
-#: apps/lamina/src/lib.rs:1594
+#: apps/lamina/src/lib.rs:1610
 msgid "Head clearance radius, mm"
 msgstr "Radio libre del cabezal, mm"
 
-#: apps/lamina/src/lib.rs:1585
+#: apps/lamina/src/lib.rs:1601
 msgid "Heating, C/s"
 msgstr "Calentamiento, C/s"
 
-#: apps/lamina/src/lib.rs:1600
+#: apps/lamina/src/lib.rs:1616
 msgid "Height, mm"
 msgstr "Altura, mm"
 
@@ -638,108 +646,108 @@ msgstr "Historial"
 msgid "Holes in both pieces and a loose pin for each pair: both pieces lie on their cut faces"
 msgstr "Agujeros en ambas piezas y una espiga suelta para cada par: ambas piezas se apoyan en sus caras de corte"
 
-#: apps/lamina/src/lib.rs:1400
+#: apps/lamina/src/lib.rs:1416
 msgid "Honeycomb"
 msgstr "Panal"
 
-#: crates/slicer/src/profile.rs:397
+#: crates/slicer/src/profile.rs:401
 msgid "How far a fuzzy skin's bumps stand in or out, mm."
 msgstr "Cuánto entran o salen los bultos de la piel difusa, mm."
 
-#: crates/slicer/src/profile.rs:454
+#: crates/slicer/src/profile.rs:464
 msgid "How far a tree's branches may lean from vertical, degrees, as they gather into trunks and go round the part."
 msgstr "Cuánto pueden inclinarse las ramas de un árbol respecto a la vertical, grados, al reunirse en troncos y rodear la pieza."
 
-#: crates/slicer/src/profile.rs:500
+#: crates/slicer/src/profile.rs:510
 msgid "How far above the nozzle's tip the gantry that carries the head runs, mm: only the last object printed one at a time may be taller."
 msgstr "A qué altura sobre la punta de la boquilla pasa el pórtico que lleva el cabezal, mm: solo el último objeto impreso de uno en uno puede ser más alto."
 
-#: crates/slicer/src/profile.rs:403
+#: crates/slicer/src/profile.rs:407
 msgid "How far an arc may stray from the points it replaces, mm."
 msgstr "Cuánto puede apartarse un arco de los puntos que sustituye, mm."
 
-#: crates/slicer/src/profile.rs:470
+#: crates/slicer/src/profile.rs:480
 msgid "How far an idle extruder cools below its own temperature while another prints, C; it heats again before it prints."
 msgstr "Cuánto se enfría un extrusor inactivo por debajo de su temperatura mientras otro imprime, C; se vuelve a calentar antes de imprimir."
 
-#: crates/slicer/src/profile.rs:398
+#: crates/slicer/src/profile.rs:402
 msgid "How far apart a fuzzy skin's bumps are along the wall, mm."
 msgstr "La distancia entre los bultos de la piel difusa a lo largo de la pared, mm."
 
-#: crates/slicer/src/profile.rs:451
+#: crates/slicer/src/profile.rs:461
 msgid "How far apart a tree's tips touch the overhang, mm: closer holds a flatter underside."
 msgstr "La distancia entre las puntas de un árbol donde tocan el voladizo, mm: más cerca sostiene una cara inferior más plana."
 
-#: crates/slicer/src/profile.rs:394
+#: crates/slicer/src/profile.rs:398
 msgid "How far apart the ironing lines are, mm: much closer than the line width."
 msgstr "La distancia entre las líneas del alisado, mm: mucho menor que el ancho de línea."
 
-#: crates/slicer/src/profile.rs:427
+#: crates/slicer/src/profile.rs:437
 msgid "How far the filament is pulled back before a travel, mm, so it does not ooze and string."
 msgstr "Cuánto se retrae el filamento antes de un desplazamiento, mm, para que no gotee ni forme hilos."
 
-#: crates/slicer/src/profile.rs:495
+#: crates/slicer/src/profile.rs:505
 msgid "How far the print head reaches round the nozzle, mm: objects printed one at a time stand at least this far apart."
 msgstr "Hasta dónde se extiende el cabezal alrededor de la boquilla, mm: los objetos impresos de uno en uno quedan al menos a esta distancia entre sí."
 
-#: crates/slicer/src/profile.rs:416
+#: crates/slicer/src/profile.rs:426
 msgid "How far the skirt stands from the part, mm."
 msgstr "La distancia de la falda a la pieza, mm."
 
-#: crates/slicer/src/profile.rs:438
+#: crates/slicer/src/profile.rs:448
 msgid "How fast a bridge (solid infill over air) prints, mm/s."
 msgstr "La velocidad de un puente (relleno sólido sobre el vacío), mm/s."
 
-#: crates/slicer/src/profile.rs:474
+#: crates/slicer/src/profile.rs:484
 msgid "How fast a nozzle heats near its printing temperature, C a second: the time estimate waits for each tool change's rise."
 msgstr "Qué tan rápido se calienta una boquilla cerca de su temperatura de impresión, C por segundo: la estimación de tiempo espera la subida de cada cambio de herramienta."
 
-#: crates/slicer/src/profile.rs:420
+#: crates/slicer/src/profile.rs:430
 msgid "How fast infill and support print, mm/s."
 msgstr "La velocidad del relleno y del soporte, mm/s."
 
-#: crates/slicer/src/profile.rs:395
+#: crates/slicer/src/profile.rs:399
 msgid "How fast ironing moves, mm/s."
 msgstr "La velocidad del alisado, mm/s."
 
-#: crates/slicer/src/profile.rs:428
+#: crates/slicer/src/profile.rs:438
 msgid "How fast the filament is pulled back and pushed again, mm/s."
 msgstr "La velocidad con que el filamento se retrae y se vuelve a empujar, mm/s."
 
-#: crates/slicer/src/profile.rs:421
+#: crates/slicer/src/profile.rs:431
 msgid "How fast the first layer prints, mm/s: slower sticks better."
 msgstr "La velocidad de la primera capa, mm/s: más lento se adhiere mejor."
 
-#: crates/slicer/src/profile.rs:422
+#: crates/slicer/src/profile.rs:432
 msgid "How fast the head moves when it is not printing, mm/s."
 msgstr "La velocidad del cabezal cuando no imprime, mm/s."
 
-#: crates/slicer/src/profile.rs:374
+#: crates/slicer/src/profile.rs:378
 msgid "How fast the printer takes corners (Marlin's junction deviation, mm); used for the time estimate."
 msgstr "La velocidad con que la impresora toma las esquinas (junction deviation de Marlin, mm); se usa para estimar el tiempo."
 
-#: crates/slicer/src/profile.rs:419
+#: crates/slicer/src/profile.rs:429
 msgid "How fast walls print, mm/s."
 msgstr "La velocidad de las paredes, mm/s."
 
 #: apps/lamina/src/lib.rs:1189
-#: apps/lamina/src/lib.rs:1571
+#: apps/lamina/src/lib.rs:1587
 msgid "How many"
 msgstr "Cantidad"
 
-#: crates/slicer/src/profile.rs:460
+#: crates/slicer/src/profile.rs:470
 msgid "How many extruders or tools the printer has; T0 is the first. The firmware applies each tool's offset, and Klipper needs a T0, T1... macro for each."
 msgstr "Cuántos extrusores o herramientas tiene la impresora; T0 es el primero. El firmware aplica el desplazamiento de cada herramienta, y Klipper necesita una macro T0, T1... para cada uno."
 
-#: crates/slicer/src/profile.rs:408
+#: crates/slicer/src/profile.rs:412
 msgid "How much of the inside is filled, from 0 to 1 (the window shows it in %)."
 msgstr "Cuánto del interior se rellena, de 0 a 1 (la ventana lo muestra en %)."
 
-#: crates/slicer/src/profile.rs:443
+#: crates/slicer/src/profile.rs:453
 msgid "How much of the support's area its lines fill, from 0 to 1."
 msgstr "Cuánto del área del soporte rellenan sus líneas, de 0 a 1."
 
-#: crates/slicer/src/profile.rs:393
+#: crates/slicer/src/profile.rs:397
 msgid "How much plastic ironing lays, as a share of a full line: 0.1 is usual."
 msgstr "Cuánto plástico deposita el alisado, como fracción de una línea completa: 0,1 es lo habitual."
 
@@ -748,7 +756,7 @@ msgstr "Cuánto plástico deposita el alisado, como fracción de una línea comp
 msgid "Import mesh..."
 msgstr "Importar malla..."
 
-#: apps/lamina/src/lib.rs:1502
+#: apps/lamina/src/lib.rs:1518
 msgid "Import profile..."
 msgstr "Importar perfil..."
 
@@ -756,20 +764,20 @@ msgstr "Importar perfil..."
 msgid "Imported and repaired: {} faces dropped, {} turned, {} holes filled."
 msgstr "Importado y reparado: {} caras eliminadas, {} giradas, {} agujeros rellenados."
 
-#: apps/lamina/src/lib.rs:1637
+#: apps/lamina/src/lib.rs:1653
 msgid "In braces, an expression of them: {first_layer_bed_temp - 5}, {if(bed_temp > 90, 1, 0)}, with min, max and round; {{ for a brace."
 msgstr "Entre llaves, una expresión con ellos: {first_layer_bed_temp - 5}, {if(bed_temp > 90, 1, 0)}, con min, max y round; {{ para una llave."
 
 #: apps/lamina/src/lib.rs:1285
-#: apps/lamina/src/lib.rs:1379
+#: apps/lamina/src/lib.rs:1395
 msgid "Infill"
 msgstr "Relleno"
 
-#: apps/lamina/src/lib.rs:1392
+#: apps/lamina/src/lib.rs:1408
 msgid "Infill pattern"
 msgstr "Patrón de relleno"
 
-#: apps/lamina/src/lib.rs:1522
+#: apps/lamina/src/lib.rs:1538
 msgid "Infill, mm/s"
 msgstr "Relleno, mm/s"
 
@@ -777,7 +785,7 @@ msgstr "Relleno, mm/s"
 msgid "Installing Lamina {}..."
 msgstr "Instalando Lamina {}..."
 
-#: apps/lamina/src/lib.rs:1565
+#: apps/lamina/src/lib.rs:1581
 msgid "Interface layers"
 msgstr "Capas de interfaz"
 
@@ -785,19 +793,19 @@ msgstr "Capas de interfaz"
 msgid "Intersect"
 msgstr "Intersecar"
 
-#: apps/lamina/src/lib.rs:1551
+#: apps/lamina/src/lib.rs:1567
 msgid "Iron the top surfaces"
 msgstr "Alisar las superficies superiores"
 
-#: apps/lamina/src/lib.rs:1553
+#: apps/lamina/src/lib.rs:1569
 msgid "Ironing flow"
 msgstr "Flujo del alisado"
 
-#: apps/lamina/src/lib.rs:1554
+#: apps/lamina/src/lib.rs:1570
 msgid "Ironing spacing, mm"
 msgstr "Espaciado del alisado, mm"
 
-#: apps/lamina/src/lib.rs:1555
+#: apps/lamina/src/lib.rs:1571
 msgid "Ironing speed, mm/s"
 msgstr "Velocidad del alisado, mm/s"
 
@@ -805,7 +813,7 @@ msgstr "Velocidad del alisado, mm/s"
 msgid "Join"
 msgstr "Unir"
 
-#: apps/lamina/src/lib.rs:1602
+#: apps/lamina/src/lib.rs:1618
 msgid "Junction deviation, mm"
 msgstr "Desviación de unión, mm"
 
@@ -825,7 +833,7 @@ msgstr "Guardada en el archivo de ajustes, sellada con un secreto integrado en L
 msgid "Keyboard shortcuts"
 msgstr "Atajos de teclado"
 
-#: apps/lamina/src/lib.rs:1679
+#: apps/lamina/src/lib.rs:1695
 msgid "Laid flat on the face clicked."
 msgstr "Apoyado sobre la cara pulsada."
 
@@ -887,7 +895,7 @@ msgstr "Apoyar en una cara..."
 msgid "Lay flat tool: click a face to turn it down"
 msgstr "Herramienta Apoyar cara: haz clic en una cara para girarla hacia abajo"
 
-#: apps/lamina/src/lib.rs:1724
+#: apps/lamina/src/lib.rs:1740
 msgid "Layer"
 msgstr "Capa"
 
@@ -895,7 +903,7 @@ msgstr "Capa"
 msgid "Layer height, mm"
 msgstr "Altura de capa, mm"
 
-#: crates/slicer/src/profile.rs:418
+#: crates/slicer/src/profile.rs:428
 msgid "Layers of lines under the part, which is lifted onto them; 0 for none."
 msgstr "Capas de líneas bajo la pieza, que se eleva sobre ellas; 0 para ninguna."
 
@@ -911,7 +919,7 @@ msgstr "Deja que un agente de IA (Claude Code, Codex, cualquier cliente MCP) tra
 msgid "Lettering, 10 mm capitals, 1 mm deep; the assistant or `text` writes any"
 msgstr "Letras, mayúsculas de 10 mm, 1 mm de profundidad; el asistente o `text` escribe cualquiera"
 
-#: crates/slicer/src/profile.rs:431
+#: crates/slicer/src/profile.rs:441
 msgid "Lift the nozzle by this much while it travels, mm, so it does not knock the part; 0 for none."
 msgstr "Levantar la boquilla esto durante el desplazamiento, mm, para que no golpee la pieza; 0 para nada."
 
@@ -919,7 +927,7 @@ msgstr "Levantar la boquilla esto durante el desplazamiento, mm, para que no gol
 msgid "Light"
 msgstr "Claro"
 
-#: apps/lamina/src/lib.rs:1396
+#: apps/lamina/src/lib.rs:1412
 msgid "Lines"
 msgstr "Líneas"
 
@@ -931,19 +939,19 @@ msgstr "Escuchando en el puerto {}: {}."
 msgid "Look at everything on the plate (F frames the picked objects)"
 msgstr "Ver todo lo que hay en la cama (F encuadra los objetos seleccionados)"
 
-#: apps/lamina/src/lib.rs:1540
+#: apps/lamina/src/lib.rs:1556
 msgid "Loops"
 msgstr "Vueltas"
 
-#: crates/slicer/src/profile.rs:413
+#: crates/slicer/src/profile.rs:423
 msgid "Loops round everything on the first layer, outside its convex outline and not touching it, to start the flow; 0 for none."
 msgstr "Vueltas alrededor de todo en la primera capa, por fuera de su contorno convexo y sin tocarlo, para iniciar el flujo; 0 para ninguna."
 
-#: crates/slicer/src/profile.rs:417
+#: crates/slicer/src/profile.rs:427
 msgid "Loops round the first layer, touching it, that hold its edges down, mm wide; 0 for none."
 msgstr "Vueltas alrededor de la primera capa, tocándola, que sujetan sus bordes, ancho en mm; 0 para ninguna."
 
-#: apps/lamina/src/lib.rs:1597
+#: apps/lamina/src/lib.rs:1613
 msgid "Machine"
 msgstr "Máquina"
 
@@ -997,7 +1005,7 @@ msgstr "Mover, mm"
 msgid "Move tool: pick and drag, turn with the rings, scale with the square"
 msgstr "Herramienta Mover: selecciona y arrastra, gira con los anillos, escala con el cuadrado"
 
-#: apps/lamina/src/lib.rs:1433
+#: apps/lamina/src/lib.rs:1449
 msgid "Nearest"
 msgstr "Más cercana"
 
@@ -1017,7 +1025,7 @@ msgstr "Sin conectores: para piezas que pegas"
 msgid "None"
 msgstr "Ninguno"
 
-#: apps/lamina/src/lib.rs:1531
+#: apps/lamina/src/lib.rs:1547
 msgid "Not under, mm of travel"
 msgstr "No por debajo de, mm de desplazamiento"
 
@@ -1033,11 +1041,11 @@ msgstr "Todavía no hay nada en la cama: añade una forma, importa o suelta una 
 msgid "Nothing to undo"
 msgstr "Nada que deshacer"
 
-#: apps/lamina/src/lib.rs:1413
+#: apps/lamina/src/lib.rs:1429
 msgid "Nozzle / bed, C"
 msgstr "Boquilla / cama, C"
 
-#: apps/lamina/src/lib.rs:1598
+#: apps/lamina/src/lib.rs:1614
 msgid "Nozzle, mm"
 msgstr "Boquilla, mm"
 
@@ -1045,7 +1053,7 @@ msgstr "Boquilla, mm"
 msgid "OctoPrint's settings, Application Keys"
 msgstr "Ajustes de OctoPrint, Application Keys"
 
-#: apps/lamina/src/lib.rs:1456
+#: apps/lamina/src/lib.rs:1472
 msgid "Off"
 msgstr "Desactivado"
 
@@ -1057,7 +1065,7 @@ msgstr "Desactivado: los agentes no pueden llegar a esta cama."
 msgid "Ollama: http://localhost:11434/v1. LM Studio: http://localhost:1234/v1. Only this computer is allowed."
 msgstr "Ollama: http://localhost:11434/v1. LM Studio: http://localhost:1234/v1. Solo se permite este ordenador."
 
-#: apps/lamina/src/lib.rs:1591
+#: apps/lamina/src/lib.rs:1607
 msgid "One at a time"
 msgstr "De uno en uno"
 
@@ -1114,11 +1122,11 @@ msgstr "Imagen"
 msgid "Pins"
 msgstr "Pasadores"
 
-#: apps/lamina/src/lib.rs:1635
+#: apps/lamina/src/lib.rs:1651
 msgid "Placeholders: {}"
 msgstr "Marcadores: {}"
 
-#: crates/slicer/src/profile.rs:486
+#: crates/slicer/src/profile.rs:496
 msgid "Plastic each tool change lays on the purge tower, mm3, so the new nozzle prints clean."
 msgstr "Plástico que cada cambio de herramienta deposita en la torre de purga, mm3, para que la nueva boquilla imprima limpia."
 
@@ -1130,7 +1138,7 @@ msgstr "Cama"
 msgid "Plate with four holes"
 msgstr "Placa con cuatro agujeros"
 
-#: apps/lamina/src/lib.rs:1489
+#: apps/lamina/src/lib.rs:1505
 msgid "Plate, mm"
 msgstr "Cama, mm"
 
@@ -1151,7 +1159,7 @@ msgstr "Preparar"
 msgid "Preset name"
 msgstr "Nombre del preajuste"
 
-#: apps/lamina/src/lib.rs:1603
+#: apps/lamina/src/lib.rs:1619
 msgid "Pressure advance"
 msgstr "Avance de presión"
 
@@ -1159,11 +1167,11 @@ msgstr "Avance de presión"
 msgid "Preview"
 msgstr "Vista previa"
 
-#: crates/slicer/src/profile.rs:490
+#: crates/slicer/src/profile.rs:500
 msgid "Print each object whole before the next, the shortest first, so a failed one spoils no other; the head needs room round each."
 msgstr "Imprimir cada objeto entero antes del siguiente, el más bajo primero, para que uno fallido no estropee los demás; el cabezal necesita espacio alrededor de cada uno."
 
-#: apps/lamina/src/lib.rs:1592
+#: apps/lamina/src/lib.rs:1608
 msgid "Print each object whole, one after another"
 msgstr "Imprimir cada objeto entero, uno tras otro"
 
@@ -1187,7 +1195,7 @@ msgstr "Imprimiendo por el cable USB"
 msgid "Process"
 msgstr "Proceso"
 
-#: apps/lamina/src/lib.rs:1505
+#: apps/lamina/src/lib.rs:1521
 msgid "Profile"
 msgstr "Perfil"
 
@@ -1195,7 +1203,7 @@ msgstr "Perfil"
 msgid "PrusaLink's user name, when it asks for a user name and password: the password goes below"
 msgstr "El nombre de usuario de PrusaLink, cuando pide usuario y contraseña: la contraseña va debajo"
 
-#: apps/lamina/src/lib.rs:1589
+#: apps/lamina/src/lib.rs:1605
 msgid "Purge, mm3"
 msgstr "Purga, mm3"
 
@@ -1241,23 +1249,23 @@ msgstr "Reparado: {} caras eliminadas, {} giradas, {} agujeros rellenados; {}."
 msgid "Restart and install"
 msgstr "Reiniciar e instalar"
 
-#: apps/lamina/src/lib.rs:1530
+#: apps/lamina/src/lib.rs:1546
 msgid "Retract speed, mm/s"
 msgstr "Velocidad de retracción, mm/s"
 
-#: crates/slicer/src/profile.rs:432
+#: crates/slicer/src/profile.rs:442
 msgid "Retract while moving back along the line just printed, mm, which leaves a smaller blob; 0 for none."
 msgstr "Retraer mientras se retrocede por la línea recién impresa, mm, lo que deja una gota más pequeña; 0 para nada."
 
-#: crates/slicer/src/profile.rs:380
+#: crates/slicer/src/profile.rs:384
 msgid "Retract with the firmware's G10 and G11, so the printer's own retraction settings apply."
 msgstr "Retraer con G10 y G11 del firmware, para que se apliquen los ajustes de retracción de la propia impresora."
 
-#: apps/lamina/src/lib.rs:1529
+#: apps/lamina/src/lib.rs:1545
 msgid "Retract, mm"
 msgstr "Retracción, mm"
 
-#: apps/lamina/src/lib.rs:1528
+#: apps/lamina/src/lib.rs:1544
 msgid "Retraction and travel"
 msgstr "Retracción y desplazamiento"
 
@@ -1265,7 +1273,7 @@ msgstr "Retracción y desplazamiento"
 msgid "Rotate"
 msgstr "Girar"
 
-#: crates/slicer/src/profile.rs:396
+#: crates/slicer/src/profile.rs:400
 msgid "Roughen the outer wall with small random bumps, for a textured grip that hides layer lines."
 msgstr "Hacer rugosa la pared exterior con pequeños bultos aleatorios, para un agarre texturizado que oculta las líneas de capa."
 
@@ -1334,7 +1342,7 @@ msgstr "{} guardado."
 msgid "Scale"
 msgstr "Escalar"
 
-#: apps/lamina/src/lib.rs:1426
+#: apps/lamina/src/lib.rs:1442
 msgid "Seam"
 msgstr "Costura"
 
@@ -1379,11 +1387,11 @@ msgstr "Servidor"
 msgid "Shape"
 msgstr "Forma"
 
-#: apps/lamina/src/lib.rs:1432
+#: apps/lamina/src/lib.rs:1448
 msgid "Sharpest corner"
 msgstr "Esquina más aguda"
 
-#: apps/lamina/src/lib.rs:1546
+#: apps/lamina/src/lib.rs:1562
 msgid "Shortest layer, s"
 msgstr "Capa más corta, s"
 
@@ -1408,7 +1416,7 @@ msgstr "Tamaño"
 msgid "Sized from the cut face, 3 to 8 mm across"
 msgstr "Dimensionado según la cara de corte, de 3 a 8 mm de diámetro"
 
-#: apps/lamina/src/lib.rs:1539
+#: apps/lamina/src/lib.rs:1555
 msgid "Skirt"
 msgstr "Falda"
 
@@ -1424,7 +1432,7 @@ msgstr "Laminar la cama y subirla"
 msgid "Slice the plate into a G-code file"
 msgstr "Laminar la cama en un archivo de G-code"
 
-#: apps/lamina/src/lib.rs:1703
+#: apps/lamina/src/lib.rs:1719
 msgid "Slice the plate to see its layers."
 msgstr "Lamina la cama para ver sus capas."
 
@@ -1444,19 +1452,19 @@ msgstr "Laminando"
 msgid "Slower with large meshes. The graphics card draws it otherwise, where the window has one."
 msgstr "Más lento con mallas grandes. Si no, la dibuja la tarjeta gráfica, donde la ventana tenga una."
 
-#: apps/lamina/src/lib.rs:1526
+#: apps/lamina/src/lib.rs:1542
 msgid "Slowest when cooling, mm/s"
 msgstr "Mínima al enfriar, mm/s"
 
-#: crates/slicer/src/profile.rs:407
+#: crates/slicer/src/profile.rs:411
 msgid "Solid layers at the bottom of the part."
 msgstr "Capas sólidas en la base de la pieza."
 
-#: crates/slicer/src/profile.rs:406
+#: crates/slicer/src/profile.rs:410
 msgid "Solid layers that close the top of the part."
 msgstr "Capas sólidas que cierran la parte superior de la pieza."
 
-#: apps/lamina/src/lib.rs:1520
+#: apps/lamina/src/lib.rs:1536
 msgid "Speeds"
 msgstr "Velocidades"
 
@@ -1468,15 +1476,15 @@ msgstr "Dividir para que quepa en la cama"
 msgid "Square"
 msgstr "Cuadrado"
 
-#: apps/lamina/src/lib.rs:1584
+#: apps/lamina/src/lib.rs:1600
 msgid "Standby, C below"
 msgstr "Espera, C por debajo"
 
-#: apps/lamina/src/lib.rs:1640
+#: apps/lamina/src/lib.rs:1656
 msgid "Start"
 msgstr "Inicio"
 
-#: apps/lamina/src/lib.rs:1633
+#: apps/lamina/src/lib.rs:1649
 msgid "Start and end G-code"
 msgstr "G-code de inicio y final"
 
@@ -1492,19 +1500,19 @@ msgstr "Detenerlo; no se aplica nada de lo que habría hecho"
 msgid "Subtract"
 msgstr "Restar"
 
-#: apps/lamina/src/lib.rs:1561
+#: apps/lamina/src/lib.rs:1577
 msgid "Support details"
 msgstr "Detalles del soporte"
 
-#: apps/lamina/src/lib.rs:1452
+#: apps/lamina/src/lib.rs:1468
 msgid "Supports"
 msgstr "Soportes"
 
-#: crates/slicer/src/profile.rs:441
+#: crates/slicer/src/profile.rs:451
 msgid "Supports under overhangs: off, everywhere, or only those that stand on the plate."
 msgstr "Soportes bajo los voladizos: desactivados, en todas partes, o solo los que se apoyan en la cama."
 
-#: apps/lamina/src/lib.rs:1550
+#: apps/lamina/src/lib.rs:1566
 msgid "Surface"
 msgstr "Superficie"
 
@@ -1537,15 +1545,15 @@ msgstr "No se pudo guardar el chat: {}"
 msgid "The details are in {}."
 msgstr "Los detalles están en {}."
 
-#: crates/slicer/src/profile.rs:463
+#: crates/slicer/src/profile.rs:473
 msgid "The extruder that prints, from 1: set it for one object to print that object in another filament."
 msgstr "El extrusor que imprime, desde 1: ajústalo en un objeto para imprimir ese objeto con otro filamento."
 
-#: crates/slicer/src/profile.rs:376
+#: crates/slicer/src/profile.rs:380
 msgid "The filament's diameter, mm, usually 1.75."
 msgstr "El diámetro del filamento, mm, normalmente 1,75."
 
-#: crates/slicer/src/profile.rs:371
+#: crates/slicer/src/profile.rs:375
 msgid "The filament's pressure advance (linear advance on Marlin), sent at the start; 0 leaves the printer's own."
 msgstr "El avance de presión del filamento (linear advance en Marlin), enviado al inicio; 0 deja el de la impresora."
 
@@ -1553,11 +1561,11 @@ msgstr "El avance de presión del filamento (linear advance en Marlin), enviado 
 msgid "The gap between a peg or pin and its hole: more is looser. 0.2 mm suits most printers"
 msgstr "La holgura entre un pasador o espiga y su agujero: más es más suelto. 0,2 mm va bien en la mayoría de las impresoras"
 
-#: crates/slicer/src/profile.rs:382
+#: crates/slicer/src/profile.rs:386
 msgid "The height of each layer, mm: thinner is finer and slower."
 msgstr "La altura de cada capa, mm: más fina es más detallada y más lenta."
 
-#: crates/slicer/src/profile.rs:383
+#: crates/slicer/src/profile.rs:387
 msgid "The height of the first layer, mm: a thicker one sticks better to an uneven plate."
 msgstr "La altura de la primera capa, mm: una más gruesa se adhiere mejor a una cama irregular."
 
@@ -1565,7 +1573,7 @@ msgstr "La altura de la primera capa, mm: una más gruesa se adhiere mejor a una
 msgid "The key changed: tick Remember again to save it."
 msgstr "La clave cambió: marca Recordar de nuevo para guardarla."
 
-#: crates/slicer/src/profile.rs:434
+#: crates/slicer/src/profile.rs:444
 msgid "The layer from which the fan runs at its full setting."
 msgstr "La capa a partir de la cual el ventilador funciona a su valor máximo."
 
@@ -1577,31 +1585,31 @@ msgstr "La dirección del modelo local se omitió: no está en este ordenador"
 msgid "The local model's name was left out: it is not a model id"
 msgstr "El nombre del modelo local se omitió: no es un id de modelo"
 
-#: crates/slicer/src/profile.rs:466
+#: crates/slicer/src/profile.rs:476
 msgid "The nozzle temperature of each extruder after the first, C, in order; one left out prints at the nozzle temperature."
 msgstr "La temperatura de boquilla de cada extrusor después del primero, C, en orden; uno omitido imprime a la temperatura de boquilla."
 
-#: crates/slicer/src/profile.rs:375
+#: crates/slicer/src/profile.rs:379
 msgid "The nozzle's diameter, mm: lines are this wide, and layers at most 80 % of it."
 msgstr "El diámetro de la boquilla, mm: las líneas tienen este ancho, y las capas como mucho el 80 % de él."
 
-#: crates/slicer/src/profile.rs:424
+#: crates/slicer/src/profile.rs:434
 msgid "The nozzle's temperature for the first layer, C."
 msgstr "La temperatura de la boquilla en la primera capa, C."
 
-#: crates/slicer/src/profile.rs:423
+#: crates/slicer/src/profile.rs:433
 msgid "The nozzle's temperature, C."
 msgstr "La temperatura de la boquilla, C."
 
-#: crates/slicer/src/profile.rs:440
+#: crates/slicer/src/profile.rs:450
 msgid "The part-cooling fan while a bridge prints, 0 to 255."
 msgstr "El ventilador de capa mientras se imprime un puente, 0 a 255."
 
-#: crates/slicer/src/profile.rs:433
+#: crates/slicer/src/profile.rs:443
 msgid "The part-cooling fan, 0 to 255: off for the first layer, then up in steps to this."
 msgstr "El ventilador de capa, 0 a 255: apagado en la primera capa, luego sube por pasos hasta esto."
 
-#: crates/slicer/src/profile.rs:409
+#: crates/slicer/src/profile.rs:413
 msgid "The pattern of the sparse infill: lines, grid, triangles, gyroid or honeycomb."
 msgstr "El patrón del relleno disperso: líneas, rejilla, triángulos, giroide o panal."
 
@@ -1617,19 +1625,19 @@ msgstr "La imagen va al asistente con tu próximo mensaje."
 msgid "The plate as a 3MF or an OBJ, each object its own, or as one STL"
 msgstr "La cama como 3MF u OBJ, cada objeto por separado, o como un solo STL"
 
-#: apps/lamina/src/lib.rs:1709
+#: apps/lamina/src/lib.rs:1725
 msgid "The plate changed since this slice: slice again."
 msgstr "La cama cambió desde este laminado: lamina de nuevo."
 
-#: crates/slicer/src/profile.rs:363
+#: crates/slicer/src/profile.rs:367
 msgid "The plate's size, mm, x then y."
 msgstr "El tamaño de la cama, mm, x y luego y."
 
-#: crates/slicer/src/profile.rs:426
+#: crates/slicer/src/profile.rs:436
 msgid "The plate's temperature for the first layer, C."
 msgstr "La temperatura de la cama en la primera capa, C."
 
-#: crates/slicer/src/profile.rs:425
+#: crates/slicer/src/profile.rs:435
 msgid "The plate's temperature, C; 0 for an unheated plate."
 msgstr "La temperatura de la cama, C; 0 para una cama sin calefacción."
 
@@ -1641,11 +1649,11 @@ msgstr "El preajuste \"{}\" se omitió: sus ajustes no son válidos"
 msgid "The printer connection was left out: it does not read"
 msgstr "La conexión de la impresora se omitió: no se pudo leer"
 
-#: crates/slicer/src/profile.rs:373
+#: crates/slicer/src/profile.rs:377
 msgid "The printer's acceleration, mm/s2: the print time estimate plans each move with it."
 msgstr "La aceleración de la impresora, mm/s2: la estimación del tiempo de impresión planifica cada movimiento con ella."
 
-#: crates/slicer/src/profile.rs:379
+#: crates/slicer/src/profile.rs:383
 msgid "The printer's firmware: Klipper also gets object markers, so one failed object can be cancelled alone."
 msgstr "El firmware de la impresora: Klipper también recibe marcadores de objeto, para que un objeto fallido se pueda cancelar por separado."
 
@@ -1677,23 +1685,23 @@ msgstr "La clave guardada de {} se omitió: no es una clave sellada"
 msgid "The share of its triangles to keep"
 msgstr "La fracción de sus triángulos que se conserva"
 
-#: crates/slicer/src/profile.rs:484
+#: crates/slicer/src/profile.rs:494
 msgid "The side of the purge tower, a square each tool change purges on, mm; it prints on every layer up to the last change."
 msgstr "El lado de la torre de purga, un cuadrado donde purga cada cambio de herramienta, mm; se imprime en cada capa hasta el último cambio."
 
-#: crates/slicer/src/profile.rs:436
+#: crates/slicer/src/profile.rs:446
 msgid "The slowest a layer is slowed to cool, mm/s."
 msgstr "Lo más lento a lo que se ralentiza una capa para enfriarse, mm/s."
 
-#: crates/slicer/src/profile.rs:445
+#: crates/slicer/src/profile.rs:455
 msgid "The space between a support and the part's walls, mm."
 msgstr "El espacio entre un soporte y las paredes de la pieza, mm."
 
-#: crates/slicer/src/profile.rs:444
+#: crates/slicer/src/profile.rs:454
 msgid "The space between the top of a support and the part, mm, so it comes away."
 msgstr "El espacio entre la parte superior de un soporte y la pieza, mm, para que se despegue."
 
-#: crates/slicer/src/profile.rs:368
+#: crates/slicer/src/profile.rs:372
 msgid "The tallest the printer can print, mm."
 msgstr "La mayor altura que puede imprimir la impresora, mm."
 
@@ -1701,11 +1709,11 @@ msgstr "La mayor altura que puede imprimir la impresora, mm."
 msgid "The theme was left out: it is not dark, light or system"
 msgstr "El tema se omitió: no es dark, light ni system"
 
-#: crates/slicer/src/profile.rs:456
+#: crates/slicer/src/profile.rs:466
 msgid "The thickest a tree's trunk grows, mm: a branch thickens with the tips it carries and as it goes down."
 msgstr "Lo más grueso que crece el tronco de un árbol, mm: una rama engrosa con las puntas que lleva y a medida que baja."
 
-#: crates/slicer/src/profile.rs:388
+#: crates/slicer/src/profile.rs:392
 msgid "The thinnest an adaptive layer may be, mm; the thickest is the layer height."
 msgstr "Lo más fina que puede ser una capa adaptativa, mm; la más gruesa es la altura de capa."
 
@@ -1725,11 +1733,11 @@ msgstr "No hay ninguna clave guardada que desbloquear."
 msgid "They do not all fit the plate: some stand off it."
 msgstr "No caben todos en la cama: algunos quedan fuera."
 
-#: crates/slicer/src/profile.rs:386
+#: crates/slicer/src/profile.rs:390
 msgid "Thin layers where a surface is nearly flat, so its steps hardly show, and thick ones on walls, to save time."
 msgstr "Capas finas donde una superficie es casi plana, para que apenas se noten los escalones, y gruesas en las paredes, para ahorrar tiempo."
 
-#: apps/lamina/src/lib.rs:1724
+#: apps/lamina/src/lib.rs:1740
 msgid "This layer alone, from above"
 msgstr "Solo esta capa, vista desde arriba"
 
@@ -1741,7 +1749,7 @@ msgstr "Esta malla no es un sólido limpio: {}. Partes de ella pueden no imprimi
 msgid "This object's settings"
 msgstr "Ajustes de este objeto"
 
-#: apps/lamina/src/lib.rs:1619
+#: apps/lamina/src/lib.rs:1635
 msgid "Thumbnail, pixels"
 msgstr "Miniatura, píxeles"
 
@@ -1753,11 +1761,11 @@ msgstr "Se tomaron {} ajustes de {}."
 msgid "Took {} settings from {}; left out {}: {}."
 msgstr "Se tomaron {} ajustes de {}; se omitieron {}: {}."
 
-#: apps/lamina/src/lib.rs:1646
+#: apps/lamina/src/lib.rs:1662
 msgid "Tool change, before the T; also {}"
 msgstr "Cambio de herramienta, antes de la T; también {}"
 
-#: apps/lamina/src/lib.rs:1373
+#: apps/lamina/src/lib.rs:1389
 msgid "Top / bottom layers"
 msgstr "Capas superiores / inferiores"
 
@@ -1765,51 +1773,51 @@ msgstr "Capas superiores / inferiores"
 msgid "Torus"
 msgstr "Toro"
 
-#: apps/lamina/src/lib.rs:1588
+#: apps/lamina/src/lib.rs:1604
 msgid "Tower size, mm"
 msgstr "Tamaño de la torre, mm"
 
-#: apps/lamina/src/lib.rs:1586
+#: apps/lamina/src/lib.rs:1602
 msgid "Tower x, mm"
 msgstr "Torre x, mm"
 
-#: apps/lamina/src/lib.rs:1587
+#: apps/lamina/src/lib.rs:1603
 msgid "Tower y, mm"
 msgstr "Torre y, mm"
 
-#: apps/lamina/src/lib.rs:1534
+#: apps/lamina/src/lib.rs:1550
 msgid "Travel inside the part without retracting"
 msgstr "Desplazarse dentro de la pieza sin retraer"
 
-#: crates/slicer/src/profile.rs:430
+#: crates/slicer/src/profile.rs:440
 msgid "Travel inside the part without retracting, however far: it crosses no gap, so nothing strings."
 msgstr "Desplazarse dentro de la pieza sin retraer, a cualquier distancia: no cruza ningún hueco, así que nada forma hilos."
 
-#: apps/lamina/src/lib.rs:1524
+#: apps/lamina/src/lib.rs:1540
 msgid "Travel, mm/s"
 msgstr "Desplazamiento, mm/s"
 
-#: apps/lamina/src/lib.rs:1720
+#: apps/lamina/src/lib.rs:1736
 msgid "Travels"
 msgstr "Desplazamientos"
 
-#: apps/lamina/src/lib.rs:1475
+#: apps/lamina/src/lib.rs:1491
 msgid "Tree"
 msgstr "Árbol"
 
-#: apps/lamina/src/lib.rs:1567
+#: apps/lamina/src/lib.rs:1583
 msgid "Tree branch lean, deg"
 msgstr "Inclinación de las ramas, grados"
 
-#: apps/lamina/src/lib.rs:1566
+#: apps/lamina/src/lib.rs:1582
 msgid "Tree tips apart, mm"
 msgstr "Distancia entre puntas, mm"
 
-#: apps/lamina/src/lib.rs:1568
+#: apps/lamina/src/lib.rs:1584
 msgid "Tree trunk radius, mm"
 msgstr "Radio del tronco, mm"
 
-#: apps/lamina/src/lib.rs:1398
+#: apps/lamina/src/lib.rs:1414
 msgid "Triangles"
 msgstr "Triángulos"
 
@@ -1871,11 +1879,15 @@ msgstr "Usuario"
 msgid "Using the key in {}."
 msgstr "Usando la clave de {}."
 
-#: apps/lamina/src/lib.rs:1390
+#: apps/lamina/src/lib.rs:1376
+msgid "Variable width"
+msgstr "Ancho variable"
+
+#: apps/lamina/src/lib.rs:1406
 msgid "Vase mode"
 msgstr "Modo jarrón"
 
-#: crates/slicer/src/profile.rs:405
+#: crates/slicer/src/profile.rs:409
 msgid "Vase mode: above the bottom, one wall that climbs without stopping, with no infill and an open top."
 msgstr "Modo jarrón: por encima de la base, una pared que sube sin parar, sin relleno y con la parte superior abierta."
 
@@ -1893,11 +1905,11 @@ msgstr "Espera a que termine {} o cancélalo."
 msgid "Walls"
 msgstr "Paredes"
 
-#: crates/slicer/src/profile.rs:404
+#: crates/slicer/src/profile.rs:408
 msgid "Walls round each layer: more is stronger and slower."
 msgstr "Paredes alrededor de cada capa: más es más resistente y más lento."
 
-#: apps/lamina/src/lib.rs:1521
+#: apps/lamina/src/lib.rs:1537
 msgid "Walls, mm/s"
 msgstr "Paredes, mm/s"
 
@@ -1905,27 +1917,27 @@ msgstr "Paredes, mm/s"
 msgid "What's new"
 msgstr "Novedades"
 
-#: crates/slicer/src/profile.rs:437
+#: crates/slicer/src/profile.rs:447
 msgid "Where each wall starts and ends, which leaves a small mark."
 msgstr "Dónde empieza y termina cada pared, lo que deja una pequeña marca."
 
-#: crates/slicer/src/profile.rs:480
+#: crates/slicer/src/profile.rs:490
 msgid "Where the purge tower's middle stands, mm east of the plate's middle."
 msgstr "Dónde está el centro de la torre de purga, mm al este del centro de la cama."
 
-#: crates/slicer/src/profile.rs:481
+#: crates/slicer/src/profile.rs:491
 msgid "Where the purge tower's middle stands, mm north of the plate's middle."
 msgstr "Dónde está el centro de la torre de purga, mm al norte del centro de la cama."
 
-#: crates/slicer/src/profile.rs:366
+#: crates/slicer/src/profile.rs:370
 msgid "Whether the printer's zero is the middle of the plate (most delta printers) instead of its front left corner."
 msgstr "Si el cero de la impresora es el centro de la cama (la mayoría de las delta) en lugar de su esquina delantera izquierda."
 
-#: apps/lamina/src/lib.rs:1533
+#: apps/lamina/src/lib.rs:1549
 msgid "Wipe, mm"
 msgstr "Limpieza, mm"
 
-#: crates/slicer/src/profile.rs:401
+#: crates/slicer/src/profile.rs:405
 msgid "Write curves as G2 and G3 arcs: a smaller file and smoother circles. Klipper needs [gcode_arcs] in its config."
 msgstr "Escribir las curvas como arcos G2 y G3: un archivo más pequeño y círculos más suaves. Klipper necesita [gcode_arcs] en su configuración."
 
@@ -1949,15 +1961,15 @@ msgstr "Tus mensajes y lo que hay en la cama van al servidor del modelo en este 
 msgid "Your messages and what is on the plate go to {} under your key."
 msgstr "Tus mensajes y lo que hay en la cama van a {} con tu clave."
 
-#: apps/lamina/src/lib.rs:1532
+#: apps/lamina/src/lib.rs:1548
 msgid "Z hop, mm"
 msgstr "Salto en Z, mm"
 
-#: apps/lamina/src/lib.rs:1626
+#: apps/lamina/src/lib.rs:1642
 msgid "Zero in the middle (delta)"
 msgstr "Cero en el centro (delta)"
 
-#: crates/slicer/src/presets.rs:102
+#: crates/slicer/src/presets.rs:103
 msgid "a round 200 mm plate, 300 mm tall, with the machine's zero in the middle; the slicer still treats the plate as its square"
 msgstr "una cama redonda de 200 mm, 300 mm de altura, con el cero de la máquina en el centro; el laminador aún trata la cama como su cuadrado"
 
@@ -1989,7 +2001,7 @@ msgstr "extrusión"
 msgid "filament"
 msgstr "filamento"
 
-#: crates/slicer/src/presets.rs:154
+#: crates/slicer/src/presets.rs:155
 msgid "four walls, thick skins and 40 % gyroid infill for parts that bear load; keeps the layer height"
 msgstr "cuatro paredes, capas sólidas gruesas y 40 % de relleno giroide para piezas que soportan carga; conserva la altura de capa"
 
@@ -2021,7 +2033,7 @@ msgstr "sigue abierto: un agujero es demasiado grande para rellenarlo sin adivin
 msgid "its print settings were left out ({}), so the ones shown stay"
 msgstr "sus ajustes de impresión se omitieron ({}), así que se mantienen los mostrados"
 
-#: apps/lamina/src/lib.rs:1718
+#: apps/lamina/src/lib.rs:1734
 msgid "layer"
 msgstr "capa"
 
@@ -2037,23 +2049,23 @@ msgstr "ningún agente todavía"
 msgid "now"
 msgstr "ahora"
 
-#: crates/slicer/src/presets.rs:111
+#: crates/slicer/src/presets.rs:112
 msgid "nozzle 210, first layer 215, bed 60, fan full"
 msgstr "boquilla 210, primera capa 215, cama 60, ventilador al máximo"
 
-#: crates/slicer/src/presets.rs:131
+#: crates/slicer/src/presets.rs:132
 msgid "nozzle 225, first layer 230, bed 50, fan half; print slowly"
 msgstr "boquilla 225, primera capa 230, cama 50, ventilador a la mitad; imprime despacio"
 
-#: crates/slicer/src/presets.rs:116
+#: crates/slicer/src/presets.rs:117
 msgid "nozzle 240, first layer 245, bed 80, fan half"
 msgstr "boquilla 240, primera capa 245, cama 80, ventilador a la mitad"
 
-#: crates/slicer/src/presets.rs:121
+#: crates/slicer/src/presets.rs:122
 msgid "nozzle 250, first layer 255, bed 100, fan off; print enclosed"
 msgstr "boquilla 250, primera capa 255, cama 100, ventilador apagado; imprime con la impresora cerrada"
 
-#: crates/slicer/src/presets.rs:126
+#: crates/slicer/src/presets.rs:127
 msgid "nozzle 255, first layer 260, bed 100, fan off; print enclosed"
 msgstr "boquilla 255, primera capa 260, cama 100, ventilador apagado; imprime con la impresora cerrada"
 
@@ -2117,7 +2129,7 @@ msgstr "texto"
 msgid "the board's password, if it has one"
 msgstr "la contraseña de la placa, si tiene una"
 
-#: crates/slicer/src/presets.rs:144
+#: crates/slicer/src/presets.rs:145
 msgid "the everyday balance of look and time: two walls, 15 % infill"
 msgstr "el equilibrio de cada día entre aspecto y tiempo: dos paredes, 15 % de relleno"
 
@@ -2129,11 +2141,11 @@ msgstr "la cama"
 msgid "the printer's Settings, Network, PrusaLink"
 msgstr "Settings, Network, PrusaLink de la impresora"
 
-#: crates/slicer/src/presets.rs:149
+#: crates/slicer/src/presets.rs:150
 msgid "thick layers for a quick test fit; visible lines"
 msgstr "capas gruesas para una prueba rápida de ajuste; líneas visibles"
 
-#: crates/slicer/src/presets.rs:139
+#: crates/slicer/src/presets.rs:140
 msgid "thin layers for detail and smooth curves; about half again as long to print"
 msgstr "capas finas para detalle y curvas suaves; tarda cerca de una vez y media más en imprimir"
 

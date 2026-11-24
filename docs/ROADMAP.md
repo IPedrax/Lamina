@@ -250,6 +250,18 @@ Priorities:
   the time it is chosen again), and each tool change waits the rise over the rate, the head at rest (`time::Planner::wait`). Tested:
   20 changes from 30 below cost 300 s more at 1 C a second than at 2; a standby 10 below a third of that; a second tool the start
   never warmed heats from room temperature; one extruder never waits. In the window's Extruders group.
+- **4.23 Walls of varying width.** `wall_generator`: `classic` (the default, loops a line wide) or `variable`
+  (`crates/slicer/src/walls.rs`, in the spirit of what PrusaSlicer and Cura document for Arachne, from that description and the
+  geometry, never their code). The parts of a layer too thin for its walls are what a round-cornered opening by the walls' depth
+  takes away (a corner or notch it rounds is no part: a part must have a middle two lines long). A strip's middle and width come
+  from walking one side against the other, carried on to the outline at each end; at each point the width holds as many lines as
+  round to it, one to twice the walls, each a share of it, set side by side across the middle, in runs whose flow follows the
+  width. A thin ring (one hole, as a tube's wall) is loops one share apart. The classic loops are cut off where a thin part's own
+  lines take over, gap fill and infill leave thin parts alone, and a part with nothing thin prints exactly as classic. Measured
+  against what the flow model lays for a part filled exactly: a wedge 0.3 to 2 mm wide, 62.4 mm3, gets 61.1 (classic 64.6); a fin
+  0.6 mm thick, 21.7 mm3, gets 21.6 as one line (classic folds a loop: 32.1). A golden fin case with `variable`; the other golden
+  files are unchanged. Imported as PrusaSlicer's `perimeter_generator` and OrcaSlicer's `wall_generator` (`arachne`). A per-object
+  and process field, in the window beside Walls. Classic stays the default until a print has shown the variable walls.
 - **5.1 Process presets.** A third kind in `presets.rs`, setting only the layers and the strength (`PROCESS_FIELDS`): 0.12 mm Fine,
   0.20 mm Standard, 0.28 mm Draft and Strong. `slice` and `slice_check` take `process` (after the printer and the filament, before
   `profile`); `slicer_presets` lists them; the window has a Process picker and Save process, kept in the settings file and the
@@ -431,16 +443,6 @@ what is wrong before adding features.
 
 ## 4. Slicer
 
-**4.23 Walls of varying width (P2).** A thin feature gets walls of a fixed width and a gap-fill line, so a 0.6 mm fin prints as one
-line of a third more plastic and a 1 mm wall as two walls and a sliver. How, in the spirit of what PrusaSlicer and Cura document
-for Arachne (written from the documentation and the geometry, never their code): `wall_generator`, `"classic"` (today's, the
-default) or `"variable"`. With `"variable"`, where a region is narrower than its walls need, its medial axis (from a fine sampling
-of the outline: each sample's inward normal walked to the nearest point of the opposite side) gives a centre line and a width at
-each point; the walls take the number of lines that width holds, from one to `perimeters`, each as wide as the width divided by
-the count (within 0.5 and 1.5 line widths), and the flow follows the width along the line. Thicker regions keep their classic
-walls. Test: a wedge from 0.3 to 2 mm prints one line widening, then two, with the plastic of the wedge's area within 10 %; a
-0.6 mm fin one line at 0.6 mm; the golden files unchanged with `"classic"`.
-
 ## 5. Profiles and settings
 
 ## 6. Printers
@@ -456,7 +458,8 @@ which Bambu's 2025 authorization keeps to Bambu Connect or a printer in Develope
 
 ## Known limits today
 
-- Walls are constant width; a thin feature gets one gap-fill line, not walls of varying width.
+- Walls of varying width (`wall_generator: "variable"`) are new and off by default: a thin part's lines meet the classic walls
+  where it joins a thick one without a transition, and a thin part with two holes or more keeps classic walls.
 - The time estimate has not been checked against a real print.
 - A mesh whose holes are too big to fill without guessing stays open, and prints with parts missing, with a warning. STL, 3MF, OBJ and glTF in; STL and 3MF out.
 - Booleans refuse about 1 in 100 random pairs (the rest of a sphere-with-sphere union mostly). Booleans of earlier results are

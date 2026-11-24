@@ -739,8 +739,23 @@ fn plate_supports<'a>(
 fn plan(layers: &[slice::Layer], regions: Vec<Region>, supports: Vec<support::Layer>, p: &Profile, w: f64) -> Result<ObjectPlan, String> {
     let no_support = support::Layer::default();
     let walls = f64::from(p.perimeters);
-    let inner: Vec<Region> =
-        regions.iter().map(|r| if p.perimeters == 0 { r.clone() } else { geom::inset(r, walls * w - INFILL_OVERLAP * w) }).collect();
+    // Walls of varying width: each layer's parts too thin for its walls, and the lines that print them.
+    let thin: Vec<(Region, Vec<crate::walls::Line>)> = if p.wall_generator == crate::walls::WallGenerator::Variable {
+        regions.iter().map(|r| crate::walls::thin(r, p.perimeters, w)).collect()
+    } else {
+        Vec::new()
+    };
+    let inner: Vec<Region> = regions
+        .iter()
+        .enumerate()
+        .map(|(k, r)| {
+            let inner = if p.perimeters == 0 { r.clone() } else { geom::inset(r, walls * w - INFILL_OVERLAP * w) };
+            match thin.get(k) {
+                Some((area, _)) if !geom::is_empty(area) => geom::difference(&inner, area),
+                _ => inner,
+            }
+        })
+        .collect();
     let mut out = Vec::with_capacity(layers.len());
     for (k, layer) in layers.iter().enumerate() {
         lamina_core::cancel::check()?;
@@ -789,39 +804,66 @@ fn plan(layers: &[slice::Layer], regions: Vec<Region>, supports: Vec<support::La
                 }));
             }
         }
+        // Where the walls are of varying width, the classic loops stop at the thin parts, whose own lines take over.
+        let (thin_area, thin_lines) = thin.get(k).map_or((None, &[][..]), |(a, l)| ((!geom::is_empty(a)).then_some(a), &l[..]));
+        let keep = thin_area.map(|a| geom::difference(&regions[k], a));
         for i in (0..p.perimeters).rev() {
             let kind = if i == 0 { Feature::OuterWall } else { Feature::InnerWall };
             // Fuzzy skin roughens the outer wall above the first layer, which must stay flat on the plate.
             let fuzzy = p.fuzzy_skin && i == 0 && k > 0;
             for shape in geom::inset(&regions[k], w / 2.0 + f64::from(i) * w) {
-                strokes.extend(shape.into_iter().map(|pts| Stroke {
-                    pts: if fuzzy { fuzz(&pts, p.fuzzy_thickness, p.fuzzy_spacing, k) } else { pts },
-                    closed: true,
-                    speed: speed(p.perimeter_speed),
-                    kind,
-                    flow: 1.0,
-                    spiral: false,
-                }));
+                for pts in shape {
+                    let loops = match &keep {
+                        Some(keep) => cut_loop(pts, keep, w),
+                        None => vec![(pts, true)],
+                    };
+                    strokes.extend(loops.into_iter().map(|(pts, closed)| Stroke {
+                        pts: if fuzzy && closed { fuzz(&pts, p.fuzzy_thickness, p.fuzzy_spacing, k) } else { pts },
+                        closed,
+                        speed: speed(p.perimeter_speed),
+                        kind,
+                        flow: 1.0,
+                        spiral: false,
+                    }));
+                }
             }
         }
-        // Gap fill: what the walls and the infill leave, as lines along the middle, in runs whose flow follows the gap's width.
-        for (pts, widths) in gap::gaps(&regions[k], p.perimeters, w, &inner[k]) {
-            let mut start = 0;
-            while start + 1 < pts.len() {
-                let mut end = start + 1;
-                while end + 1 < pts.len() && (widths[end + 1] - widths[start]).abs() <= 0.1 * w {
-                    end += 1;
-                }
-                let mean = widths[start..=end].iter().sum::<f64>() / (end - start + 1) as f64;
+        for line in thin_lines {
+            let kind = if line.outer { Feature::OuterWall } else { Feature::InnerWall };
+            if line.closed {
+                let share = line.widths.iter().sum::<f64>() / line.widths.len().max(1) as f64;
+                let (pts, speed) = (line.pts.clone(), speed(p.perimeter_speed));
+                strokes.push(Stroke { pts, closed: true, speed, kind, flow: (share / w).clamp(0.25, 2.0), spiral: false });
+                continue;
+            }
+            for (pts, mean) in by_width(&line.pts, &line.widths, w) {
                 strokes.push(Stroke {
-                    pts: pts[start..=end].to_vec(),
+                    pts,
+                    closed: false,
+                    speed: speed(p.perimeter_speed),
+                    kind,
+                    flow: (mean / w).clamp(0.25, 2.0),
+                    spiral: false,
+                });
+            }
+        }
+        // Gap fill: what the walls and the infill leave, as lines along the middle, in runs whose flow follows the gap's width (none
+        // in a thin part that its own lines print).
+        for (pts, widths) in gap::gaps(&regions[k], p.perimeters, w, &inner[k]) {
+            if let (Some(area), Some(&mid)) = (thin_area, pts.get(pts.len() / 2))
+                && geom::contains(area, mid)
+            {
+                continue;
+            }
+            for (pts, mean) in by_width(&pts, &widths, w) {
+                strokes.push(Stroke {
+                    pts,
                     closed: false,
                     speed: speed(p.perimeter_speed),
                     kind: Feature::GapFill,
                     flow: (mean / w).clamp(0.25, 2.0),
                     spiral: false,
                 });
-                start = end;
             }
         }
         let covered = covered(&inner, k, p.top_layers as usize, p.bottom_layers as usize);
@@ -885,6 +927,38 @@ fn plan(layers: &[slice::Layer], regions: Vec<Region>, supports: Vec<support::La
         out.push((layer.z, layer.height, strokes, regions[k].clone()));
     }
     Ok((regions.into_iter().next().unwrap_or_default(), out))
+}
+
+/// A line of varying width cut into runs whose widths stay within a tenth of a line `w` of the run's first, each with its mean width:
+/// a stroke has one flow, so the flow follows the width a run at a time. Each run starts where the last one ended.
+fn by_width(pts: &[P2], widths: &[f64], w: f64) -> Vec<(Vec<P2>, f64)> {
+    let mut out = Vec::new();
+    let mut start = 0;
+    while start + 1 < pts.len().min(widths.len()) {
+        let mut end = start + 1;
+        while end + 1 < pts.len().min(widths.len()) && (widths[end + 1] - widths[start]).abs() <= 0.1 * w {
+            end += 1;
+        }
+        let mean = widths[start..=end].iter().sum::<f64>() / (end - start + 1) as f64;
+        out.push((pts[start..=end].to_vec(), mean));
+        start = end;
+    }
+    out
+}
+
+/// A wall loop kept where it lies in `keep`: whole and closed when nothing of it is cut, else the open runs left, each at least half
+/// a line `w` long.
+fn cut_loop(pts: Vec<P2>, keep: &Region, w: f64) -> Vec<(Vec<P2>, bool)> {
+    let Some(&first) = pts.first() else { return Vec::new() };
+    let mut ring = pts.clone();
+    ring.push(first);
+    let whole: f64 = ring.windows(2).map(|s| dist(s[0], s[1])).sum();
+    let parts = geom::clip_lines(&[ring], keep);
+    let kept: f64 = parts.iter().flat_map(|l| l.windows(2).map(|s| dist(s[0], s[1]))).sum();
+    if kept >= whole - 1e-6 {
+        return vec![(pts, true)];
+    }
+    parts.into_iter().filter(|l| l.windows(2).map(|s| dist(s[0], s[1])).sum::<f64>() >= w / 2.0).map(|l| (l, false)).collect()
 }
 
 /// A closed wall `pts` made fuzzy: points every `spacing` mm along it, each moved across the wall by up to `thickness` mm either way.
@@ -1821,6 +1895,43 @@ mod tests {
 
     fn layers_regions(m: &Mesh) -> Vec<Region> {
         slice::layers(m, 0.2, 0.2).unwrap().iter().map(|l| geom::region(&l.loops)).collect()
+    }
+
+    #[test]
+    fn variable_walls_print_a_wedge_with_its_own_plastic_and_a_fin_as_one_line() {
+        // A wedge 30 mm long from 0.3 to 2 mm wide, 2 mm tall: no skins or infill, so what is printed is walls (and gap fill).
+        let wedge = lamina_core::sketch::extrude(&[[-15.0, -0.15], [15.0, -1.0], [15.0, 1.0], [-15.0, 0.15]], &[], 2.0).unwrap();
+        let p = Profile { top_layers: 0, bottom_layers: 0, infill_density: 0.0, skirt_loops: 0, ..Profile::default() };
+        let variable = Profile { wall_generator: crate::walls::WallGenerator::Variable, ..p.clone() };
+        // What the flow model lays for a part filled exactly: its lines' rounded sides make it 0.904 of width times height.
+        let (w, h) = (p.line_width(), p.layer_height);
+        let fill = flow(h, w, p.filament_diameter) * PI * (p.filament_diameter / 2.0).powi(2) / (w * h);
+        let want = 30.0 * (0.3 + 2.0) / 2.0 * 2.0 * fill;
+        let (classic, varied) = (
+            volume(&gcode(&[(1, wedge.clone())], &p).unwrap().gcode, &p),
+            volume(&gcode(&[(1, wedge)], &variable).unwrap().gcode, &variable),
+        );
+        println!("wedge: {want:.1} mm3 to fill, variable {varied:.1}, classic {classic:.1}");
+        assert!((varied - want).abs() < 0.1 * want, "variable: {varied} mm3 against the wedge's {want}");
+        assert!((varied - want).abs() < (classic - want).abs(), "nearer than classic's {classic}");
+        // A fin 0.6 mm thick, 20 long, 2 tall: one line along its middle on each layer, 0.6 wide, where classic folds a loop.
+        let fin = vec![(1, Mesh::cuboid([20.0, 0.6, 2.0]))];
+        let one = gcode(&fin, &variable).unwrap();
+        let walls = layer_runs(&one.gcode, 3, "outer-wall", &variable);
+        assert_eq!(walls.len(), 1, "{walls:?}");
+        assert!(walls[0].iter().all(|q| q[1].abs() < 1e-3) && dist(walls[0][0], walls[0][walls[0].len() - 1]) > 19.0);
+        let fin_volume = volume(&one.gcode, &variable);
+        let folded = volume(&gcode(&fin, &p).unwrap().gcode, &p);
+        println!("fin: {:.1} mm3 to fill, variable {fin_volume:.1}, classic {folded:.1}", 24.0 * fill);
+        assert!((fin_volume - 24.0 * fill).abs() < 0.1 * 24.0 * fill, "{fin_volume}");
+        assert!(folded > 1.3 * fin_volume, "classic's loop folds onto itself: {folded} against {fin_volume}");
+        // A part with no thin feature prints the same either way.
+        assert_eq!(
+            gcode(&cube(10.0), &variable).unwrap().gcode,
+            gcode(&cube(10.0), &Profile { top_layers: 0, bottom_layers: 0, infill_density: 0.0, skirt_loops: 0, ..Profile::default() })
+                .unwrap()
+                .gcode
+        );
     }
 
     /// The farthest a first-layer extrusion reaches from the middle of the plate, in x.
