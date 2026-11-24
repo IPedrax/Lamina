@@ -7,6 +7,17 @@ use crate::mesh::{MAX_COORD, Mesh, P3, Transform};
 
 pub const MAX_OBJECTS: usize = 1_000;
 
+/// What an object is for when it is not a part to print: a volume that tells the slicer something about the parts it meets. Kept
+/// in projects; the slicer prints nothing of it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Modifier {
+    /// Supports under every overhang of a part inside it, even with supports off.
+    SupportEnforcer,
+    /// No supports for the overhangs of a part inside it.
+    SupportBlocker,
+}
+
 #[derive(Clone, Debug)]
 pub struct Object {
     pub id: u32,
@@ -18,6 +29,8 @@ pub struct Object {
     pub recipe: Option<Arc<serde_json::Value>>,
     /// Slicer settings of its own (`set_object_settings`): profile fields laid over the plate's for this object alone.
     pub settings: Option<Arc<serde_json::Value>>,
+    /// A modifier is not printed (`set_modifier`); none for a part.
+    pub modifier: Option<Modifier>,
 }
 
 impl Object {
@@ -54,7 +67,15 @@ impl Scene {
         let (lo, hi) = mesh.bounds().ok_or("the mesh is empty")?;
         let xf = Transform::translate([-(lo[0] + hi[0]) / 2.0, -(lo[1] + hi[1]) / 2.0, -lo[2]]);
         self.next_id += 1;
-        self.objects.push(Object { id: self.next_id, name: name.to_string(), mesh: Arc::new(mesh), xf, recipe: None, settings: None });
+        self.objects.push(Object {
+            id: self.next_id,
+            name: name.to_string(),
+            mesh: Arc::new(mesh),
+            xf,
+            recipe: None,
+            settings: None,
+            modifier: None,
+        });
         Ok(self.next_id)
     }
 
@@ -74,6 +95,7 @@ impl Scene {
             xf: Transform::IDENTITY,
             recipe: None,
             settings: None,
+            modifier: None,
         });
         Ok(self.next_id)
     }
@@ -92,7 +114,7 @@ impl Scene {
             return Err("the mesh is empty".into());
         }
         self.next_id += 1;
-        self.objects.push(Object { id: self.next_id, name: name.to_string(), mesh, xf, recipe: None, settings: None });
+        self.objects.push(Object { id: self.next_id, name: name.to_string(), mesh, xf, recipe: None, settings: None, modifier: None });
         Ok(self.next_id)
     }
 

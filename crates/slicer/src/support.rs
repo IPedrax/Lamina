@@ -64,15 +64,30 @@ pub struct Layer {
 /// stands on the plate's layer k, this object with the others (the plate's layers are every object's), and holds at least as many
 /// layers as `regions`; for an object printed alone it is `regions`.
 pub fn plan(regions: &[Region], solid: &[Region], heights: &[f64], p: &Profile) -> Vec<Layer> {
+    plan_with(regions, solid, heights, p, &Volumes::default())
+}
+
+/// What support enforcers and blockers cover on each of the plate's layers (each modifier object's slice).
+#[derive(Clone, Debug, Default)]
+pub struct Volumes {
+    pub enforce: Vec<Region>,
+    pub block: Vec<Region>,
+}
+
+/// The same, with the plate's support enforcers and blockers: the overhang inside a blocker needs no support, and every part of a
+/// layer over air inside an enforcer does, whatever its angle and even with supports off.
+pub fn plan_with(regions: &[Region], solid: &[Region], heights: &[f64], p: &Profile, v: &Volumes) -> Vec<Layer> {
     let n = regions.len().min(solid.len());
     let mut out = vec![Layer::default(); n];
-    if p.support == Support::Off || n < 2 {
+    let enforced = v.enforce.iter().take(n).any(|r| !geom::is_empty(r));
+    if (p.support == Support::Off && !enforced) || n < 2 {
         return out;
     }
     let w = p.line_width();
     // 1. Overhangs. What lies beyond the allowed lean says where a layer is too steep; what is held up there is all of the layer that is
     // over air, so a steep slope gets one area of support and not a comb of the strips each layer adds beyond the lean.
     let tan = p.support_angle.to_radians().tan();
+    let none = Region::new();
     let overhang: Vec<Region> = (0..n)
         .map(|k| {
             if k == 0 {
@@ -80,10 +95,22 @@ pub fn plan(regions: &[Region], solid: &[Region], heights: &[f64], p: &Profile) 
             }
             let lean = heights[k] * tan;
             let steep = geom::difference(&regions[k], &geom::inset(&regions[k - 1], -lean));
-            if geom::is_empty(&steep) {
-                return Region::new();
+            let by_angle = if p.support == Support::Off || geom::is_empty(&steep) {
+                Region::new()
+            } else {
+                geom::intersect(&geom::difference(&regions[k], &regions[k - 1]), &geom::inset(&steep, -(lean + 0.01)))
+            };
+            // An enforcer holds up all that is over air inside it; a blocker none of what is inside it.
+            let enforce = v.enforce.get(k).unwrap_or(&none);
+            let held = if geom::is_empty(enforce) {
+                by_angle
+            } else {
+                geom::union(&by_angle, &geom::intersect(&geom::difference(&regions[k], &regions[k - 1]), enforce))
+            };
+            match v.block.get(k) {
+                Some(b) if !geom::is_empty(b) => geom::difference(&held, b),
+                _ => held,
             }
-            geom::intersect(&geom::difference(&regions[k], &regions[k - 1]), &geom::inset(&steep, -(lean + 0.01)))
         })
         .collect();
     if overhang.iter().all(geom::is_empty) {

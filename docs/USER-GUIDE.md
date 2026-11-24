@@ -60,7 +60,9 @@ all, set the environment variable `LAMINA_NO_UPDATE_CHECK=1`: the menu items and
    the skirt, cooling, support details, the machine, and the start and end G-code). Supports are columns or trees: pick Tree
    beside Supports for branches that gather into a few trunks, less plastic under a tall overhang. They are planned for the whole
    plate: a support never goes through another object, and stands on it where it is in the way (From the plate only leaves those
-   out). Beside Walls, Variable width gives a part thinner than its walls (a fin, a rib, a tube's wall) as many lines as its width
+   out). To support one overhang only, or to keep supports off one, add a box over it and set Prints as, under the picked
+   object's tools, to Support enforcer (green) or Support blocker (red): it is not printed, and the overhangs of a part inside
+   it get supports, even with Supports off, or none. Beside Walls, Variable width gives a part thinner than its walls (a fin, a rib, a tube's wall) as many lines as its width
    holds, each a share of it, where Classic folds a loop onto itself or leaves a gap to fill.
 4. **Slice.** Press Slice. The window stays usable while it works, and the Preview tab opens when it is done, with the layer count,
    the filament and the print time.

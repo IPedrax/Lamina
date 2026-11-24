@@ -19,6 +19,19 @@ pub const BACKGROUND: Rgba = [38, 41, 46, 255];
 pub const PLATE: Rgba = [62, 66, 72, 255];
 pub const GRID: Rgba = [86, 91, 98, 255];
 pub const MODEL: Rgba = [110, 165, 225, 255];
+/// A support enforcer and a support blocker: green and red, so a modifier is never taken for a part.
+pub const ENFORCER: Rgba = [110, 200, 120, 255];
+pub const BLOCKER: Rgba = [215, 105, 100, 255];
+
+/// The colour an object is drawn in: picked, a modifier, or a part.
+pub fn colour_of(o: &crate::Object, selected: &[u32]) -> Rgba {
+    match (selected.contains(&o.id), o.modifier) {
+        (true, _) => SELECTED,
+        (false, Some(crate::Modifier::SupportEnforcer)) => ENFORCER,
+        (false, Some(crate::Modifier::SupportBlocker)) => BLOCKER,
+        (false, None) => MODEL,
+    }
+}
 pub const SELECTED: Rgba = [245, 165, 60, 255];
 /// The plane given to what is not a part's face (the plate): level, through the origin.
 const FLAT: [f32; 4] = [0.0, 0.0, 1.0, 0.0];
@@ -161,7 +174,7 @@ pub fn draw(scene: &Scene, selected: &[u32], camera: &Camera, bed: [f64; 2], siz
     let mut r = Raster::new(camera, size);
     r.plate(camera, bed);
     for o in &scene.objects {
-        let base = if selected.contains(&o.id) { SELECTED } else { MODEL };
+        let base = colour_of(o, selected);
         let world = o.world();
         for i in 0..world.triangles.len() {
             if let Some(t) = world.tri(i) {

@@ -57,6 +57,15 @@ support and its interface take: a large share means another orientation is worth
 Supports are planned for the whole plate: one part's support never stands inside another part, and rests on it where it is in the
 way (or, with `"from_plate"`, is left out there). Leave room under an overhang if the part beneath it should not carry marks.
 
+## Only here, or not here
+
+A box made a modifier says where supports go, and is not printed: `set_modifier {id, kind: "support_blocker"}` takes away the
+support of every overhang of a part inside it (a hole's top that bridges well, a surface whose marks would show), and
+`set_modifier {id, kind: "support_enforcer"}` holds up all that is over air inside it, at any angle, even with `support` off (one
+fragile overhang supported and nothing else). Size and `move` the box so it covers the overhang's underside from a little below
+to a little above it; `inspect_scene` shows `modifier` for each object, and `"none"` makes it a part again. Check the result with
+`slice_check` and its `features`.
+
 ## One part supported, the others not
 
 `set_object_settings {id, profile: {support: "everywhere"}}` turns supports on for one object only.
@@ -68,5 +77,4 @@ holds up an overhang.
 
 ## What is not there yet
 
-Painted support areas and support blockers. Say so if the user asks for one, and use orientation, `cut` or
-`set_object_settings` instead.
+Painting support areas on the faces themselves. Say so if the user asks, and place an enforcer or blocker box instead.

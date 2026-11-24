@@ -12,6 +12,7 @@ use crate::geom::{self, Region};
 use crate::profile::{Firmware, MAX_EXTRUDERS, Profile, Seam};
 use crate::slice::{self, P2};
 use crate::{gap, infill, support};
+use lamina_core::Modifier;
 
 /// Vertical moves are slow and fixed, mm/s.
 const Z_SPEED: f64 = 20.0;
@@ -123,6 +124,12 @@ pub fn gcode(objects: &[(u32, Mesh)], p: &Profile) -> Result<Output, String> {
 /// The same, each object with its own profile where `own` has one (the plate's `p` otherwise). The plate's settings that every
 /// object shares (the printer, the filament, the layer heights, the skirt) are `p`'s.
 pub fn gcode_each(objects: &[(u32, Mesh)], own: &[Option<Profile>], p: &Profile) -> Result<Output, String> {
+    gcode_with(objects, own, &[], p)
+}
+
+/// The same, with the plate's modifiers where they stand: support enforcers and blockers, which print nothing and say where the
+/// parts' supports go.
+pub fn gcode_with(objects: &[(u32, Mesh)], own: &[Option<Profile>], modifiers: &[(Modifier, Mesh)], p: &Profile) -> Result<Output, String> {
     for o in own.iter().flatten() {
         o.check()?;
         if (o.layer_height, o.first_layer_height, o.adaptive_layers, o.min_layer_height)
@@ -175,7 +182,20 @@ pub fn gcode_each(objects: &[(u32, Mesh)], own: &[Option<Profile>], p: &Profile)
     let sliced: Vec<Vec<slice::Layer>> =
         objects.iter().enumerate().map(|(i, (_, m))| object_layers(m, profile_of(i), tops.as_deref())).collect::<Result<_, _>>()?;
     let regions: Vec<Vec<Region>> = sliced.iter().map(|ls| ls.iter().map(|l| geom::region(&l.loops)).collect()).collect();
-    let supports = plate_supports(&sliced, &regions, &profile_of, p.sequential);
+    // The modifiers sliced on the same layers, gathered by kind.
+    let count = regions.iter().map(Vec::len).max().unwrap_or(0);
+    let mut volumes = support::Volumes { enforce: vec![Region::new(); count], block: vec![Region::new(); count] };
+    for (kind, m) in modifiers {
+        let layers = object_layers(m, p, tops.as_deref())?;
+        let into = match kind {
+            Modifier::SupportEnforcer => &mut volumes.enforce,
+            Modifier::SupportBlocker => &mut volumes.block,
+        };
+        for (k, l) in layers.iter().enumerate().take(count) {
+            into[k] = geom::union(&into[k], &geom::region(&l.loops));
+        }
+    }
+    let supports = plate_supports(&sliced, &regions, &profile_of, p.sequential, &volumes);
     // What each object prints on each layer, its supports included: what a purge tower may not stand in (only a printer with
     // several extruders changes tools and has one).
     let occupied: Vec<Vec<Region>> = regions
@@ -703,9 +723,12 @@ fn plate_supports<'a>(
     regions: &[Vec<Region>],
     profile_of: &dyn Fn(usize) -> &'a Profile,
     sequential: bool,
+    volumes: &support::Volumes,
 ) -> Vec<Vec<support::Layer>> {
     let count = regions.iter().map(Vec::len).max().unwrap_or(0);
-    let shared = !sequential && regions.len() > 1 && (0..regions.len()).any(|i| profile_of(i).support != support::Support::Off);
+    let wanted =
+        (0..regions.len()).any(|i| profile_of(i).support != support::Support::Off) || volumes.enforce.iter().any(|r| !geom::is_empty(r));
+    let shared = !sequential && regions.len() > 1 && wanted;
     let solid: Vec<Region> = if shared {
         (0..count).map(|k| regions.iter().filter_map(|r| r.get(k)).fold(Region::new(), |a, r| geom::union(&a, r))).collect()
     } else {
@@ -718,7 +741,7 @@ fn plate_supports<'a>(
         .enumerate()
         .map(|(i, (layers, own))| {
             let heights: Vec<f64> = layers.iter().map(|l| l.height).collect();
-            let mut planned = support::plan(own, if shared { &solid } else { own }, &heights, profile_of(i));
+            let mut planned = support::plan_with(own, if shared { &solid } else { own }, &heights, profile_of(i), volumes);
             if shared {
                 for (l, t) in planned.iter_mut().zip(taken.iter_mut()) {
                     if geom::is_empty(&l.sparse) && geom::is_empty(&l.interface) {
@@ -1881,7 +1904,7 @@ mod tests {
         let p = Profile { support: support::Support::Everywhere, ..Profile::default() };
         let layers = slice::layers(&tee, p.first_layer_height, p.layer_height).unwrap();
         let regions: Vec<Region> = layers.iter().map(|l| geom::region(&l.loops)).collect();
-        let s = plate_supports(&[layers.clone(), layers], &[regions.clone(), regions], &|_| &p, false);
+        let s = plate_supports(&[layers.clone(), layers], &[regions.clone(), regions], &|_| &p, false, &support::Volumes::default());
         let area = |l: &support::Layer| geom::area(&l.sparse) + geom::area(&l.interface);
         assert!(s[0].iter().map(area).sum::<f64>() > 100.0, "the first holds its arms");
         assert!(s[1].iter().map(area).sum::<f64>() < 1e-6, "the second's support is the first's, not printed again");
@@ -1889,7 +1912,8 @@ mod tests {
             assert!(geom::area(&geom::intersect(&geom::union(&a.sparse, &a.interface), &geom::union(&b.sparse, &b.interface))) < 1e-6);
         }
         // One at a time, each prints alone, with its own.
-        let apart = plate_supports(&[slice::layers(&tee, 0.2, 0.2).unwrap()], &[layers_regions(&tee)], &|_| &p, true);
+        let apart =
+            plate_supports(&[slice::layers(&tee, 0.2, 0.2).unwrap()], &[layers_regions(&tee)], &|_| &p, true, &support::Volumes::default());
         assert!(apart[0].iter().map(area).sum::<f64>() > 100.0);
     }
 
@@ -1932,6 +1956,35 @@ mod tests {
                 .unwrap()
                 .gcode
         );
+    }
+
+    #[test]
+    fn a_blocker_takes_away_and_an_enforcer_adds_support_and_neither_prints() {
+        // The tee (arms from x -10 to 10, 4 mm up), and a box over its right arm's underside.
+        let pillar = Mesh::cuboid([6.0, 6.0, 4.0]);
+        let arms = Mesh::cuboid([20.0, 6.0, 2.0]).transformed(&lamina_core::Transform::translate([0.0, 0.0, 4.0]));
+        let tee = vec![(1, Mesh::merged([&pillar, &arms]))];
+        let right = Mesh::cuboid([8.0, 10.0, 8.0]).transformed(&lamina_core::Transform::translate([7.0, 0.0, 0.0]));
+        let side = |g: &str, p: &Profile, sign: f64| -> usize {
+            (0..20).flat_map(|k| layer_runs(g, k, "support", p)).flatten().filter(|q| q[0] * sign > 3.5).count()
+        };
+        let on = Profile { support: support::Support::Everywhere, skirt_loops: 0, ..Profile::default() };
+        let both = gcode(&tee, &on).unwrap();
+        assert!(side(&both.gcode, &on, 1.0) > 0 && side(&both.gcode, &on, -1.0) > 0);
+        let blocked = gcode_with(&tee, &[], &[(Modifier::SupportBlocker, right.clone())], &on).unwrap();
+        assert_eq!(side(&blocked.gcode, &on, 1.0), 0, "the blocker takes the right arm's support away");
+        assert!(side(&blocked.gcode, &on, -1.0) > 0, "the left arm keeps its own");
+        // Supports off: an enforcer under the right arm gives it support, and the left arm none.
+        let off = Profile { skirt_loops: 0, ..Profile::default() };
+        assert!(!gcode(&tee, &off).unwrap().features.contains_key("support"));
+        let enforced = gcode_with(&tee, &[], &[(Modifier::SupportEnforcer, right.clone())], &off).unwrap();
+        assert!(side(&enforced.gcode, &off, 1.0) > 0 && side(&enforced.gcode, &off, -1.0) == 0);
+        // Neither prints: the walls are the tee's alone, as without them.
+        let walls = |g: &str, p: &Profile| (0..30).map(|k| layer_runs(g, k, "outer-wall", p).len()).sum::<usize>();
+        assert_eq!(walls(&enforced.gcode, &off), walls(&gcode(&tee, &off).unwrap().gcode, &off));
+        // An enforcer under nothing over air (a box beside the tee) adds nothing.
+        let beside = Mesh::cuboid([5.0, 5.0, 5.0]).transformed(&lamina_core::Transform::translate([30.0, 0.0, 0.0]));
+        assert!(!gcode_with(&tee, &[], &[(Modifier::SupportEnforcer, beside)], &off).unwrap().features.contains_key("support"));
     }
 
     /// The farthest a first-layer extrusion reaches from the middle of the plate, in x.

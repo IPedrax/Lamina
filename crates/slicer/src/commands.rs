@@ -131,8 +131,16 @@ fn run(s: &Session, ids: Option<&[u32]>, settings: Settings) -> Result<print::Ou
         Some(ids) => ids.iter().map(|&id| s.scene.get(id)).collect::<Result<_, _>>()?,
         None => s.scene.objects.iter().collect(),
     };
-    let objects: Vec<(u32, Mesh)> = chosen.iter().map(|o| (o.id, o.world())).collect();
-    print::gcode_each(&objects, &own(&chosen, &profile)?, &profile)
+    let (parts, modifiers) = split(&chosen);
+    let objects: Vec<(u32, Mesh)> = parts.iter().map(|o| (o.id, o.world())).collect();
+    print::gcode_with(&objects, &own(&parts, &profile)?, &modifiers, &profile)
+}
+
+/// The objects to print, and the modifiers (support enforcers and blockers) where they stand, which print nothing.
+pub fn split<'a>(objects: &[&'a lamina_core::Object]) -> (Vec<&'a lamina_core::Object>, Vec<(lamina_core::Modifier, Mesh)>) {
+    let parts = objects.iter().filter(|o| o.modifier.is_none()).copied().collect();
+    let modifiers = objects.iter().filter_map(|o| o.modifier.map(|m| (m, o.world()))).collect();
+    (parts, modifiers)
 }
 
 /// The fields an object may set for itself: what it is made of and how, never the machine, the filament or the layer heights.
