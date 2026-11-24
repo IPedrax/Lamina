@@ -31,6 +31,8 @@ pub struct Object {
     pub settings: Option<Arc<serde_json::Value>>,
     /// A modifier is not printed (`set_modifier`); none for a part.
     pub modifier: Option<Modifier>,
+    /// Settings by height (`set_height_range`): a list of `{from, to, profile}` the slicer reads, kept as it was given.
+    pub ranges: Option<Arc<serde_json::Value>>,
 }
 
 impl Object {
@@ -75,6 +77,7 @@ impl Scene {
             recipe: None,
             settings: None,
             modifier: None,
+            ranges: None,
         });
         Ok(self.next_id)
     }
@@ -96,6 +99,7 @@ impl Scene {
             recipe: None,
             settings: None,
             modifier: None,
+            ranges: None,
         });
         Ok(self.next_id)
     }
@@ -114,7 +118,16 @@ impl Scene {
             return Err("the mesh is empty".into());
         }
         self.next_id += 1;
-        self.objects.push(Object { id: self.next_id, name: name.to_string(), mesh, xf, recipe: None, settings: None, modifier: None });
+        self.objects.push(Object {
+            id: self.next_id,
+            name: name.to_string(),
+            mesh,
+            xf,
+            recipe: None,
+            settings: None,
+            modifier: None,
+            ranges: None,
+        });
         Ok(self.next_id)
     }
 

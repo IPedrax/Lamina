@@ -92,6 +92,8 @@ all, set the environment variable `LAMINA_NO_UPDATE_CHECK=1`: the menu items and
   deletes. View, Keyboard shortcuts lists them all.
 - With one object picked, the panel also has Move by, Rotate, Mirror, Scale, Cut into pieces, Duplicate and Drop to plate. With
   several, Union, Subtract and Intersect. A boolean that cannot give a sound solid says so and changes nothing.
+- **By height**, under This object's settings, gives the layers between two heights their own nozzle temperature, infill or walls
+  (Add range); the assistant can set more (fan, pressure advance, retraction, flow, speeds) with `set_height_range`.
 - **This object's settings** lets one object print differently from the rest: its own walls, infill, seam, speeds or supports,
   or its own extruder.
 - **Undo** takes back a whole step, a drag or a chat turn alike; Edit, History goes back several at once.

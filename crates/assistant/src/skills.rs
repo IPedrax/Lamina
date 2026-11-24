@@ -22,6 +22,7 @@ const FILES: &[&str] = &[
     include_str!("../skills/calibration.md"),
     include_str!("../skills/materials.md"),
     include_str!("../skills/supports.md"),
+    include_str!("../skills/objects-heights-and-extruders.md"),
 ];
 
 fn parse(file: &'static str) -> Option<Skill> {

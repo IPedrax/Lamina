@@ -290,6 +290,15 @@ Priorities:
   `filament_flow_ratio`, and both slicers' `filament_max_volumetric_speed`. In the window's Speeds group; the calibration skill and
   PRINT-TESTS.md use the flow ratio. Tested: 1.05 pushes 5 % more filament with the same moves; infill at 300 mm/s under a cap of 8
   mm3/s is slowed to the cap, the walls keep their speed, the print takes longer.
+- **4.27 Settings by height.** `set_height_range {id, from, to, profile}` keeps ranges on the object (opaque to the core, in
+  projects, shown by `info`, one undo step; no overlaps, `{}` removes one). A layer whose middle is in a range prints with the
+  range's fields over the object's own (`commands::range_profiles`, `print::gcode_ranged`): walls, wall generator, infill and its
+  pattern, seam, wall and infill speeds, ironing and fuzzy skin in its plan; nozzle temperature (from the third layer), fan,
+  pressure advance, retraction and flow in the writer, set back above the range. Supports, skins and layer heights stay
+  whole-object. In the window, By height under This object's settings (nozzle, infill, walls). Found and fixed on the way: with a
+  raft the first layer's temperatures never ended; they now end on the third layer printed (the golden rafted case gains its
+  `M104 S210`). Tested through G-code: hotter from the range's first layer and back after, its own retraction, four walls and
+  denser infill inside its range, pressure advance and fan set and set back on Klipper; checks refused; kept in projects.
 - **5.1 Process presets.** A third kind in `presets.rs`, setting only the layers and the strength (`PROCESS_FIELDS`): 0.12 mm Fine,
   0.20 mm Standard, 0.28 mm Draft and Strong. `slice` and `slice_check` take `process` (after the printer and the filament, before
   `profile`); `slicer_presets` lists them; the window has a Process picker and Save process, kept in the settings file and the
@@ -483,10 +492,6 @@ and one Klipper printer, measure with calipers, fill in the tables, and fix what
 ## 3. Modelling
 
 ## 4. Slicer
-
-**4.27 Settings by height (P2).** PrusaSlicer's height range modifier gives a range of layers its own settings (its own layer
-height too). Lamina's per-object settings are whole-object. How: `set_height_range {id, from, to, profile}`, ranges kept on the
-object, the plan taking each layer's settings from the range it is in; the layer heights stay the plate's at first.
 
 **4.28 Calibration prints (P2).** OrcaSlicer's calibration menu makes a temperature tower (5 C steps), flow ratio blocks, pressure
 advance tower, line and pattern, a retraction tower, a tolerance test and a maximum volumetric speed test; Klipper documents a

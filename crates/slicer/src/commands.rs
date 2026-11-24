@@ -57,6 +57,13 @@ pub static COMMANDS: &[Command] = &[
         files: Files::Read,
     },
     Command {
+        id: "set_height_range",
+        params: "{id, from, to (mm above the plate), profile} gives the object's layers whose middle is from `from` up to `to` settings of their own, laid over the object's: walls (perimeters, wall_generator), infill_density, infill_pattern, seam, perimeter_speed, infill_speed, ironing, fuzzy_skin, and nozzle_temp, fan_speed, pressure_advance, retract_length, retract_speed, flow_ratio, max_volumetric_speed (a temperature, pressure advance or retraction tower). Ranges may not overlap; the same from and to replaces a range, and `profile: {}` removes it. `inspect_scene` shows them (ranges). Returns {ranges}",
+        run: set_height_range,
+        undoable: true,
+        files: Files::None,
+    },
+    Command {
         id: "slicer_profile",
         params: "{} every profile field with its default value: the printer (bed, nozzle, start_gcode), the process (layer_height, perimeters, infill_density) and speeds, temperatures and retraction",
         run: profile,
@@ -133,7 +140,9 @@ fn run(s: &Session, ids: Option<&[u32]>, settings: Settings) -> Result<print::Ou
     };
     let (parts, modifiers) = split(&chosen);
     let objects: Vec<(u32, Mesh)> = parts.iter().map(|o| (o.id, o.world())).collect();
-    print::gcode_with(&objects, &own(&parts, &profile)?, &modifiers, &profile)
+    let own = own(&parts, &profile)?;
+    let ranges = range_profiles(&parts, &own, &profile)?;
+    print::gcode_ranged(&objects, &own, &ranges, &modifiers, &profile)
 }
 
 /// The objects to print, and the modifiers (support enforcers and blockers) where they stand, which print nothing.
@@ -168,6 +177,105 @@ pub const PER_OBJECT_FIELDS: &[&str] = &[
     "fuzzy_skin",
     "extruder",
 ];
+
+/// What a height range may set: what a layer's plan or the writer reads, never the layer heights, the supports (planned for the whole
+/// object) or the skins (counted across layers).
+pub const RANGE_FIELDS: &[&str] = &[
+    "perimeters",
+    "wall_generator",
+    "infill_density",
+    "infill_pattern",
+    "seam",
+    "perimeter_speed",
+    "infill_speed",
+    "ironing",
+    "fuzzy_skin",
+    "nozzle_temp",
+    "fan_speed",
+    "pressure_advance",
+    "retract_length",
+    "retract_speed",
+    "flow_ratio",
+    "max_volumetric_speed",
+];
+
+/// The most ranges one object may have.
+pub const MAX_RANGES: usize = 200;
+
+/// One height range as it is kept on an object.
+#[derive(Clone, Debug, Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Range {
+    pub from: f64,
+    pub to: f64,
+    pub profile: serde_json::Map<String, Value>,
+}
+
+/// An object's height ranges, checked: within limits, not overlapping, each field one a range may set. None for an object with none.
+pub fn ranges_of(o: &lamina_core::Object) -> Result<Vec<Range>, String> {
+    let Some(v) = o.ranges.as_deref() else { return Ok(Vec::new()) };
+    let ranges: Vec<Range> = serde_json::from_value(v.clone()).map_err(|e| format!("object {}'s height ranges: {e}", o.id))?;
+    check_ranges(&ranges).map_err(|e| format!("object {}'s height ranges: {e}", o.id))?;
+    Ok(ranges)
+}
+
+fn check_ranges(ranges: &[Range]) -> Result<(), String> {
+    if ranges.len() > MAX_RANGES {
+        return Err(format!("more than {MAX_RANGES} ranges"));
+    }
+    for r in ranges {
+        if !(r.from.is_finite() && r.to.is_finite() && r.from >= 0.0 && r.to > r.from && r.to <= 10_000.0) {
+            return Err(format!("a range from {} to {} mm: `to` must be above `from`, both from 0 to 10000", r.from, r.to));
+        }
+        if let Some(k) = r.profile.keys().find(|k| !RANGE_FIELDS.contains(&k.as_str())) {
+            return Err(format!("`{k}` cannot change by height; a range may set {}", RANGE_FIELDS.join(", ")));
+        }
+        presets::apply(&Profile { extruders: crate::profile::MAX_EXTRUDERS, ..Profile::default() }, &r.profile)?;
+    }
+    for (i, a) in ranges.iter().enumerate() {
+        if let Some(b) = ranges[i + 1..].iter().find(|b| a.from < b.to && b.from < a.to) {
+            return Err(format!("the range from {} to {} mm overlaps the one from {} to {} mm", a.from, a.to, b.from, b.to));
+        }
+    }
+    Ok(())
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SetRange {
+    id: u32,
+    from: f64,
+    to: f64,
+    profile: serde_json::Map<String, Value>,
+}
+
+fn set_height_range(s: &mut Session, p: &Value) -> Result<Value, String> {
+    let a = SetRange::deserialize(p).map_err(|e| format!("bad parameters: {e}"))?;
+    let o = s.scene.get(a.id)?;
+    let mut ranges = ranges_of(o)?;
+    ranges.retain(|r| !(r.from == a.from && r.to == a.to));
+    if !a.profile.is_empty() {
+        ranges.push(Range { from: a.from, to: a.to, profile: a.profile });
+    }
+    ranges.sort_by(|x, y| x.from.total_cmp(&y.from));
+    check_ranges(&ranges)?;
+    let value = serde_json::to_value(&ranges).map_err(|e| e.to_string())?;
+    let o = s.scene_mut().get_mut(a.id)?;
+    o.ranges = if ranges.is_empty() { None } else { Some(std::sync::Arc::new(value.clone())) };
+    Ok(json!({ "ranges": value }))
+}
+
+/// Each object's height ranges as profiles: each range's fields laid over the object's own profile (or the plate's).
+pub fn range_profiles(objects: &[&lamina_core::Object], own: &[Option<Profile>], plate: &Profile) -> Result<print::RangeProfiles, String> {
+    objects
+        .iter()
+        .enumerate()
+        .map(|(i, o)| {
+            let base = own.get(i).and_then(Option::as_ref).unwrap_or(plate);
+            ranges_of(o)?.into_iter().map(|r| Ok((r.from, r.to, presets::apply(base, &r.profile)?))).collect::<Result<Vec<_>, String>>()
+        })
+        .collect()
+}
 
 /// Each object's own profile, its settings laid over the plate's, or none where it has none.
 pub fn own(objects: &[&lamina_core::Object], plate: &Profile) -> Result<Vec<Option<Profile>>, String> {
@@ -426,5 +534,85 @@ mod tests {
             assert!(s.execute("slice", &bad).is_err(), "{bad}");
         }
         assert_eq!(s.scene.objects.len(), 1);
+    }
+
+    /// The G-code of the session's plate, through `slice` to a file.
+    fn sliced(s: &mut Session, profile: Value) -> String {
+        let path = std::env::temp_dir().join(format!("lamina-ranges-{}-{}.gcode", std::process::id(), s.scene.objects.len()));
+        s.execute("slice", &json!({"path": path, "profile": profile})).unwrap();
+        let g = std::fs::read_to_string(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        g
+    }
+
+    /// The lines of layer `k` of the G-code.
+    fn layer(g: &str, k: usize) -> String {
+        g.split(&format!(";LAYER:{k}\n")).nth(1).unwrap_or("").split(";LAYER:").next().unwrap_or("").to_string()
+    }
+
+    #[test]
+    fn a_height_range_changes_the_layers_whose_middle_is_in_it_and_no_others() {
+        let mut s = session();
+        s.execute("add_primitive", &json!({"kind": "box", "size": [10, 10, 10]})).unwrap();
+        // Layers 0.2 mm: layer k's middle is 0.2 k + 0.1, so 4 to 6 mm is layers 20 to 29.
+        let r = s.execute("set_height_range", &json!({"id": 1, "from": 4, "to": 6, "profile": {"nozzle_temp": 230, "retract_length": 2}}));
+        assert_eq!(r.unwrap()["ranges"][0]["profile"]["nozzle_temp"], 230);
+        s.execute("set_height_range", &json!({"id": 1, "from": 6, "to": 8, "profile": {"infill_density": 0.5, "perimeters": 4}})).unwrap();
+        let info = s.execute("info", &json!({})).unwrap();
+        assert_eq!(info["objects"][0]["ranges"].as_array().unwrap().len(), 2);
+        let g = sliced(&mut s, json!({"skirt_loops": 0}));
+        assert!(layer(&g, 20).contains("M104 S230") && !layer(&g, 19).contains("M104"), "hotter from layer 20");
+        assert!(layer(&g, 30).contains("M104 S210"), "back at layer 30");
+        assert!(layer(&g, 25).contains("G1 E-2.000") && !layer(&g, 15).contains("G1 E-2.000"), "its own retraction");
+        let loops = |k: usize| {
+            let l = layer(&g, k);
+            l.split(";TYPE:")
+                .filter(|t| t.starts_with("inner-wall") || t.starts_with("outer-wall"))
+                .map(|t| t.matches("G0 ").count() + 1)
+                .sum::<usize>()
+        };
+        assert!(loops(35) > loops(15), "four walls from 6 to 8 mm: {} against {}", loops(35), loops(15));
+        let infill = |k: usize| {
+            layer(&g, k).split(";TYPE:sparse-infill").nth(1).map_or(0, |t| t.split(";TYPE:").next().unwrap_or("").lines().count())
+        };
+        assert!(infill(34) > infill(14), "denser infill in the range");
+        // Ranges may not overlap or set what is not by height; the same range again replaces it, `{}` removes it.
+        assert!(
+            s.execute("set_height_range", &json!({"id": 1, "from": 5, "to": 7, "profile": {"fan_speed": 0}}))
+                .unwrap_err()
+                .contains("overlaps")
+        );
+        assert!(
+            s.execute("set_height_range", &json!({"id": 1, "from": 1, "to": 2, "profile": {"layer_height": 0.1}}))
+                .unwrap_err()
+                .contains("cannot change by height")
+        );
+        assert!(s.execute("set_height_range", &json!({"id": 1, "from": 3, "to": 2, "profile": {"fan_speed": 0}})).is_err());
+        assert!(s.execute("set_height_range", &json!({"id": 1, "from": 1, "to": 2, "profile": {"nozzle_temp": 9999}})).is_err());
+        s.execute("set_height_range", &json!({"id": 1, "from": 4, "to": 6, "profile": {"nozzle_temp": 220}})).unwrap();
+        s.execute("set_height_range", &json!({"id": 1, "from": 6, "to": 8, "profile": {}})).unwrap();
+        let ranges = s.execute("info", &json!({})).unwrap()["objects"][0]["ranges"].clone();
+        assert_eq!(ranges.as_array().unwrap().len(), 1);
+        assert_eq!(ranges[0]["profile"], json!({"nozzle_temp": 220}));
+        // Kept in projects, undone in one step.
+        let path = std::env::temp_dir().join(format!("lamina-ranges-{}.lamina", std::process::id()));
+        s.execute("save", &json!({"path": path})).unwrap();
+        let mut t = session();
+        t.execute("open", &json!({"path": path})).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(t.execute("info", &json!({})).unwrap()["objects"][0]["ranges"], ranges);
+        s.undo().unwrap();
+        assert_eq!(s.execute("info", &json!({})).unwrap()["objects"][0]["ranges"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn a_pressure_advance_and_fan_range_are_set_and_set_back() {
+        let mut s = session();
+        s.execute("add_primitive", &json!({"kind": "box", "size": [10, 10, 4]})).unwrap();
+        s.execute("set_height_range", &json!({"id": 1, "from": 2, "to": 3, "profile": {"pressure_advance": 0.05, "fan_speed": 100}}))
+            .unwrap();
+        let g = sliced(&mut s, json!({"firmware": "klipper", "pressure_advance": 0.02, "skirt_loops": 0}));
+        assert!(layer(&g, 10).contains("SET_PRESSURE_ADVANCE ADVANCE=0.05") && layer(&g, 10).contains("M106 S100"));
+        assert!(layer(&g, 15).contains("SET_PRESSURE_ADVANCE ADVANCE=0.02") && layer(&g, 15).contains("M106 S255"), "set back above");
     }
 }

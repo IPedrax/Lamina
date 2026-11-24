@@ -130,6 +130,24 @@ pub fn gcode_each(objects: &[(u32, Mesh)], own: &[Option<Profile>], p: &Profile)
 /// The same, with the plate's modifiers where they stand: support enforcers and blockers, which print nothing and say where the
 /// parts' supports go.
 pub fn gcode_with(objects: &[(u32, Mesh)], own: &[Option<Profile>], modifiers: &[(Modifier, Mesh)], p: &Profile) -> Result<Output, String> {
+    gcode_ranged(objects, own, &[], modifiers, p)
+}
+
+/// Each object's height ranges: `(from, to, profile)`.
+pub type RangeProfiles = Vec<Vec<(f64, f64, Profile)>>;
+
+/// The same, each object with its settings by height: `ranges[i]` is object i's `(from, to, profile)`, a layer whose middle is
+/// from `from` up to `to` printing with `profile` (made from the object's own by `commands::range_profiles`).
+pub fn gcode_ranged<'a>(
+    objects: &[(u32, Mesh)],
+    own: &'a [Option<Profile>],
+    ranges: &'a [Vec<(f64, f64, Profile)>],
+    modifiers: &[(Modifier, Mesh)],
+    p: &'a Profile,
+) -> Result<Output, String> {
+    for r in ranges.iter().flatten() {
+        r.2.check()?;
+    }
     for o in own.iter().flatten() {
         o.check()?;
         if (o.layer_height, o.first_layer_height, o.adaptive_layers, o.min_layer_height)
@@ -178,10 +196,27 @@ pub fn gcode_with(objects: &[(u32, Mesh)], own: &[Option<Profile>], modifiers: &
         None
     };
     let profile_of = |i: usize| own.get(i).and_then(Option::as_ref).unwrap_or(p);
+
     // Every object sliced first, so supports are planned for the plate: on the plate's layer k stands each object's layer k.
     let sliced: Vec<Vec<slice::Layer>> =
         objects.iter().enumerate().map(|(i, (_, m))| object_layers(m, profile_of(i), tops.as_deref())).collect::<Result<_, _>>()?;
     let regions: Vec<Vec<Region>> = sliced.iter().map(|ls| ls.iter().map(|l| geom::region(&l.loops)).collect()).collect();
+    // Each object's settings on each of its layers: those of the height range the layer's middle is in, else its own.
+    let per_layer: Vec<Vec<&Profile>> = sliced
+        .iter()
+        .enumerate()
+        .map(|(i, layers)| {
+            let own_ranges = ranges.get(i).map_or(&[][..], Vec::as_slice);
+            layers
+                .iter()
+                .map(|l| {
+                    let middle = l.z - l.height / 2.0;
+                    own_ranges.iter().find(|r| r.0 <= middle && middle < r.1).map_or(profile_of(i), |r| &r.2)
+                })
+                .collect()
+        })
+        .collect();
+    let layer_profile = |i: usize, k: usize| per_layer.get(i).and_then(|l| l.get(k)).copied().unwrap_or(profile_of(i));
     // The modifiers sliced on the same layers, gathered by kind.
     let count = regions.iter().map(Vec::len).max().unwrap_or(0);
     let mut volumes = support::Volumes { enforce: vec![Region::new(); count], block: vec![Region::new(); count] };
@@ -220,7 +255,7 @@ pub fn gcode_with(objects: &[(u32, Mesh)], own: &[Option<Profile>], modifiers: &
         .zip(regions)
         .zip(supports)
         .enumerate()
-        .map(|(i, ((layers, regions), supports))| plan(layers, regions, supports, profile_of(i), w))
+        .map(|(i, ((layers, regions), supports))| plan(layers, regions, supports, profile_of(i), w, &|k| layer_profile(i, k)))
         .collect::<Result<_, _>>()?;
     let count = plans.iter().map(|(_, l)| l.len()).max().unwrap_or(0);
     // Each layer's extruders in the order they print (the one in use first, then the rest from the lowest, so each changes once a
@@ -260,6 +295,7 @@ pub fn gcode_with(objects: &[(u32, Mesh)], own: &[Option<Profile>], modifiers: &
 
     let mut g = Writer {
         p,
+        pa: p.pressure_advance,
         out: String::new(),
         at: None,
         z: 0.0,
@@ -295,11 +331,7 @@ pub fn gcode_with(objects: &[(u32, Mesh)], own: &[Option<Profile>], modifiers: &
     g.line(p.expand(&p.start_gcode)?);
     g.line("G90\nM83\nG92 E0".into());
     if p.pressure_advance > 0.0 {
-        g.line(match p.firmware {
-            Firmware::Marlin => format!("M900 K{}", p.pressure_advance),
-            Firmware::Klipper => format!("SET_PRESSURE_ADVANCE ADVANCE={}", p.pressure_advance),
-            Firmware::Reprap => format!("M572 D0 S{}", p.pressure_advance),
-        });
+        g.line(pressure_advance(p.firmware, p.pressure_advance));
     }
     // Klipper: each object named with its outline, so one that fails can be cancelled and the others go on.
     let names: Vec<String> = objects.iter().map(|(id, _)| format!("object_{id}")).collect();
@@ -361,6 +393,10 @@ pub fn gcode_with(objects: &[(u32, Mesh)], own: &[Option<Profile>], modifiers: &
     for (k, (z, height, strokes, _)) in raft.into_iter().enumerate() {
         g.line(format!(";LAYER:{k}"));
         g.set_z(z);
+        // A raft's third layer is the print's: the first layer's temperatures end there, as they do without one.
+        if k == 2 {
+            g.past_first_layers();
+        }
         if let Some((skirt, _)) = first.take() {
             g.strokes(skirt, flow(height, w, p.filament_diameter));
         }
@@ -370,7 +406,7 @@ pub fn gcode_with(objects: &[(u32, Mesh)], own: &[Option<Profile>], modifiers: &
     // Whether a tool has printed: the first one chosen needs no purge.
     let mut started = false;
     // Layer `k` of the objects `which`, in that order, as layer `label` of the file.
-    let mut layer = |g: &mut Writer, plans: &mut [ObjectPlan], k: usize, label: usize, which: &[usize]| -> Result<(), String> {
+    let mut layer = |g: &mut Writer<'a>, plans: &mut [ObjectPlan], k: usize, label: usize, which: &[usize]| -> Result<(), String> {
         lamina_core::cancel::check()?;
         g.line(format!(";LAYER:{label}"));
         // The fan: off for the first layer, then up a step a layer to full at `fan_full_layer`; for each object again when they print
@@ -394,13 +430,7 @@ pub fn gcode_with(objects: &[(u32, Mesh)], own: &[Option<Profile>], modifiers: &
             }
         }
         if label == 2 {
-            let t = g.tool;
-            if nozzle_temp(p, t, 1) != nozzle_temp(p, t, 2) {
-                g.heat(t, nozzle_temp(p, t, 2));
-            }
-            if p.bed_temp != p.first_layer_bed_temp {
-                g.line(format!("M140 S{:.0}", p.bed_temp));
-            }
+            g.past_first_layers();
         }
         // The tower, on every layer up to the last tool change; each change on the layer purges on it.
         let mut tower_here = match (&tower, last_change) {
@@ -432,6 +462,9 @@ pub fn gcode_with(objects: &[(u32, Mesh)], own: &[Option<Profile>], modifiers: &
         let mut done = 0;
         for &i in which {
             let Some((z, height, strokes, region)) = plans[i].1.get_mut(k) else { continue };
+            // This object's settings on this layer, from its layer change on: a height range's retraction, flow and the rest.
+            let lp = layer_profile(i, k);
+            g.p = lp;
             // A vase layer climbs to its height as it prints, from where the last one ended.
             if !strokes.is_empty() && strokes.iter().all(|s| s.spiral) {
                 g.spiral = Some((g.z, *z + lift));
@@ -457,10 +490,29 @@ pub fn gcode_with(objects: &[(u32, Mesh)], own: &[Option<Profile>], modifiers: &
             if klipper {
                 g.line(format!("EXCLUDE_OBJECT_START NAME={}", names[i]));
             }
+            // A height range's temperature (from the third layer, after the first layer's own), fan and pressure advance.
+            if label >= 2 {
+                let want = nozzle_temp(lp, g.tool, label);
+                if g.heat_at.get(g.tool).is_some_and(|&now| (now - want).abs() > 0.5) {
+                    g.heat(g.tool, want);
+                }
+            }
+            if lp.fan_speed != p.fan_speed {
+                let fan = fan_at(lp, k + below);
+                if (fan - g.fan).abs() > 0.5 {
+                    g.line(format!("M106 S{fan:.0}"));
+                    (g.fan, g.fan_now) = (fan, fan);
+                }
+            }
+            if (lp.pressure_advance - g.pa).abs() > 1e-9 {
+                g.line(pressure_advance(p.firmware, lp.pressure_advance));
+                g.pa = lp.pressure_advance;
+            }
             g.strokes(std::mem::take(strokes), flow(*height, w, p.filament_diameter));
             if klipper {
                 g.line(format!("EXCLUDE_OBJECT_END NAME={}", names[i]));
             }
+            g.p = p;
             started |= busy;
         }
         Ok(())
@@ -501,6 +553,15 @@ pub fn gcode_with(objects: &[(u32, Mesh)], own: &[Option<Profile>], modifiers: &
     g.retract();
     g.line(p.expand(&p.end_gcode)?);
     Ok(Output { gcode: g.out, layers, filament_mm: g.filament, seconds: g.planner.seconds(), warnings, features: g.by_feature })
+}
+
+/// The firmware's command that sets pressure advance (linear advance on Marlin).
+fn pressure_advance(firmware: Firmware, v: f64) -> String {
+    match firmware {
+        Firmware::Marlin => format!("M900 K{v}"),
+        Firmware::Klipper => format!("SET_PRESSURE_ADVANCE ADVANCE={v}"),
+        Firmware::Reprap => format!("M572 D0 S{v}"),
+    }
 }
 
 /// A nozzle that was never heated, or was turned off, is taken to be at room temperature, C.
@@ -759,20 +820,35 @@ fn plate_supports<'a>(
 
 /// One object's first layer as a region, then its layers as (top z, thickness, strokes in print order), from its `layers`, their
 /// `regions` and its `supports` (planned for the plate).
-fn plan(layers: &[slice::Layer], regions: Vec<Region>, supports: Vec<support::Layer>, p: &Profile, w: f64) -> Result<ObjectPlan, String> {
+/// `at(k)` is layer k's profile: the object's, or the height range's its middle is in.
+fn plan<'p>(
+    layers: &[slice::Layer],
+    regions: Vec<Region>,
+    supports: Vec<support::Layer>,
+    base: &'p Profile,
+    w: f64,
+    at: &dyn Fn(usize) -> &'p Profile,
+) -> Result<ObjectPlan, String> {
     let no_support = support::Layer::default();
-    let walls = f64::from(p.perimeters);
     // Walls of varying width: each layer's parts too thin for its walls, and the lines that print them.
-    let thin: Vec<(Region, Vec<crate::walls::Line>)> = if p.wall_generator == crate::walls::WallGenerator::Variable {
-        regions.iter().map(|r| crate::walls::thin(r, p.perimeters, w)).collect()
-    } else {
-        Vec::new()
-    };
+    let thin: Vec<(Region, Vec<crate::walls::Line>)> = regions
+        .iter()
+        .enumerate()
+        .map(|(k, r)| {
+            let p = at(k);
+            if p.wall_generator == crate::walls::WallGenerator::Variable {
+                crate::walls::thin(r, p.perimeters, w)
+            } else {
+                (Region::new(), Vec::new())
+            }
+        })
+        .collect();
     let inner: Vec<Region> = regions
         .iter()
         .enumerate()
         .map(|(k, r)| {
-            let inner = if p.perimeters == 0 { r.clone() } else { geom::inset(r, walls * w - INFILL_OVERLAP * w) };
+            let p = at(k);
+            let inner = if p.perimeters == 0 { r.clone() } else { geom::inset(r, f64::from(p.perimeters) * w - INFILL_OVERLAP * w) };
             match thin.get(k) {
                 Some((area, _)) if !geom::is_empty(area) => geom::difference(&inner, area),
                 _ => inner,
@@ -782,6 +858,8 @@ fn plan(layers: &[slice::Layer], regions: Vec<Region>, supports: Vec<support::La
     let mut out = Vec::with_capacity(layers.len());
     for (k, layer) in layers.iter().enumerate() {
         lamina_core::cancel::check()?;
+        // This layer's settings; the skins above and below are counted with the object's own.
+        let p = at(k);
         let speed = |s: f64| if k == 0 { p.first_layer_speed } else { s };
         let mut strokes = Vec::new();
         // Vase mode, above the bottom: the outer wall alone, climbing as it goes round; no infill and no top.
@@ -889,7 +967,7 @@ fn plan(layers: &[slice::Layer], regions: Vec<Region>, supports: Vec<support::La
                 });
             }
         }
-        let covered = covered(&inner, k, p.top_layers as usize, p.bottom_layers as usize);
+        let covered = covered(&inner, k, base.top_layers as usize, base.bottom_layers as usize);
         let solid = geom::difference(&inner[k], &covered);
         let sparse = geom::intersect(&inner[k], &covered);
         // Alternate the direction so each layer bridges the one below.
@@ -1302,6 +1380,8 @@ fn seam(pts: &[P2], rule: Seam, here: P2, below: &[P2]) -> Option<usize> {
 
 struct Writer<'a> {
     p: &'a Profile,
+    /// The pressure advance last set.
+    pa: f64,
     out: String,
     at: Option<P2>,
     z: f64,
@@ -1405,6 +1485,17 @@ impl Writer<'_> {
     }
 
     /// Sets tool `t`'s temperature without waiting: a plain `M104` on a printer with one extruder.
+    /// From the third layer on, the nozzle and the bed at their own temperatures rather than the first layer's.
+    fn past_first_layers(&mut self) {
+        let (p, t) = (self.p, self.tool);
+        if nozzle_temp(p, t, 1) != nozzle_temp(p, t, 2) {
+            self.heat(t, nozzle_temp(p, t, 2));
+        }
+        if p.bed_temp != p.first_layer_bed_temp {
+            self.line(format!("M140 S{:.0}", p.bed_temp));
+        }
+    }
+
     fn heat(&mut self, t: usize, temp: f64) {
         if let Some(h) = self.heat_at.get_mut(t) {
             *h = temp;

@@ -134,7 +134,7 @@ pub static ALL: &[Command] = &[
     ),
     cmd(
         "info",
-        "{} every object: id, name, triangles, size, min, max, volume_mm3, watertight (a slicer can only fill a closed mesh), and its problems: open_edges (holes), nonmanifold_edges (edges of three or more faces), flipped_faces; `repair` mends what it can; its recipe, its own settings and its modifier (support_enforcer, support_blocker, or null for a part)",
+        "{} every object: id, name, triangles, size, min, max, volume_mm3, watertight (a slicer can only fill a closed mesh), and its problems: open_edges (holes), nonmanifold_edges (edges of three or more faces), flipped_faces; `repair` mends what it can; its recipe, its own settings, its modifier (support_enforcer, support_blocker, or null for a part) and its settings by height (ranges)",
         info,
         false,
         Files::None,
@@ -1014,6 +1014,7 @@ fn info(s: &mut Session, p: &Value) -> Result<Value, String> {
                 "recipe": o.recipe.as_deref().cloned().unwrap_or(Value::Null),
                 "settings": o.settings.as_deref().cloned().unwrap_or(Value::Null),
                 "modifier": o.modifier.map_or(Value::Null, |m| serde_json::to_value(m).unwrap_or(Value::Null)),
+                "ranges": o.ranges.as_deref().cloned().unwrap_or(Value::Null),
             })
         })
         .collect();

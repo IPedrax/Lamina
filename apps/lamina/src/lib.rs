@@ -124,6 +124,22 @@ pub struct Fields {
     pub size: [f64; 3],
 }
 
+/// A height range being written in the window: where it is and what it changes (each optional).
+#[derive(Clone, Debug, PartialEq)]
+pub struct RangeForm {
+    pub from: f64,
+    pub to: f64,
+    pub nozzle_temp: Option<f64>,
+    pub infill: Option<f64>,
+    pub walls: Option<u32>,
+}
+
+impl Default for RangeForm {
+    fn default() -> RangeForm {
+        RangeForm { from: 5.0, to: 10.0, nozzle_temp: Some(220.0), infill: None, walls: None }
+    }
+}
+
 /// A slice of the plate, read back from its G-code, and which scene it was made of (so the preview can say it is out of date).
 pub struct Sliced {
     pub layers: Vec<preview::Layer>,
@@ -158,6 +174,8 @@ pub struct App {
     fields: Option<Fields>,
     /// Whether a size typed keeps the proportions.
     pub keep_proportions: bool,
+    /// The form for a new height range in This object's settings: from, to, and the settings it may give.
+    pub range: RangeForm,
     axis: usize,
     degrees: f64,
     factor: f64,
@@ -246,6 +264,7 @@ impl App {
             connector_fit: 0.2,
             fields: None,
             keep_proportions: true,
+            range: RangeForm::default(),
             axis: 2,
             degrees: 90.0,
             factor: 1.5,
@@ -630,10 +649,14 @@ impl App {
             Ok(own) => own,
             Err(e) => return (self.failed, self.status) = (true, e),
         };
+        let ranges = match lamina_slicer::commands::range_profiles(&parts, &own, &self.profile) {
+            Ok(r) => r,
+            Err(e) => return (self.failed, self.status) = (true, e),
+        };
         let profile = self.profile.clone();
         let scene = Arc::as_ptr(&self.session.scene) as usize;
         let work = move |_: &mut Session| {
-            let out = lamina_slicer::print::gcode_with(&objects, &own, &modifiers, &profile)?;
+            let out = lamina_slicer::print::gcode_ranged(&objects, &own, &ranges, &modifiers, &profile)?;
             let layers = preview::parse(&out.gcode);
             let minutes = (out.seconds / 60.0).round() as u64;
             let summary = tf(
@@ -1357,7 +1380,78 @@ impl App {
                 changed = None;
                 self.run("set_object_settings", json!({ "id": id, "profile": fields }));
             }
+            self.ranges_ui(ui, id);
         });
+    }
+
+    /// The object's settings by height: each range with what it sets and Remove, and a form to add one.
+    fn ranges_ui(&mut self, ui: &mut Ui, id: u32) {
+        ui.separator();
+        ui.label(t("By height")).on_hover_text(t(
+            "Layers between two heights print with settings of their own: a temperature tower, denser infill near a load",
+        ));
+        let ranges = self.session.scene.get(id).ok().and_then(|o| o.ranges.as_deref().cloned()).unwrap_or(Value::Null);
+        let mut remove = None;
+        for r in ranges.as_array().into_iter().flatten() {
+            let (from, to) = (r["from"].as_f64().unwrap_or(0.0), r["to"].as_f64().unwrap_or(0.0));
+            let what = r["profile"]
+                .as_object()
+                .map(|m| m.iter().map(|(k, v)| format!("{k} {v}")).collect::<Vec<_>>().join(", "))
+                .unwrap_or_default();
+            ui.horizontal(|ui| {
+                ui.label(tf("{} to {} mm: {}", &[&lang::mark(from.to_string()), &lang::mark(to.to_string()), &what]));
+                if ui.small_button(t("Remove")).clicked() {
+                    remove = Some((from, to));
+                }
+            });
+        }
+        if let Some((from, to)) = remove {
+            self.run("set_height_range", json!({ "id": id, "from": from, "to": to, "profile": {} }));
+        }
+        let f = &mut self.range;
+        ui.horizontal(|ui| {
+            ui.label(t("From"));
+            ui.add(crate::lang::number(&mut f.from).speed(0.5).range(0.0..=10_000.0).suffix(" mm"));
+            ui.label(t("to"));
+            ui.add(crate::lang::number(&mut f.to).speed(0.5).range(0.0..=10_000.0).suffix(" mm"));
+        });
+        let row = |ui: &mut Ui, label: &str, on: bool| -> bool {
+            let mut on = on;
+            ui.checkbox(&mut on, label);
+            on
+        };
+        ui.horizontal(|ui| {
+            let on = row(ui, t("Nozzle, C"), f.nozzle_temp.is_some());
+            let mut v = f.nozzle_temp.unwrap_or(self.profile.nozzle_temp);
+            ui.add_enabled(on, crate::lang::number(&mut v).range(0.0..=400.0));
+            f.nozzle_temp = on.then_some(v);
+        });
+        ui.horizontal(|ui| {
+            let on = row(ui, t("Infill"), f.infill.is_some());
+            let mut v = f.infill.unwrap_or(self.profile.infill_density) * 100.0;
+            ui.add_enabled(on, crate::lang::number(&mut v).range(0.0..=100.0).suffix(" %"));
+            f.infill = on.then_some(v / 100.0);
+        });
+        ui.horizontal(|ui| {
+            let on = row(ui, t("Walls"), f.walls.is_some());
+            let mut v = f.walls.unwrap_or(self.profile.perimeters);
+            ui.add_enabled(on, crate::lang::number(&mut v).range(0..=10));
+            f.walls = on.then_some(v);
+        });
+        let mut profile = serde_json::Map::new();
+        for (k, v) in [
+            ("nozzle_temp", f.nozzle_temp.map(Value::from)),
+            ("infill_density", f.infill.map(Value::from)),
+            ("perimeters", f.walls.map(Value::from)),
+        ] {
+            if let Some(v) = v {
+                profile.insert(k.into(), v);
+            }
+        }
+        let (from, to) = (f.from, f.to);
+        if ui.add_enabled(!profile.is_empty(), egui::Button::new(t("Add range"))).clicked() {
+            self.run("set_height_range", json!({ "id": id, "from": from, "to": to, "profile": profile }));
+        }
     }
 
     /// Moves object `id` so its footprint's middle and bottom are `at` (they are `now`).
@@ -2650,6 +2744,21 @@ mod tests {
         h.key_press(Key::Period);
         h.run();
         assert!(h.state().view.camera.distance < 500.0, "framed on the picked box again");
+    }
+
+    #[test]
+    fn a_height_range_is_added_and_removed_from_the_objects_settings() {
+        let app = App::new(session(), Arc::new(lamina_assistant::testing::Fake::default()));
+        let mut h = Harness::builder().with_size([1400.0, 2400.0]).build_ui_state(|ui, app: &mut App| app.show(ui), app);
+        h.run();
+        press(&mut h, "Add box");
+        press(&mut h, "This object's settings");
+        press(&mut h, "Add range");
+        let ranges = h.state().session.scene.get(1).unwrap().ranges.as_deref().cloned().unwrap();
+        assert_eq!(ranges, json!([{"from": 5.0, "to": 10.0, "profile": {"nozzle_temp": 220.0}}]));
+        h.get_by_label_contains("5 to 10 mm: nozzle_temp 220");
+        press(&mut h, "Remove");
+        assert!(h.state().session.scene.get(1).unwrap().ranges.is_none());
     }
 
     #[test]

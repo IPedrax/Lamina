@@ -60,6 +60,9 @@ fn object_json(o: &Object) -> Value {
     if let Some(r) = &o.recipe {
         v["recipe"] = (**r).clone();
     }
+    if let Some(r) = &o.ranges {
+        v["ranges"] = (**r).clone();
+    }
     if let Some(m) = o.modifier {
         v["modifier"] = serde_json::to_value(m).unwrap_or(Value::Null);
     }
@@ -116,7 +119,7 @@ pub fn read(text: &str) -> Result<Loaded, String> {
 
 fn read_object(k: usize, o: &Map<String, Value>, ignored: &mut Vec<String>) -> Result<Object, String> {
     for key in o.keys() {
-        if !matches!(key.as_str(), "id" | "name" | "transform" | "vertices" | "triangles" | "recipe" | "settings" | "modifier") {
+        if !matches!(key.as_str(), "id" | "name" | "transform" | "vertices" | "triangles" | "recipe" | "settings" | "modifier" | "ranges") {
             ignored.push(format!("objects[{k}].{key}"));
         }
     }
@@ -168,7 +171,16 @@ fn read_object(k: usize, o: &Map<String, Value>, ignored: &mut Vec<String>) -> R
             }
         },
     };
-    Ok(Object { id, name, mesh: Arc::new(mesh), xf, recipe, settings, modifier })
+    // Ranges are kept as they were written: the slicer checks each when it slices.
+    let ranges = match o.get("ranges") {
+        None | Some(Value::Null) => None,
+        Some(r @ Value::Array(_)) => Some(Arc::new(r.clone())),
+        Some(_) => {
+            ignored.push(format!("objects[{k}].ranges"));
+            None
+        }
+    };
+    Ok(Object { id, name, mesh: Arc::new(mesh), xf, recipe, settings, modifier, ranges })
 }
 
 fn transform(v: &Value) -> Result<Transform, String> {
