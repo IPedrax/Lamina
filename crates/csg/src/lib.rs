@@ -429,12 +429,25 @@ fn from_csg(polys: &[Polygon<()>]) -> Result<Mesh, String> {
 }
 
 /// Repairs what the BSP leaves (`lamina_core::repair::close_with`): T-junctions split, skins and fins dropped, slivers snapped,
-/// small holes filled, in passes until the mesh is closed or a pass changes nothing. A vertex within two welds of an edge is on it:
+/// small holes filled, in passes until the mesh is closed or a pass changes nothing; then tidies it (`repair::tidy_flat`). A vertex within two welds of an edge is on it:
 /// the weld moves a point by up to one. Five, as before, took the corners of a curved rim into the chord beside them, and the split
 /// turned slivers over (folds, see [`to_csg`]): `chain_score` gave 51 clean chains of 120 with five, 73 with two.
 fn close(m: Mesh) -> Result<Mesh, String> {
-    repair::close_with(m, 4, 2.0 * WELD).map(|(m, _)| m)
+    let closed = repair::close_with(m, 4, 2.0 * WELD).map(|(m, _)| m)?;
+    if !closed.is_watertight() {
+        // Tidy what is whole, and try the repair once more.
+        let again = repair::close_with(repair::tidy_flat(&closed, TIDY), 4, 2.0 * WELD).map(|(m, _)| m)?;
+        return Ok(if again.is_watertight() { again } else { closed });
+    }
+    // The vertices the splits left inside flat faces and along straight edges, taken out: the next boolean on this result then
+    // meets a few wide triangles where this one left a fan of slivers. Kept only if it stays closed.
+    let tidy = repair::tidy_flat(&closed, TIDY);
+    Ok(if tidy.is_watertight() { tidy } else { closed })
 }
+
+/// How far off a face's plane (or a crease's line) a vertex may be and still be taken out as adding nothing, mm: a tenth of a
+/// micron, so a corner a boolean really made stays.
+const TIDY: f64 = 1e-4;
 
 #[cfg(test)]
 mod tests {
@@ -456,6 +469,29 @@ mod tests {
 
     fn closed(m: &Mesh) {
         assert!(m.is_watertight(), "{} triangles, not closed", m.triangles.len());
+    }
+
+    /// A plate drilled twice, pocketed and given a boss, each step on the last one's result: every result closed, of the volume
+    /// the shapes give, with nothing left inside a flat face or along a straight edge for the next step to trip on.
+    #[test]
+    fn a_chain_of_booleans_on_earlier_results_stays_closed_exact_and_tidy() {
+        let mut part = Mesh::cuboid([40.0, 30.0, 10.0]);
+        let mut want = 12000.0;
+        let hole = |x: f64| at(Mesh::cylinder(3.0, 14.0, 32), x, 0.0, -2.0);
+        let steps = [
+            (Op::Difference, hole(-10.0), -polygon_area(32.0, 3.0) * 10.0),
+            (Op::Difference, hole(10.0), -polygon_area(32.0, 3.0) * 10.0),
+            (Op::Difference, at(Mesh::cuboid([8.0, 6.0, 6.0]), 0.0, 9.0, 6.0), -8.0 * 6.0 * 4.0),
+            (Op::Union, at(Mesh::cylinder(4.0, 5.0, 32), 0.0, -8.0, 9.7), polygon_area(32.0, 4.0) * 4.7),
+            (Op::Difference, at(Mesh::cylinder(1.5, 8.0, 24), 0.0, -8.0, 8.0), -polygon_area(24.0, 1.5) * 6.7),
+        ];
+        for (n, (op, tool, change)) in steps.into_iter().enumerate() {
+            part = boolean(op, &part, &tool).unwrap_or_else(|e| panic!("step {}: {e}", n + 1));
+            want += change;
+            closed(&part);
+            near(part.volume(), want);
+            assert_eq!(repair::tidy_flat(&part, TIDY).triangles.len(), part.triangles.len(), "step {}: already tidy", n + 1);
+        }
     }
 
     #[test]

@@ -289,13 +289,22 @@ intersection of the same two shapes by inclusion and exclusion, so a closed but 
 | | Chains clean | Steps clean | Closed but wrong (the gate let it through) |
 |---|---|---|---|
 | Before (csgrs' trees, every polygon clipped, five-micron T-junctions) | 30 of 120 | 324 of 414 (78%) | 5 |
-| Now | 73 of 120 | 458 of 505 (91%) | 0 |
+| Trees without sliver planes (3.14) | 73 of 120 | 458 of 505 (91%) | 0 |
+| Now: results tidied (2.5) | 100 of 120 | 559 of 579 (97%) | 0 |
 
 Before, 37 of the 90 failures were at the second step, the first on an earlier result; now 9 are, and 12 of the 47 left are steps
 whose own result came back but whose checking intersection was refused. Taking any one part out, measured
 the same way: csgrs' own trees 47 chains (and 4 closed but wrong), five-micron T-junctions 51, every polygon clipped 57, folds kept 70
 (and the mould's lettering and the block cut many times are refused). Merging the flat patches of a face with holes into convex
-polygons was tried as well: 68 chains against 73, and the mould's lettering refused, so it is not done. The four cases are tests in `commands.rs`.
+polygons was tried as well: 68 chains against 73, and the mould's lettering refused, so it is not done (tried again for 2.5 by
+joining a patch's own triangles greedily into convex pieces: 66 against 73). The four cases are tests in `commands.rs`.
+
+What raised the count to 100 is tidying each result (`repair::tidy_flat`) after the repair: a vertex whose triangles all lie in one
+plane, or that sits on the straight crease between two planes, is taken out and its hole cut again into ears, the widest first, so a
+face the BSP left as a fan of slivers is a few wide triangles when the next boolean meets it. No other vertex moves, so the surface
+and its volume stay as they were; a vertex is taken out only where its neighbours make one simple loop and the hole can be cut,
+and a result that tidying would open is kept as it was. When the repair leaves a crack, what is whole is tidied and the repair runs
+once more, which closes about a third of what was left. The `sound` gate is the same, and the pair scores above did not move.
 
 Tilted cylinders were the weak spot (crossing each other 50%, joined to a box 71%): a tilted cap, stored as f32 after the transform, is
 flat only to f32's rounding and could not be merged into one polygon. `boolean_placed` takes each object's own mesh and transform,

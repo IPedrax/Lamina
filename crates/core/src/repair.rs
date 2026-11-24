@@ -540,6 +540,219 @@ pub fn along(a: [f64; 3], b: [f64; 3], p: [f64; 3], tol: f64) -> Option<f64> {
     ((near[0] * near[0] + near[1] * near[1] + near[2] * near[2]).sqrt() <= tol).then_some(t)
 }
 
+/// A closed mesh with the vertices taken out that add nothing to its shape, and the holes they leave triangulated again: a vertex
+/// whose triangles all lie in one plane (the middle of a fan, a point a split left inside a face), and a vertex on the straight
+/// crease between two planes (a point a split left along an edge). Every other vertex stays exactly where it was, so the surface
+/// and its volume are the same, but a face an earlier boolean cut into slivers becomes a few wide triangles, which the next boolean
+/// splits less. A vertex is taken out only where its ring of neighbours is one simple loop, every triangle round it has an area,
+/// and the hole can be cut into ears; `tol` (mm) is how far off a plane, or off the crease's line, a point may be.
+pub fn tidy_flat(m: &Mesh, tol: f64) -> Mesh {
+    let p: Vec<[f64; 3]> = m.vertices.iter().map(|v| v.map(f64::from)).collect();
+    let mut tris: Vec<Option<[u32; 3]>> = m.triangles.iter().map(|&t| Some(t)).collect();
+    for _ in 0..64 {
+        let mut around: Vec<Vec<usize>> = vec![Vec::new(); p.len()];
+        for (i, t) in tris.iter().enumerate() {
+            for &v in t.iter().flatten() {
+                if let Some(a) = around.get_mut(v as usize) {
+                    a.push(i);
+                }
+            }
+        }
+        let mut touched = vec![false; p.len()];
+        let mut changed = false;
+        for v in 0..p.len() {
+            if touched[v] || around[v].len() < 3 {
+                continue;
+            }
+            let fan: Vec<[u32; 3]> = around[v].iter().filter_map(|&i| tris[i]).collect();
+            let Some(new) = take_out(&p, v as u32, &fan, tol) else { continue };
+            for &i in &around[v] {
+                if let Some(t) = tris[i] {
+                    for &u in &t {
+                        touched[u as usize] = true;
+                    }
+                }
+                tris[i] = None;
+            }
+            // New triangles go in the slots the old ones left, then at the end.
+            let mut free = around[v].clone().into_iter();
+            for t in new {
+                match free.next() {
+                    Some(i) => tris[i] = Some(t),
+                    None => tris.push(Some(t)),
+                }
+            }
+            changed = true;
+        }
+        if !changed {
+            break;
+        }
+    }
+    // Only the vertices still used, in their order.
+    let kept: Vec<[u32; 3]> = tris.into_iter().flatten().collect();
+    let mut used = vec![false; p.len()];
+    for t in &kept {
+        for &v in t {
+            used[v as usize] = true;
+        }
+    }
+    let mut map = vec![u32::MAX; p.len()];
+    let mut vertices = Vec::new();
+    for (i, &u) in used.iter().enumerate() {
+        if u {
+            map[i] = vertices.len() as u32;
+            vertices.push(m.vertices[i]);
+        }
+    }
+    let triangles = kept.iter().map(|t| t.map(|v| map[v as usize])).collect();
+    Mesh { vertices, triangles }
+}
+
+/// The triangles that replace `fan`, the triangles round vertex `v`, with `v` taken out, or none when it must stay.
+fn take_out(p: &[[f64; 3]], v: u32, fan: &[[u32; 3]], tol: f64) -> Option<Vec<[u32; 3]>> {
+    // The ring of neighbours: each triangle (v, a, b), turned to start at v, gives the step a to b.
+    let mut next: HashMap<u32, (u32, usize)> = HashMap::new();
+    for (k, t) in fan.iter().enumerate() {
+        let at = t.iter().position(|&u| u == v)?;
+        let (a, b) = (t[(at + 1) % 3], t[(at + 2) % 3]);
+        if next.insert(a, (b, k)).is_some() {
+            return None; // not one simple loop
+        }
+    }
+    let start = *next.keys().min()?;
+    let (mut ring, mut order) = (vec![start], Vec::with_capacity(fan.len()));
+    let mut at = start;
+    loop {
+        let &(b, k) = next.get(&at)?;
+        order.push(k);
+        if b == start {
+            break;
+        }
+        if ring.len() >= fan.len() {
+            return None;
+        }
+        ring.push(b);
+        at = b;
+    }
+    if ring.len() != fan.len() {
+        return None;
+    }
+    // Each triangle's normal (twice its area); one too small to have a sure direction keeps the vertex.
+    let normal = |t: &[u32; 3]| {
+        let (a, b, c) = (p[t[0] as usize], p[t[1] as usize], p[t[2] as usize]);
+        cross(sub(b, a), sub(c, a))
+    };
+    let unit = |n: [f64; 3]| {
+        let l = dot(n, n).sqrt();
+        (l > 1e-9).then(|| n.map(|x| x / l))
+    };
+    let normals: Vec<[f64; 3]> = order.iter().map(|&k| unit(normal(&fan[k]))).collect::<Option<_>>()?;
+    let here = p[v as usize];
+    // The plane of each triangle, and whether a point is on it.
+    let on = |n: [f64; 3], q: [f64; 3]| dot(n, sub(q, here)).abs() <= tol;
+    let same = |n: [f64; 3], m: [f64; 3]| dot(n, m) > 1.0 - 1e-6;
+    let n0 = normals[0];
+    if normals.iter().all(|&n| same(n, n0)) && ring.iter().all(|&u| on(n0, p[u as usize])) {
+        // In the middle of a flat face: the hole is the whole ring.
+        return ears(p, &ring, n0, tol);
+    }
+    // On a crease: the triangles in two runs, each in one plane, and v on the line between the two neighbours where they meet.
+    let first = (0..normals.len()).find(|&k| !same(normals[k], normals[(k + normals.len() - 1) % normals.len()]))?;
+    let mut runs: Vec<(usize, usize)> = Vec::new(); // (start, length), in ring order from `first`
+    let n = normals.len();
+    let mut k = 0;
+    while k < n {
+        let s = (first + k) % n;
+        let mut len = 1;
+        while k + len < n && same(normals[(first + k + len) % n], normals[s]) {
+            len += 1;
+        }
+        runs.push((s, len));
+        k += len;
+    }
+    let [(s1, l1), (s2, l2)] = runs[..] else { return None };
+    // Triangle i spans ring[i] to ring[i + 1]: run one goes from ring[s1] to ring[s2], run two back.
+    let (u, w) = (ring[s1], ring[s2]);
+    let (pu, pw) = (p[u as usize], p[w as usize]);
+    let line = sub(pw, pu);
+    let len2 = dot(line, line);
+    let t = dot(sub(here, pu), line) / len2;
+    let off = sub(here, [pu[0] + t * line[0], pu[1] + t * line[1], pu[2] + t * line[2]]);
+    if len2 < 1e-18 || !(0.0..=1.0).contains(&t) || dot(off, off).sqrt() > tol {
+        return None;
+    }
+    let arc = |s: usize, l: usize| (0..=l).map(|i| ring[(s + i) % n]).collect::<Vec<u32>>();
+    let (one, two) = (arc(s1, l1), arc(s2, l2));
+    if one.len() < 3
+        || two.len() < 3
+        || !one.iter().all(|&q| on(normals[s1], p[q as usize]))
+        || !two.iter().all(|&q| on(normals[s2], p[q as usize]))
+    {
+        return None;
+    }
+    let mut out = ears(p, &one, normals[s1], tol)?;
+    out.extend(ears(p, &two, normals[s2], tol)?);
+    Some(out)
+}
+
+/// The polygon `ring` (counter-clockwise seen along `n`) cut into triangles by clipping ears, the widest first (the ear whose
+/// smallest angle is largest), so no needle is made where a wider cut will do. None when no ear can be cut, as a polygon too thin
+/// to tell its turns has.
+fn ears(p: &[[f64; 3]], ring: &[u32], n: [f64; 3], tol: f64) -> Option<Vec<[u32; 3]>> {
+    // A frame in the plane: (e1, e2, n) right-handed, so counter-clockwise in the plane is counter-clockwise about n.
+    let helper = if n[0].abs() < 0.9 { [1.0, 0.0, 0.0] } else { [0.0, 1.0, 0.0] };
+    let e1 = {
+        let c = cross(helper, n);
+        let l = dot(c, c).sqrt();
+        c.map(|x| x / l)
+    };
+    let e2 = cross(n, e1);
+    let flat = |i: u32| {
+        let q = p[i as usize];
+        [dot(q, e1), dot(q, e2)]
+    };
+    let mut left: Vec<(u32, [f64; 2])> = ring.iter().map(|&i| (i, flat(i))).collect();
+    let turn = |a: [f64; 2], b: [f64; 2], c: [f64; 2]| (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+    // Inside or on an edge: a point on the cut would be left in the middle of a triangle's side, a crack.
+    let inside =
+        |a: [f64; 2], b: [f64; 2], c: [f64; 2], q: [f64; 2]| turn(a, b, q) >= -1e-12 && turn(b, c, q) >= -1e-12 && turn(c, a, q) >= -1e-12;
+    let angle = |a: [f64; 2], b: [f64; 2], c: [f64; 2]| {
+        let (u, v) = ([a[0] - b[0], a[1] - b[1]], [c[0] - b[0], c[1] - b[1]]);
+        let l = (u[0].hypot(u[1]) * v[0].hypot(v[1])).max(1e-300);
+        ((u[0] * v[0] + u[1] * v[1]) / l).clamp(-1.0, 1.0).acos()
+    };
+    let mut out = Vec::with_capacity(ring.len().saturating_sub(2));
+    // A corner on a straight stretch (the crease's own) is no ear, but stays a corner of the triangles beside it.
+    let straight = tol * tol;
+    while left.len() > 3 {
+        let m = left.len();
+        let mut best: Option<(usize, f64)> = None;
+        for i in 0..m {
+            let (a, b, c) = (left[(i + m - 1) % m].1, left[i].1, left[(i + 1) % m].1);
+            if turn(a, b, c) <= straight {
+                continue;
+            }
+            if (0..m).filter(|&j| j != i && j != (i + 1) % m && j != (i + m - 1) % m).any(|j| inside(a, b, c, left[j].1)) {
+                continue;
+            }
+            let worst = angle(c, a, b).min(angle(a, b, c)).min(angle(b, c, a));
+            if best.is_none_or(|(_, w)| worst > w) {
+                best = Some((i, worst));
+            }
+        }
+        let (i, _) = best?;
+        let m = left.len();
+        out.push([left[(i + m - 1) % m].0, left[i].0, left[(i + 1) % m].0]);
+        left.remove(i);
+    }
+    let [a, b, c] = [left[0], left[1], left[2]];
+    if turn(a.1, b.1, c.1) <= straight {
+        return None;
+    }
+    out.push([a.0, b.0, c.0]);
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -609,5 +822,75 @@ mod tests {
         assert_eq!((same, r), (ball.clone(), Report { closed: true, ..Report::default() }));
         assert_eq!(problems(&ball), Problems::default());
         assert_eq!(problems(&ball).describe(), "closed and consistent");
+    }
+
+    /// Splits the triangles on edge (`a`, `b`) at its middle, a new vertex.
+    fn split_edge(m: &mut Mesh, a: u32, b: u32) {
+        let (pa, pb) = (m.vertices[a as usize], m.vertices[b as usize]);
+        m.vertices.push([(pa[0] + pb[0]) / 2.0, (pa[1] + pb[1]) / 2.0, (pa[2] + pb[2]) / 2.0]);
+        let mid = m.vertices.len() as u32 - 1;
+        let mut out = Vec::new();
+        for &t in &m.triangles {
+            match (0..3).find(|&k| (t[k], t[(k + 1) % 3]) == (a, b) || (t[k], t[(k + 1) % 3]) == (b, a)) {
+                Some(k) => {
+                    let (x, y, z) = (t[k], t[(k + 1) % 3], t[(k + 2) % 3]);
+                    out.extend([[x, mid, z], [mid, y, z]]);
+                }
+                None => out.push(t),
+            }
+        }
+        m.triangles = out;
+    }
+
+    /// Splits triangle `i` at its middle into three.
+    fn split_middle(m: &mut Mesh, i: usize) {
+        let t = m.triangles[i];
+        let c = (0..3).map(|k| t.iter().map(|&v| m.vertices[v as usize][k]).sum::<f32>() / 3.0).collect::<Vec<_>>();
+        m.vertices.push([c[0], c[1], c[2]]);
+        let mid = m.vertices.len() as u32 - 1;
+        m.triangles[i] = [t[0], t[1], mid];
+        m.triangles.extend([[t[1], t[2], mid], [t[2], t[0], mid]]);
+    }
+
+    #[test]
+    fn tidying_takes_out_what_splits_left_in_flat_faces_and_along_straight_edges() {
+        // A box whose faces a boolean might have cut up: each triangle split at its middle, then every edge at its middle (the box's
+        // own edges, between two faces, and the diagonals inside them), then the middles again.
+        let mut m = Mesh::cuboid([20.0, 10.0, 6.0]);
+        let edges: Vec<(u32, u32)> = undirected(&m).into_keys().collect();
+        for (a, b) in edges {
+            split_edge(&mut m, a, b);
+        }
+        for i in 0..m.triangles.len() {
+            split_middle(&mut m, i);
+        }
+        assert!(m.is_watertight() && m.triangles.len() > 100, "{}", m.triangles.len());
+        let tidy = tidy_flat(&m, 1e-4);
+        assert!(tidy.is_watertight());
+        assert_eq!((tidy.vertices.len(), tidy.triangles.len()), (8, 12), "a box again");
+        assert!((tidy.volume() - 1200.0).abs() < 1e-3, "{}", tidy.volume());
+        assert!(problems(&tidy).flipped_faces == 0);
+        // A cylinder's caps lose the middles they were fanned from; its round side, where three planes meet at each corner, stays.
+        let c = Mesh::cylinder(5.0, 8.0, 24);
+        let t = tidy_flat(&c, 1e-4);
+        assert!(
+            t.is_watertight() && t.triangles.len() < c.triangles.len() && t.vertices.len() == 48,
+            "{} {}",
+            t.vertices.len(),
+            t.triangles.len()
+        );
+        assert!((t.volume() - c.volume()).abs() < 1e-3);
+        // A sphere is curved everywhere: nothing to take out.
+        let ball = Mesh::sphere(10.0, 2);
+        assert_eq!(tidy_flat(&ball, 1e-4).triangles.len(), ball.triangles.len());
+        // A vertex a hair off its face stays when the hair is more than the tolerance.
+        let mut bump = Mesh::cuboid([10.0, 10.0, 10.0]);
+        split_middle(&mut bump, 0);
+        let last = bump.vertices.len() - 1;
+        let normal_axis = (0..3)
+            .find(|&k| bump.triangles[0].iter().all(|&v| bump.vertices[v as usize][k] == bump.vertices[bump.triangles[0][0] as usize][k]))
+            .unwrap();
+        bump.vertices[last][normal_axis] += 0.01;
+        assert_eq!(tidy_flat(&bump, 1e-4).vertices.len(), 9, "kept");
     }
 }

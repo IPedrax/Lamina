@@ -75,6 +75,16 @@ Priorities:
   with the link condition (the surface stays manifold), a check that no face turns over or shrinks to nothing, and heavy planes
   along open borders so holes do not grow. `simplify {id, triangles | ratio}` is one undo step; the object panel offers it for a
   mesh over 1000 triangles, on a thread. About 164,000 triangles go to 8,000 in under a second; a closed mesh stays closed.
+- **2.5 Booleans of earlier results.** `repair::tidy_flat` takes out of each boolean's result the vertices that add nothing: those
+  whose triangles all lie in one plane (a fan's middle, a point a split left in a face) and those on the straight crease between
+  two planes (a point a split left along an edge), and cuts each hole again into ears, the widest first. No other vertex moves, so
+  the volume is the same; a result that tidying would open is kept as it was, and a result the repair could not close is tidied and
+  repaired once more. `chain_score`: 100 of 120 chains clean and 559 of 579 steps (was 73 and 458 of 505), none closed but wrong;
+  the pair scores are unchanged (199 of 200 upright, 200 of 200 turned, 160 of 160 curved). The `sound` gate is the same. Tested
+  with a box cut up at every edge and face middle (back to 8 corners and 12 triangles), a cylinder (its caps' middles go, its side
+  stays), a sphere (nothing goes), a bump a hundredth of a millimetre high (kept), and a chain of two holes, a pocket, a boss and a
+  hole in the boss, each result closed, of the right volume and already tidy. Joining a flat face's triangles into convex pieces
+  instead was measured worse (66 chains) and left out.
 - **3.1 Rotate and scale handles.** The gizmo has a ring per axis (a circle about the middle, square to the axis) and a corner
   square. A drag on a ring turns by the angle the pointer sweeps round the middle on screen, the way the axis is seen, snapped to 5
   degrees; a drag on the square scales by how much farther the pointer is from the middle, snapped to 0.05. The picked objects are
@@ -417,13 +427,6 @@ what is wrong before adding features.
 
 ## 2. Meshes
 
-**2.5 Booleans of earlier results (P1).** `chain_score` passes 73 of 120 chains of 4 to 6 booleans; what fails is refused, never
-wrong. How: after the repair, and before `sound`, clean what the repair leaves: merge each run of coplanar triangles (a fan, the
-slivers along a cut) into its outline and triangulate it again with `i_triangle`, so a flat face is one plane with no needles; drop
-the zero-area triangles that remain and weld their corners. Keep a result's flat faces flat by snapping the corners of each merged
-region onto its plane. The `sound` gate stays as it is: a result it refuses is still refused. Measure with `chain_score` before and
-after, and keep a test that a chain which passed still passes with the same volume.
-
 ## 3. Modelling
 
 ## 4. Slicer
@@ -457,9 +460,9 @@ which Bambu's 2025 authorization keeps to Bambu Connect or a printer in Develope
 - The time estimate has not been checked against a real print.
 - A mesh whose holes are too big to fill without guessing stays open, and prints with parts missing, with a warning. STL, 3MF, OBJ and glTF in; STL and 3MF out.
 - Booleans refuse about 1 in 100 random pairs (the rest of a sphere-with-sphere union mostly). Booleans of earlier results are
-  refused more often: 9 steps in 10 come through in `chain_score` (73 of 120 chains of 4 to 6 booleans clean), and what fails is
-  refused, never wrong. A boolean's result keeps the repair's slivers and fans, and works on its world mesh, so its tilted faces are
-  flat only to f32.
+  refused more often: 97 steps in 100 come through in `chain_score` (100 of 120 chains of 4 to 6 booleans clean), and what fails
+  is refused, never wrong. A boolean works on its world mesh, so a result's tilted faces are flat only to f32, and the slivers on a
+  curved face (where no vertex adds nothing) stay.
 - Tool changes are for a nozzle per extruder: a single nozzle fed several filaments (a multi-material unit, with its ramming and
   long purges) is not handled. The time estimate takes a tool let cool to have reached its standby when it is chosen again, so a
   quick return is counted as longer than it is. None of it has run on a printer with two extruders.
