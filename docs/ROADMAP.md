@@ -276,6 +276,12 @@ Priorities:
   enforcer green and a blocker red; the picked object's tools have Prints as. Tested: a T whose right arm is under a blocker keeps
   the left arm's support only; with supports off, an enforcer under the right arm supports it and not the left; neither prints a
   wall; an enforcer beside the part adds nothing; a modifier survives a project and an arrange.
+- **4.25 A flow ratio** and **4.26 Maximum volumetric speed.** Filament fields `flow_ratio` (1.0, from 0.5 to 1.5), which multiplies
+  every extrusion's plastic, and `max_volumetric_speed` (mm3/s, 0 for none), which slows a line whose plastic a second at its speed
+  would pass it (the time estimate follows). Imported from PrusaSlicer's `extrusion_multiplier` and OrcaSlicer's
+  `filament_flow_ratio`, and both slicers' `filament_max_volumetric_speed`. In the window's Speeds group; the calibration skill and
+  PRINT-TESTS.md use the flow ratio. Tested: 1.05 pushes 5 % more filament with the same moves; infill at 300 mm/s under a cap of 8
+  mm3/s is slowed to the cap, the walls keep their speed, the print takes longer.
 - **5.1 Process presets.** A third kind in `presets.rs`, setting only the layers and the strength (`PROCESS_FIELDS`): 0.12 mm Fine,
   0.20 mm Standard, 0.28 mm Draft and Strong. `slice` and `slice_check` take `process` (after the printer and the filament, before
   `profile`); `slicer_presets` lists them; the window has a Process picker and Save process, kept in the settings file and the
@@ -399,7 +405,7 @@ Priorities:
   carrying its image part. The picture skill uses it to compare a part with the user's photo, and the chat panel gains Attach (and
   takes a picture dropped on the window), so a photo can go with a message.
 - **9.2 More skills.** `troubleshooting-prints` (stringing, warping, layer shifts, sagging, gaps, blobs, the first layer),
-  `calibration` (a cube, single-wall flow through `filament_diameter` as Lamina has no flow multiplier, temperature by separate
+  `calibration` (a cube, single-wall flow through `filament_diameter` as Lamina had no flow multiplier then (4.25 since), temperature by separate
   prints as it has no temperature tower, retraction towers), `materials` (the five presets, nylon, PC, filled filaments, food and
   heat) and `supports` (when they are needed, turning and cutting first, every support setting). The skill test now takes the
   tools from `tools::all()`, so a skill may name `preview`.
@@ -464,15 +470,6 @@ along the plate's axes. How: a pivot choice in the view (median, each its own) f
 gizmo from the object's transform; `reset_transform {id, what}`.
 
 ## 4. Slicer
-
-**4.25 A flow ratio (P1).** Every slicer has an extrusion multiplier (PrusaSlicer's and OrcaSlicer's flow ratio); Lamina's
-calibration skill makes do with `filament_diameter`. How: a filament field `flow_ratio` (1.0, from 0.5 to 1.5) multiplying the
-plastic of every extrusion. Test: 1.05 pushes 5 % more filament, the moves the same.
-
-**4.26 Maximum volumetric speed (P1).** OrcaSlicer calibrates and enforces the most plastic a hot end can melt (mm3/s); Lamina's
-speeds ignore it, which matters more with wide variable walls. How: a filament field `max_volumetric_speed` (0 for none) that slows
-any extrusion whose flow at its speed would pass it. Test: a cube at a high infill speed and a low cap takes longer, no extrusion
-over the cap, the moves the same.
 
 **4.27 Settings by height (P2).** PrusaSlicer's height range modifier gives a range of layers its own settings (its own layer
 height too). Lamina's per-object settings are whole-object. How: `set_height_range {id, from, to, profile}`, ranges kept on the

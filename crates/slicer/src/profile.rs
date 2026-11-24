@@ -44,6 +44,10 @@ pub struct Profile {
     pub max_height: f64,
     /// The filament's pressure advance (linear advance on Marlin); 0 leaves the printer's own.
     pub pressure_advance: f64,
+    /// The filament's flow: every extrusion's plastic times this (what the single-wall test measures).
+    pub flow_ratio: f64,
+    /// The most plastic the hot end melts, mm3/s: a line that would ask for more is printed slower. 0 for no limit.
+    pub max_volumetric_speed: f64,
     /// The printer's acceleration, mm/s2, and its junction deviation, mm (Marlin's; for Klipper's square corner velocity `scv`,
     /// `scv^2 x 0.414 / acceleration`): what the time estimate plans moves with.
     pub max_acceleration: f64,
@@ -208,6 +212,8 @@ impl Default for Profile {
             origin_center: false,
             max_height: 250.0,
             pressure_advance: 0.0,
+            flow_ratio: 1.0,
+            max_volumetric_speed: 0.0,
             max_acceleration: 1500.0,
             junction_deviation: 0.013,
             nozzle: 0.4,
@@ -297,6 +303,8 @@ pub const LIMITS: &[(&str, f64, f64)] = &[
     ("pressure_advance", 0.0, 2.0),
     ("max_acceleration", 10.0, 100_000.0),
     ("junction_deviation", 0.0, 1.0),
+    ("flow_ratio", 0.5, 1.5),
+    ("max_volumetric_speed", 0.0, 100.0),
     ("nozzle", 0.1, 2.0),
     ("filament_diameter", 1.0, 3.5),
     ("layer_height", 0.02, 1.6),
@@ -376,6 +384,11 @@ pub const ABOUT: &[(&str, &str)] = &[
     ),
     ("max_acceleration", ui_msg!("The printer's acceleration, mm/s2: the print time estimate plans each move with it.")),
     ("junction_deviation", ui_msg!("How fast the printer takes corners (Marlin's junction deviation, mm); used for the time estimate.")),
+    ("flow_ratio", ui_msg!("The filament's flow: every line's plastic times this; set it from a single-wall box's measured wall.")),
+    (
+        "max_volumetric_speed",
+        ui_msg!("The most plastic the hot end melts, mm3 a second: a line that would need more prints slower; 0 for no limit."),
+    ),
     ("nozzle", ui_msg!("The nozzle's diameter, mm: lines are this wide, and layers at most 80 % of it.")),
     ("filament_diameter", ui_msg!("The filament's diameter, mm, usually 1.75.")),
     ("start_gcode", ui_msg!("G-code sent before the print; [name] is replaced by that setting, and {expression} by its value.")),

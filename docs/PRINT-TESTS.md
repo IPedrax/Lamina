@@ -62,9 +62,9 @@ Klipper:
 lamina-cli run --script docs/print-tests/single-wall-box.txt --cmd 'slice {"path": "wall-klipper.gcode", "printer": "Generic 300 mm, Klipper", "filament": "PLA", "process": "0.20 mm Standard", "profile": {"vase": true, "bottom_layers": 1}}'
 ```
 
-Measure the wall at the middle of each side, halfway up, with the calipers' jaws flat on it. Expected: 0.45 mm. Lamina has no
-flow multiplier: a wall 3 % too thick is fixed by raising `filament_diameter` from 1.75 to about 1.776 (1.75 times the square root
-of 1.03), one too thin by lowering it the same way (the calibration skill says so too).
+Measure the wall at the middle of each side, halfway up, with the calipers' jaws flat on it. Expected: 0.45 mm. A wall 3 % too
+thick is fixed by a `flow_ratio` of 0.97 in the filament (Flow ratio in the window's Speeds group), one too thin by 1.03; print the
+box again with it to check.
 
 | Printer | Front, mm | Back, mm | Left, mm | Right, mm | Mean, mm | Gaps or blobs | Photo |
 |---|---|---|---|---|---|---|---|

@@ -24,9 +24,8 @@ A box printed as a single wall shows whether the extruder pushes what the slicer
 1. `add_primitive {kind: "box", size: [20, 20, 15]}` and slice it with `vase: true` and `bottom_layers: 1`.
 2. The user measures the wall at several places. It should be the line width, which is the nozzle's diameter (0.4 mm for a 0.4
    nozzle).
-3. Lamina has no flow multiplier setting yet. The flow scales with one over the square of `filament_diameter`, so a wall that is
-   3 % too thick is fixed by raising `filament_diameter` from 1.75 to about 1.776 (1.75 times the square root of 1.03); too thin,
-   lower it the same way. Say that this is what the setting is for here.
+3. `flow_ratio` (a filament field, 1.0) multiplies every line's plastic: a wall 3 % too thick wants `flow_ratio` 0.97, one 3 %
+   too thin 1.03. Change it in steps of no more than 0.05, and print the box again to check.
 
 ## Temperature
 

@@ -36,20 +36,20 @@ presets live in the app's settings panel, not in these commands.
   strength than infill does. `infill_pattern`: `"lines"` (the default, quickest), `"grid"`, `"triangles"` (stiff in the plane),
   `"gyroid"` (strong in every direction, the usual choice for functional parts) or `"honeycomb"`.
 - Speeds, mm/s: `perimeter_speed` 40 to 60, `infill_speed` 60 to 100, `first_layer_speed` 15 to 25, `travel_speed` 120 to 200.
-- Temperatures are typical ranges and the filament's label wins. PLA: nozzle 190 to 220, bed 50 to 65. PETG: nozzle 230 to 250,
-  bed 70 to 85. ABS: nozzle 230 to 260, bed 90 to 110.
+  Filament fields: `max_volumetric_speed` (mm3/s, 0 for none; 12 to 15 for PLA on a common hot end) slows a line that needs more
+  plastic than that; `flow_ratio` (1.0) scales all the plastic, set from the single-wall test.
+- Temperatures (the label wins): PLA nozzle 190 to 220, bed 50 to 65; PETG 230 to 250, bed 70 to 85; ABS 230 to 260, bed 90 to 110.
 - Cooling and retraction: `fan_speed` 0 to 255 (PLA full, PETG about half, ABS off), off for the first layer and up in steps to
   full by `fan_full_layer` (3). `min_layer_time` (5 s) slows a small layer so it cools before the next, never below
-  `min_print_speed` (10 mm/s): raise it to 10 to 15 for small, tall parts that droop. `retract_length` about 0.5 to 2 mm on a
-  direct-drive extruder and 3 to 6 mm on a Bowden tube, `retract_speed` 25 to 45. `combing` (on) travels inside the part without
+  `min_print_speed` (10 mm/s): raise it to 10 to 15 for small, tall parts that droop. `retract_length` 0.5 to 2 mm direct drive, 3 to 6
+  Bowden; `retract_speed` 25 to 45. `combing` (on) travels inside the part without
   retracting; `z_hop` (0; 0.2 to 0.4 mm lifts the nozzle over what is printed, against scrapes and knocked-over parts) and
   `wipe_distance` (0; 1 to 2 mm wipes the nozzle along the last line while retracting, against blobs and strings).
-- The skirt (`skirt_loops`, `skirt_distance`) primes the nozzle. `brim_width` (mm, 0 by default; 3 to 8 for parts with a small
-  footprint or sharp corners that may lift, and for ABS) adds loops round the first layer, touching it. `raft_layers` (0 by default,
-  2 or 3 when used) prints coarse layers under the part and lifts it onto them: for a warped bed or a tiny contact area; it costs
-  time and a rougher underside.
-- Vase mode: `vase: true` prints the bottom layers, then one outer wall that climbs without stopping, with no infill and no top:
-  for vases, cups and lamp shades, one object at a time. The wall is one line thick, so it is fragile.
+- The skirt (`skirt_loops`, `skirt_distance`) primes the nozzle. `brim_width` (mm, 0; 3 to 8 for a small footprint, sharp
+  corners that lift, or ABS) adds loops touching the first layer. `raft_layers` (0; 2 or 3 when used) lifts the part onto coarse
+  layers, for a warped bed or a tiny contact area, at the cost of time and a rougher underside.
+- Vase mode: `vase: true` prints the bottom layers, then one outer wall climbing without a stop, no infill or top: vases, cups,
+  lamp shades, one object at a time; one line thick, so fragile.
 - Surfaces: `ironing: true` passes over each top surface again with close lines (`ironing_spacing` 0.1 mm) and a trickle of
   plastic (`ironing_flow` 0.1) at `ironing_speed` (15): smooth tops for lids and nameplates, at the cost of time. `fuzzy_skin:
   true` roughens the outer wall (`fuzzy_thickness` 0.3, `fuzzy_spacing` 0.8 mm) for a grip that hides layer lines. Both may be set
@@ -99,14 +99,13 @@ figures. All on one extruder. An error names the objects; `arrange {gap: 35}` sp
 
 - `features` splits the filament by kind (walls, infill, support, brim, raft): if support is a large share, the part may print
   better turned another way.
-- `print_time` plans each move with the printer's `max_acceleration` and `junction_deviation` (set by the printer preset), so it is
-  close for a printer set like that; it has not been checked against a real print yet. `filament_mm` is what the G-code pushes. A metre of
-  1.75 mm filament is about 2.4 cm3, roughly 3 g of PLA.
+- `print_time` plans each move with the printer's `max_acceleration` and `junction_deviation`; not yet checked against a real
+  print. `filament_mm` is what the G-code pushes: a metre of 1.75 mm filament is about 2.4 cm3, roughly 3 g of PLA.
 - A warning that a mesh is not closed means parts of it may be missing from the print. Tell the user, and do not call the slice good.
 - An error that an object does not fit, is below the plate or is too tall names the object. Fix the scene (`scale`, `move`,
   `drop_to_bed`) and check again.
 
 ## What is not there yet
 
-A single nozzle fed several filaments (a multi-material unit): Lamina's tool changes are for printers with a nozzle for each
-extruder. Say so when a model needs one, instead of letting the user find out at the printer. Nothing has been verified on a real printer, so never promise that a print will succeed.
+A single nozzle fed several filaments (a multi-material unit): Lamina's tool changes need a nozzle per extruder. Say so when a
+model needs one. Nothing has been verified on a real printer, so never promise that a print will succeed.
