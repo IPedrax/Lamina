@@ -26,7 +26,7 @@ pub static ALL: &[Command] = &[
     ),
     cmd(
         "add_primitive",
-        "{kind, name?, at?:[x,y] (where its centre stands, default the middle of the plate), segments? (3..256, default 48), and by kind: \"box\" {size:[x,y,z]}; \"rounded_box\" {size, corner (the edges' radius, under half the smallest side)}; \"cylinder\" {radius, height}; \"cone\" {radius, height, radius_top? (default 0, a point; more makes a frustum)}; \"prism\" and \"pyramid\" {radius (to a corner), height, sides (3..64)}; \"tube\" {radius, inner, height}; \"torus\" {radius (to the middle of the ring), tube (the ring's own radius, less than radius)}; \"sphere\" {radius} (geodesic: 320, 1280, 5120 or 20480 triangles from segments)} a shape on the plate, mm. Returns {id}",
+        "{kind, name?, at?:[x,y] (where its centre stands, default the middle of the plate), segments? (3..256, default 48), and by kind: \"box\" {size:[x,y,z]}; \"rounded_box\" {size, corner (the edges' radius, under half the smallest side)}; \"cylinder\" {radius, height}; \"cone\" {radius, height, radius_top? (default 0, a point; more makes a frustum)}; \"prism\" and \"pyramid\" {radius (to a corner), height, sides (3..64)}; \"tube\" {radius, inner, height}; \"torus\" {radius (to the middle of the ring), tube (the ring's own radius, less than radius)}; \"sphere\" {radius} (geodesic: 320, 1280, 5120 or 20480 triangles from segments); \"thread\" {metric (\"M3\"..\"M30\", ISO coarse pitch) | diameter and pitch, height (its length), internal? (default false: a threaded rod with its ends chamfered; true: the tool to cut a tapped hole with `difference`, longer than the hole), clearance? (mm a side: an internal thread's tool that much wider, default 0.2; an external one that much thinner, default 0)}, ISO metric profile, right-handed, upright} a shape on the plate, mm. Returns {id}",
         add_primitive,
         true,
         Files::None,
@@ -344,7 +344,33 @@ struct Primitive {
     inner: Option<f64>,
     tube: Option<f64>,
     corner: Option<f64>,
+    metric: Option<String>,
+    diameter: Option<f64>,
+    pitch: Option<f64>,
+    internal: Option<bool>,
+    clearance: Option<f64>,
 }
+
+/// ISO 261's coarse pitches for the common sizes, mm.
+const COARSE: &[(&str, f64, f64)] = &[
+    ("M2", 2.0, 0.4),
+    ("M2.5", 2.5, 0.45),
+    ("M3", 3.0, 0.5),
+    ("M4", 4.0, 0.7),
+    ("M5", 5.0, 0.8),
+    ("M6", 6.0, 1.0),
+    ("M8", 8.0, 1.25),
+    ("M10", 10.0, 1.5),
+    ("M12", 12.0, 1.75),
+    ("M14", 14.0, 2.0),
+    ("M16", 16.0, 2.0),
+    ("M20", 20.0, 2.5),
+    ("M24", 24.0, 3.0),
+    ("M30", 30.0, 3.5),
+];
+
+/// The most triangles a thread may have: one boolean takes 30,000 in all, with the part it is joined to or cut from.
+const MAX_THREAD_TRIANGLES: u32 = 24_000;
 
 fn add_primitive(s: &mut Session, p: &Value) -> Result<Value, String> {
     const MAX: f64 = 10_000.0;
@@ -393,8 +419,40 @@ fn add_primitive(s: &mut Session, p: &Value) -> Result<Value, String> {
             Mesh::torus(ring, less("tube", need(a.tube, "tube")?, "radius", ring)?, segments)
         }
         "sphere" => Mesh::sphere(need(a.radius, "radius")?, segments),
+        "thread" => {
+            let (diameter, pitch) = match (&a.metric, a.diameter, a.pitch) {
+                (Some(m), None, None) => {
+                    let m = m.trim().to_uppercase();
+                    COARSE.iter().find(|(name, _, _)| *name == m).map(|&(_, d, p)| (d, p)).ok_or_else(|| {
+                        format!(
+                            "`metric` is one of {}, or give `diameter` and `pitch`",
+                            COARSE.iter().map(|c| c.0).collect::<Vec<_>>().join(", ")
+                        )
+                    })?
+                }
+                (None, Some(d), Some(p)) => (positive("diameter", d, 500.0)?, positive("pitch", p, 20.0)?),
+                _ => return Err("a thread needs `metric` (\"M8\") or both `diameter` and `pitch`".into()),
+            };
+            if pitch > diameter / 2.0 || pitch < 0.1 {
+                return Err(format!("a pitch of {pitch} mm does not fit a {diameter} mm thread: from 0.1 mm to half the diameter"));
+            }
+            let internal = a.internal.unwrap_or(false);
+            let clearance = a.clearance.unwrap_or(if internal { 0.2 } else { 0.0 });
+            if !(clearance.is_finite() && (0.0..=2.0).contains(&clearance)) {
+                return Err("`clearance` is from 0 to 2 mm a side".into());
+            }
+            let height = need(a.height, "height")?;
+            let rows = (height / (pitch / 8.0)).ceil();
+            if 2.0 * f64::from(segments) * (rows + 1.0) > f64::from(MAX_THREAD_TRIANGLES) {
+                return Err(format!(
+                    "a thread {height} mm long at a pitch of {pitch} mm with {segments} segments has more than {MAX_THREAD_TRIANGLES} triangles: make it shorter or use fewer segments"
+                ));
+            }
+            let offset = if internal { clearance } else { -clearance };
+            Mesh::thread(diameter, pitch, height, offset, segments, !internal)
+        }
         other => {
-            return Err(format!("unknown kind `{other}`: box, rounded_box, cylinder, cone, prism, pyramid, tube, torus or sphere"));
+            return Err(format!("unknown kind `{other}`: box, rounded_box, cylinder, cone, prism, pyramid, tube, torus, sphere or thread"));
         }
     };
     added(s, a.name.as_deref().unwrap_or(&a.kind), mesh, a.at)

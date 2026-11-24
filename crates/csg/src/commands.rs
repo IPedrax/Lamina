@@ -363,6 +363,27 @@ mod tests {
     }
 
     /// Case 2: lettering engraved into the finished mould, itself the result of three unions.
+    /// A nut: a hexagonal prism with an M8 tapped hole cut by the thread's own tool, and a bolt: a head joined to a threaded rod.
+    #[test]
+    fn a_nut_and_a_bolt_are_made_with_threads_and_stay_closed() {
+        let mut s = session();
+        let nut = make(&mut s, "add_primitive", json!({"kind": "prism", "radius": 7.5, "height": 6, "sides": 6}));
+        let tool = make(&mut s, "add_primitive", json!({"kind": "thread", "metric": "M8", "height": 10, "internal": true, "segments": 32}));
+        place(&mut s, tool, 0.0, 0.0, -2.0);
+        let (hex, hole) = (volume(&s, nut), volume(&s, tool));
+        must(&mut s, "difference", json!({"id": nut, "minus": [tool]}), hex - hole * 0.6, 0.03 * hole);
+        let mut s = session();
+        let rod = make(&mut s, "add_primitive", json!({"kind": "thread", "metric": "M6", "height": 16, "segments": 32}));
+        let head = make(&mut s, "add_primitive", json!({"kind": "prism", "radius": 5.5, "height": 4, "sides": 6}));
+        place(&mut s, rod, 0.0, 0.0, 3.5);
+        let (r, h) = (volume(&s, rod), volume(&s, head));
+        // The rod's chamfered root overlaps the head by half a millimetre.
+        must(&mut s, "union", json!({"ids": [head, rod]}), r + h - std::f64::consts::PI * 2.4589_f64.powi(2) * 0.5, 0.05 * r);
+        assert!(s.execute("add_primitive", &json!({"kind": "thread", "metric": "M7", "height": 10})).unwrap_err().contains("M8"));
+        assert!(s.execute("add_primitive", &json!({"kind": "thread", "diameter": 4, "pitch": 3, "height": 10})).is_err());
+        assert!(s.execute("add_primitive", &json!({"kind": "thread", "metric": "M3", "height": 500})).unwrap_err().contains("triangles"));
+    }
+
     #[test]
     fn text_engraves_a_part_made_by_unions() {
         let mut s = session();
