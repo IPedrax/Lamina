@@ -2638,6 +2638,42 @@ fill_angle = 45
         assert!(h.state().session.can_undo());
     }
 
+    /// A window taller than the graphics card's largest texture (2048 pixels in the test harness) draws the 3D view smaller and
+    /// stretches it, and a click still finds what is under the pointer.
+    #[test]
+    fn a_window_taller_than_the_largest_texture_still_draws_and_picks() {
+        let app = App::new(session(), Arc::new(lamina_assistant::testing::Fake::default()));
+        let mut h = Harness::builder().with_size([1400.0, 2400.0]).build_ui_state(|ui, app: &mut App| app.show(ui), app);
+        h.run();
+        press(&mut h, "Add box");
+        h.state_mut().selected.clear();
+        h.state_mut().view.camera = view3d::Camera { target: [0.0, 0.0, 10.0], azimuth: -90.0, elevation: 0.0, distance: 120.0 };
+        h.run();
+        h.run();
+        let rect = h.state().view.rect.unwrap();
+        assert!(rect.height() > 2048.0, "the view itself is taller than a texture may be: {rect:?}");
+        let most = h.ctx.input(|i| i.max_texture_side);
+        let picture = h.state().view.picture.as_ref().expect("the processor draws in a test");
+        assert!(picture.size.iter().all(|&side| side <= most), "{:?} within {most}", picture.size);
+        let click = |h: &mut Harness<App>, at: egui::Pos2| {
+            h.hover_at(at);
+            h.run();
+            for pressed in [true, false] {
+                h.event(egui::Event::PointerButton {
+                    pos: at,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                });
+                h.run();
+            }
+        };
+        click(&mut h, rect.center());
+        assert_eq!(h.state().selected, vec![1], "the box in the middle of the view is picked");
+        click(&mut h, rect.center() + egui::vec2(0.0, rect.height() * 0.4));
+        assert!(h.state().selected.is_empty(), "the plate below it is not the box");
+    }
+
     #[test]
     fn typing_a_position_or_a_size_moves_or_scales_the_object_to_it() {
         let mut h = window();

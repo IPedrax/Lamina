@@ -2149,7 +2149,7 @@ msgstr ""
 msgid "{} connected"
 msgstr ""
 
-#: apps/lamina/src/view3d.rs:450
+#: apps/lamina/src/view3d.rs:449
 msgid "{} deg about {}"
 msgstr ""
 
