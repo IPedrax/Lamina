@@ -388,9 +388,58 @@ what is wrong before adding features.
 
 ## 2. Meshes
 
+**2.5 Booleans of earlier results (P1).** `chain_score` passes 73 of 120 chains of 4 to 6 booleans; what fails is refused, never
+wrong. How: after the repair, and before `sound`, clean what the repair leaves: merge each run of coplanar triangles (a fan, the
+slivers along a cut) into its outline and triangulate it again with `i_triangle`, so a flat face is one plane with no needles; drop
+the zero-area triangles that remain and weld their corners. Keep a result's flat faces flat by snapping the corners of each merged
+region onto its plane. The `sound` gate stays as it is: a result it refuses is still refused. Measure with `chain_score` before and
+after, and keep a test that a chain which passed still passes with the same volume.
+
 ## 3. Modelling
 
 ## 4. Slicer
+
+**4.18 The skirt round the convex hull (P1).** The skirt is an outline of the first layer, so it goes into every notch and round
+each object apart. How: `geom::hull` (Andrew's monotone chain over the points of the first layer's outline, the brim's or the
+raft's, and the purge tower's square), and each skirt loop an offset of that hull by `skirt_distance` and a line per loop, one
+closed loop each, as PrusaSlicer and Cura document their skirt. Test: an L and two objects apart each get one convex loop per
+`skirt_loops`; the golden two-object case's skirt becomes one loop.
+
+**4.19 Supports planned across the plate (P1).** Each object's supports are planned alone, so one may stand inside another object.
+How: slice every object first; on each layer the other objects' regions (the plate's layers are shared) join the object's own as
+what support may not enter: an overhang carried down stops on them, the xy gap keeps clear of them, `from_plate` drops a column
+that meets one, and a tree's branches go round them. Objects printed one at a time stand apart and are left as they are. Test: a T
+whose arm overhangs a lower box has no support inside the box, and its support stands on the box's top or, from the plate only,
+is left out there.
+
+**4.20 A tree's interface only where its tips hold it (P1).** A tree keeps the columns' interface, which covers the whole overhang,
+and with `from_plate` a branch dropped for not reaching the plate leaves its corner of the interface over air. How: after the walk,
+each interface layer keeps only what lies within a tip's reach (`tree_tip_spacing` times 0.71, the cell a tip stands for) of a tip
+that was kept, or of one that rests on the model; the sparse part follows. Test: under a ledge over a lower step, with `from_plate`,
+no interface is left where the step's tips were dropped, and every interface point is near a kept tip.
+
+**4.21 The purge tower and one-at-a-time printing by outlines (P2).** The tower is refused over an object's bounding box, and one at
+a time takes each object as its box, so both refuse arrangements that would print. How: the tower against the union of each
+object's layers up to the tower's last layer (an overhang above the first layer can still reach over the tower), refused only
+where they overlap; one at a time with the distance between the objects' convex hulls (`geom::hull` of each mesh's points seen from
+above) against `clearance_radius`. Test: an L whose notch holds the tower slices, and two Ls nested closer than their boxes allow
+but farther than the clearance print one at a time.
+
+**4.22 The wait for a tool to heat in the time estimate (P2).** A tool change waits (`M109`, `M116`) for the new tool to come up
+from its standby temperature, which the estimate leaves out. How: a printer setting `heating_rate` (degrees per second, 2 by
+default, about what a 40 W heater does near printing temperature); each change adds the rise from where the tool was left (its
+standby, or off) to its temperature over the rate, as time the planner waits with the head at rest. Test: two extruders with a
+standby 30 degrees below add 15 s a change at the default rate.
+
+**4.23 Walls of varying width (P2).** A thin feature gets walls of a fixed width and a gap-fill line, so a 0.6 mm fin prints as one
+line of a third more plastic and a 1 mm wall as two walls and a sliver. How, in the spirit of what PrusaSlicer and Cura document
+for Arachne (written from the documentation and the geometry, never their code): `wall_generator`, `"classic"` (today's, the
+default) or `"variable"`. With `"variable"`, where a region is narrower than its walls need, its medial axis (from a fine sampling
+of the outline: each sample's inward normal walked to the nearest point of the opposite side) gives a centre line and a width at
+each point; the walls take the number of lines that width holds, from one to `perimeters`, each as wide as the width divided by
+the count (within 0.5 and 1.5 line widths), and the flow follows the width along the line. Thicker regions keep their classic
+walls. Test: a wedge from 0.3 to 2 mm prints one line widening, then two, with the plastic of the wedge's area within 10 %; a
+0.6 mm fin one line at 0.6 mm; the golden files unchanged with `"classic"`.
 
 ## 5. Profiles and settings
 
