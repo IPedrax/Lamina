@@ -145,7 +145,7 @@ impl App {
     }
 
     pub(crate) fn printer_ui(&mut self, ui: &mut Ui) {
-        egui::CollapsingHeader::new(t("Printer connection")).show(ui, |ui| {
+        crate::lang::section("Printer connection").show(ui, |ui| {
             let p = &mut self.link;
             egui::Grid::new("printer").num_columns(2).show(ui, |ui| {
                 ui.label(t("Server"));

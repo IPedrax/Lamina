@@ -36,7 +36,9 @@ An unknown language, a missing message, an empty translation or one marked `#, f
 
 Use `t("English")` for a label, `tf("Value {}", &[value])` to fill placeholders in order, and `tc("context", "English")` for a word
 that needs a `msgctxt` to tell two meanings apart. A setting's row, `field(ui, "Label, mm", "name", ...)`, translates its label
-itself. A label chosen through a table, an enum or a condition is marked where its English is written:
+itself, and so does a collapsing section, `section("Speeds")`, whose id is its English: egui keys a section by its title, so
+one made with `CollapsingHeader::new(t(...))` would close when the language changes. A label chosen through a table, an enum or a
+condition is marked where its English is written:
 
 ```rust
 use lamina_i18n::ui_msg;

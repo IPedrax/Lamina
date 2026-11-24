@@ -1078,7 +1078,7 @@ impl App {
                 self.run("scale", json!({ "id": id, "factor": self.factor }));
             }
         });
-        egui::CollapsingHeader::new(t("Cut into pieces")).show(ui, |ui| self.cut_ui(ui, id));
+        crate::lang::section("Cut into pieces").show(ui, |ui| self.cut_ui(ui, id));
         // A heavy mesh (a scan, say) can be given fewer triangles; on a thread, as it can take seconds.
         let triangles = self.session.scene.get(id).map_or(0, |o| o.mesh.triangles.len());
         if triangles > 1000 {
@@ -1272,7 +1272,7 @@ impl App {
         let Ok(o) = self.session.scene.get(id) else { return };
         let mine = o.settings.as_deref().and_then(Value::as_object).cloned().unwrap_or_default();
         let mut changed = None;
-        egui::CollapsingHeader::new(t("This object's settings")).show(ui, |ui| {
+        crate::lang::section("This object's settings").show(ui, |ui| {
             let mut infill = mine.get("infill_density").and_then(Value::as_f64);
             let mut walls = mine.get("perimeters").and_then(Value::as_u64).map(|w| w as u32);
             let mut own_infill = infill.is_some();
@@ -1345,7 +1345,7 @@ impl App {
     }
 
     fn print_settings(&mut self, ui: &mut Ui) {
-        egui::CollapsingHeader::new(t("Print settings")).default_open(true).show(ui, |ui| {
+        crate::lang::section("Print settings").default_open(true).show(ui, |ui| {
             let p = &mut self.profile;
             let max_layer = p.nozzle * 0.8;
             egui::Grid::new("settings").num_columns(2).show(ui, |ui| {
@@ -1510,10 +1510,11 @@ impl App {
     /// Every other setting, in groups, each number's limits on hover; and the start and end G-code with their placeholders.
     fn more_settings(&mut self, ui: &mut Ui) {
         let p = &mut self.profile;
+        // `title` is English (marked with `ui_msg!`): the section's id and its grid's, whatever the language shown.
         let group = |ui: &mut Ui, title: &str, body: &mut dyn FnMut(&mut Ui)| {
-            egui::CollapsingHeader::new(title).show(ui, |ui| egui::Grid::new(title).num_columns(2).show(ui, |ui| body(ui)));
+            crate::lang::section(title).show(ui, |ui| egui::Grid::new(title).num_columns(2).show(ui, |ui| body(ui)));
         };
-        group(ui, t("Speeds"), &mut |ui| {
+        group(ui, ui_msg!("Speeds"), &mut |ui| {
             field(ui, "Walls, mm/s", "perimeter_speed", &mut p.perimeter_speed, 1.0);
             field(ui, "Infill, mm/s", "infill_speed", &mut p.infill_speed, 1.0);
             field(ui, "First layer, mm/s", "first_layer_speed", &mut p.first_layer_speed, 1.0);
@@ -1521,7 +1522,7 @@ impl App {
             field(ui, "Bridges, mm/s", "bridge_speed", &mut p.bridge_speed, 1.0);
             field(ui, "Slowest when cooling, mm/s", "min_print_speed", &mut p.min_print_speed, 1.0);
         });
-        group(ui, t("Retraction and travel"), &mut |ui| {
+        group(ui, ui_msg!("Retraction and travel"), &mut |ui| {
             field(ui, "Retract, mm", "retract_length", &mut p.retract_length, 0.1);
             field(ui, "Retract speed, mm/s", "retract_speed", &mut p.retract_speed, 1.0);
             field(ui, "Not under, mm of travel", "retract_min_travel", &mut p.retract_min_travel, 0.1);
@@ -1532,18 +1533,18 @@ impl App {
             ui.checkbox(&mut p.firmware_retraction, t("Firmware retraction (G10, G11)")).on_hover_text(hint("firmware_retraction"));
             ui.end_row();
         });
-        group(ui, t("Skirt"), &mut |ui| {
+        group(ui, ui_msg!("Skirt"), &mut |ui| {
             field(ui, "Loops", "skirt_loops", &mut p.skirt_loops, 0.1);
             field(ui, "Distance, mm", "skirt_distance", &mut p.skirt_distance, 0.5);
         });
-        group(ui, t("Cooling"), &mut |ui| {
+        group(ui, ui_msg!("Cooling"), &mut |ui| {
             field(ui, "Fan, 0 to 255", "fan_speed", &mut p.fan_speed, 1.0);
             field(ui, "Full fan from layer", "fan_full_layer", &mut p.fan_full_layer, 0.1);
             field(ui, "Shortest layer, s", "min_layer_time", &mut p.min_layer_time, 0.5);
             field(ui, "Fan on bridges", "bridge_fan", &mut p.bridge_fan, 1.0);
             field(ui, "Bridge flow", "bridge_flow", &mut p.bridge_flow, 0.01);
         });
-        group(ui, t("Surface"), &mut |ui| {
+        group(ui, ui_msg!("Surface"), &mut |ui| {
             ui.checkbox(&mut p.ironing, t("Iron the top surfaces")).on_hover_text(hint("ironing"));
             ui.end_row();
             field(ui, "Ironing flow", "ironing_flow", &mut p.ironing_flow, 0.01);
@@ -1554,7 +1555,7 @@ impl App {
             field(ui, "Fuzzy thickness, mm", "fuzzy_thickness", &mut p.fuzzy_thickness, 0.01);
             field(ui, "Fuzzy spacing, mm", "fuzzy_spacing", &mut p.fuzzy_spacing, 0.05);
         });
-        group(ui, t("Support details"), &mut |ui| {
+        group(ui, ui_msg!("Support details"), &mut |ui| {
             field(ui, "Density", "support_density", &mut p.support_density, 0.01);
             field(ui, "Gap above, mm", "support_z_gap", &mut p.support_z_gap, 0.05);
             field(ui, "Gap beside, mm", "support_xy_gap", &mut p.support_xy_gap, 0.05);
@@ -1563,7 +1564,7 @@ impl App {
             field(ui, "Tree branch lean, deg", "tree_branch_angle", &mut p.tree_branch_angle, 1.0);
             field(ui, "Tree trunk radius, mm", "tree_max_radius", &mut p.tree_max_radius, 0.1);
         });
-        group(ui, t("Extruders"), &mut |ui| {
+        group(ui, ui_msg!("Extruders"), &mut |ui| {
             field(ui, "How many", "extruders", &mut p.extruders, 0.05);
             // Fewer extruders: what named the ones gone goes with them, so the settings stay valid.
             p.extruder = p.extruder.min(p.extruders);
@@ -1583,13 +1584,13 @@ impl App {
             field(ui, "Tower size, mm", "tower_size", &mut p.tower_size, 0.5);
             field(ui, "Purge, mm3", "purge_volume", &mut p.purge_volume, 1.0);
         });
-        group(ui, t("One at a time"), &mut |ui| {
+        group(ui, ui_msg!("One at a time"), &mut |ui| {
             ui.checkbox(&mut p.sequential, t("Print each object whole, one after another")).on_hover_text(hint("sequential"));
             ui.end_row();
             field(ui, "Head clearance radius, mm", "clearance_radius", &mut p.clearance_radius, 1.0);
             field(ui, "Gantry height, mm", "gantry_height", &mut p.gantry_height, 1.0);
         });
-        group(ui, t("Machine"), &mut |ui| {
+        group(ui, ui_msg!("Machine"), &mut |ui| {
             field(ui, "Nozzle, mm", "nozzle", &mut p.nozzle, 0.05);
             field(ui, "Filament, mm", "filament_diameter", &mut p.filament_diameter, 0.05);
             field(ui, "Height, mm", "max_height", &mut p.max_height, 1.0);
@@ -1625,7 +1626,7 @@ impl App {
             field(ui, "Arc tolerance, mm", "arc_tolerance", &mut p.arc_tolerance, 0.005);
             ui.end_row();
         });
-        egui::CollapsingHeader::new(t("Start and end G-code")).show(ui, |ui| {
+        crate::lang::section("Start and end G-code").show(ui, |ui| {
             let names = lamina_slicer::profile::PLACEHOLDERS.iter().map(|n| format!("[{n}]")).collect::<Vec<_>>().join(" ");
             ui.label(RichText::new(tf("Placeholders: {}", &[&names])).small());
             ui.label(
@@ -2391,6 +2392,40 @@ mod tests {
         assert!(h.query_by_label("Fatiar").is_none());
         let again = App::with_settings(session(), Arc::new(lamina_assistant::testing::Fake::default()), path);
         assert_eq!(again.lang, lang::Lang::English, "kept for the next start");
+    }
+
+    #[test]
+    fn open_sections_stay_open_and_closed_ones_closed_when_the_language_changes() {
+        // Tall, so the plate panel needs no scrolling to the headers clicked.
+        let app = App::new(session(), Arc::new(lamina_assistant::testing::Fake::default()));
+        let mut h = Harness::builder().with_size([1400.0, 2400.0]).build_ui_state(|ui, app: &mut App| app.show(ui), app);
+        h.run();
+        press(&mut h, "Add box");
+        press(&mut h, "Speeds");
+        press(&mut h, "Cut into pieces");
+        h.get_by_label("Walls, mm/s");
+        h.get_by_label("Connectors");
+        assert!(h.query_by_label("Retract, mm").is_none(), "a section not opened is closed");
+        for (language, open, closed) in [
+            (lang::Lang::Portuguese, ["Paredes, mm/s", "Conectores"], "Retração, mm"),
+            (lang::Lang::Spanish, ["Paredes, mm/s", "Conectores"], "Retracción, mm"),
+            (lang::Lang::English, ["Walls, mm/s", "Connectors"], "Retract, mm"),
+        ] {
+            h.state_mut().lang = language;
+            h.run();
+            for label in open {
+                h.get_by_label(label);
+            }
+            assert!(h.query_by_label(closed).is_none(), "{language:?}: {closed} stays closed");
+        }
+        // Closed in Spanish, closed in English: the state is one, whatever the title says.
+        h.state_mut().lang = lang::Lang::Spanish;
+        h.run();
+        press(&mut h, "Velocidades");
+        assert!(h.query_by_label("Paredes, mm/s").is_none(), "closed in Spanish");
+        h.state_mut().lang = lang::Lang::English;
+        h.run();
+        assert!(h.query_by_label("Walls, mm/s").is_none());
     }
 
     #[test]

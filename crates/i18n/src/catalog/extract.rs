@@ -1,5 +1,5 @@
 //! Extract syntax, not text matches: English literals passed to the window's translation functions (`t`, `tf`, `tc`) and to its
-//! `field` helper, and `ui_msg!` markers for labels chosen indirectly. The window's own sources give both; the other crates give
+//! `field` and `section` helpers, and `ui_msg!` markers for labels chosen indirectly. The window's own sources give both; the other crates give
 //! their markers only. Test modules are excluded. Lifted from BIMCraft's `crates/i18n` (same author, MIT OR Apache-2.0).
 
 use super::{Document, Entries, Entry};
@@ -50,7 +50,8 @@ impl Extractor<'_> {
             return;
         }
         let indices: &[usize] = match name {
-            "t" | "tf" => &[0],
+            // `section(title)`: a collapsing section, its title translated and its id the English.
+            "t" | "tf" | "section" => &[0],
             // `field(ui, label, name, value, speed)`: a setting's row, which translates its label.
             "field" => &[1],
             _ => &[],
@@ -196,6 +197,7 @@ mod tests {
             fn window() {
                 t("Direct"); tf("Value {}", &["user data"]);
                 field(ui, "Walls, mm/s", "perimeter_speed", &mut p.perimeter_speed, 1.0);
+                section("Speeds").show(ui, |ui| {});
                 let labels = [ui_msg!("Dynamic"), ui_msg!("verb", "Open")];
                 let nested = vec![ui_msg!("Nested"), t("In macro")];
                 tc("adjective", "Open");
@@ -208,6 +210,7 @@ mod tests {
             ("", "Direct"),
             ("", "Value {}"),
             ("", "Walls, mm/s"),
+            ("", "Speeds"),
             ("", "Dynamic"),
             ("verb", "Open"),
             ("adjective", "Open"),
