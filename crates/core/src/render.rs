@@ -22,6 +22,8 @@ pub const MODEL: Rgba = [110, 165, 225, 255];
 /// A support enforcer and a support blocker: green and red, so a modifier is never taken for a part.
 pub const ENFORCER: Rgba = [110, 200, 120, 255];
 pub const BLOCKER: Rgba = [215, 105, 100, 255];
+/// A modifier with settings of its own: yellow.
+pub const SETTINGS: Rgba = [220, 195, 90, 255];
 
 /// The colour an object is drawn in: picked, a modifier, or a part.
 pub fn colour_of(o: &crate::Object, selected: &[u32]) -> Rgba {
@@ -29,10 +31,22 @@ pub fn colour_of(o: &crate::Object, selected: &[u32]) -> Rgba {
         (true, _) => SELECTED,
         (false, Some(crate::Modifier::SupportEnforcer)) => ENFORCER,
         (false, Some(crate::Modifier::SupportBlocker)) => BLOCKER,
+        (false, Some(crate::Modifier::Settings)) => SETTINGS,
         (false, None) => MODEL,
     }
 }
 pub const SELECTED: Rgba = [245, 165, 60, 255];
+/// Paint on a face (`crate::Paint`): seam violet, support green, block red, drawn over the object's own colour. The graphics card's
+/// shader (`apps/lamina/src/gpu.wgsl`) holds the same three.
+pub const PAINT: [Rgba; 3] = [[175, 95, 235, 255], [70, 190, 90, 255], [225, 70, 70, 255]];
+
+/// The colour face `i` of `o` is drawn in: its paint's, or `base`.
+pub fn face_colour(o: &crate::Object, i: usize, base: Rgba) -> Rgba {
+    match o.paint.as_deref().and_then(|tags| tags.get(i)) {
+        Some(&tag @ 1..=3) => PAINT[tag as usize - 1],
+        _ => base,
+    }
+}
 /// The plane given to what is not a part's face (the plate): level, through the origin.
 const FLAT: [f32; 4] = [0.0, 0.0, 1.0, 0.0];
 /// How much an edge darkens the pixel it is drawn on: where a part's faces meet at a crease or a step, and round each part.
@@ -43,32 +57,51 @@ pub const CREASE: f64 = 35.0;
 pub const STEP: f32 = 0.05;
 
 /// An orbit camera round `target`: `azimuth` degrees counter-clockwise from east, `elevation` degrees up, `distance` mm away.
+/// Orthographic (`ortho`) when asked: parallel rays, the target as large as from `distance` in perspective, and the eye far back.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Camera {
     pub target: P3,
     pub azimuth: f64,
     pub elevation: f64,
     pub distance: f64,
+    pub ortho: bool,
 }
 
 impl Default for Camera {
     fn default() -> Camera {
-        Camera { target: [0.0, 0.0, 10.0], azimuth: -60.0, elevation: 30.0, distance: 380.0 }
+        Camera { target: [0.0, 0.0, 10.0], azimuth: -60.0, elevation: 30.0, distance: 380.0, ortho: false }
     }
 }
+
+/// How far behind the target an orthographic camera's eye stands, mm, so nothing on the plate is behind it whatever the zoom.
+pub const ORTHO_EYE: f64 = 8000.0;
+/// The furthest an orthographic camera sees, mm from the eye. Its depth is `1 - z / ORTHO_FAR`, which runs straight across a face
+/// as its picture does, so it interpolates exactly; a perspective camera's is `NEAR / z`, which does so in perspective.
+pub const ORTHO_FAR: f64 = 20_000.0;
 
 impl Camera {
     /// The eye, and the view's right, up and forward axes.
     pub fn frame(&self) -> (P3, P3, P3, P3) {
         let (az, el) = (self.azimuth.to_radians(), self.elevation.to_radians());
         let back = [el.cos() * az.cos(), el.cos() * az.sin(), el.sin()];
-        let eye = add(self.target, scale(back, self.distance));
+        let eye = add(self.target, scale(back, if self.ortho { ORTHO_EYE } else { self.distance }));
         let forward = scale(back, -1.0);
         let right = normalize(cross(forward, [0.0, 0.0, 1.0]));
         (eye, right, cross(right, forward), forward)
     }
 
-    /// Where `p` lands in a picture `w` by `h` pixels: x, y, and one over its depth (larger is nearer); none behind the eye.
+    /// Pixels a millimetre at the target in orthographic, in a picture `h` pixels high.
+    fn ortho_scale(&self, h: f64) -> f64 {
+        (h / 2.0) / (self.distance * (FOV.to_radians() / 2.0).tan()).max(1e-9)
+    }
+
+    /// How many pixels a millimetre across the view takes at the depth `inv` ([`Camera::project`]'s third), in a picture `h` high.
+    pub fn pixels_per_mm(&self, inv: f64, h: f64) -> f64 {
+        if self.ortho { self.ortho_scale(h) } else { (h / 2.0) / (FOV.to_radians() / 2.0).tan() * inv }
+    }
+
+    /// Where `p` lands in a picture `w` by `h` pixels: x, y, and its depth (larger is nearer: one over the distance ahead, or in
+    /// orthographic `1 - z / ORTHO_FAR`); none behind the eye.
     pub fn project(&self, p: P3, w: f64, h: f64) -> Option<[f64; 3]> {
         let (eye, right, up, forward) = self.frame();
         let d = sub(p, eye);
@@ -76,13 +109,22 @@ impl Camera {
         if z < NEAR {
             return None;
         }
+        if self.ortho {
+            let k = self.ortho_scale(h);
+            return (z < ORTHO_FAR).then(|| [w / 2.0 + k * dot(d, right), h / 2.0 - k * dot(d, up), 1.0 - z / ORTHO_FAR]);
+        }
         let f = (h / 2.0) / (FOV.to_radians() / 2.0).tan();
         Some([w / 2.0 + f * dot(d, right) / z, h / 2.0 - f * dot(d, up) / z, 1.0 / z])
     }
 
-    /// The ray from the eye through the point (`px`, `py`) of a picture `w` by `h`: the eye and a unit direction.
+    /// The ray through the point (`px`, `py`) of a picture `w` by `h`: where it starts (the eye, or in orthographic the point
+    /// level with it under the pixel) and a unit direction.
     pub fn ray(&self, px: f64, py: f64, w: f64, h: f64) -> (P3, P3) {
         let (eye, right, up, forward) = self.frame();
+        if self.ortho {
+            let k = self.ortho_scale(h);
+            return (add(eye, add(scale(right, (px - w / 2.0) / k), scale(up, (h / 2.0 - py) / k))), forward);
+        }
         let f = (h / 2.0) / (FOV.to_radians() / 2.0).tan();
         (eye, normalize(add(forward, add(scale(right, (px - w / 2.0) / f), scale(up, (h / 2.0 - py) / f)))))
     }
@@ -109,9 +151,10 @@ impl Camera {
         if inv <= 0.0 {
             return None;
         }
-        let (eye, dir) = self.ray(x as f64 + 0.5, y as f64 + 0.5, size[0] as f64, size[1] as f64);
-        let t = (1.0 / inv) / dot(dir, self.frame().3);
-        Some(add(eye, scale(dir, t)))
+        let (from, dir) = self.ray(x as f64 + 0.5, y as f64 + 0.5, size[0] as f64, size[1] as f64);
+        let ahead = if self.ortho { (1.0 - inv) * ORTHO_FAR } else { 1.0 / inv };
+        let t = ahead / dot(dir, self.frame().3);
+        Some(add(from, scale(dir, t)))
     }
 
     /// Looks at `bounds` from where the camera looks now, from far enough to see all of them.
@@ -179,7 +222,7 @@ pub fn draw(scene: &Scene, selected: &[u32], camera: &Camera, bed: [f64; 2], siz
         for i in 0..world.triangles.len() {
             if let Some(t) = world.tri(i) {
                 r.tri = i as u32;
-                r.shaded(camera, t, base, o.id);
+                r.shaded(camera, t, face_colour(o, i, base), o.id);
             }
         }
     }
@@ -296,12 +339,11 @@ impl Raster {
         if !path.width.is_finite() || path.width <= 0.0 {
             return;
         }
-        let f = (h / 2.0) / (FOV.to_radians() / 2.0).tan();
         let steps = (b[0] - a[0]).abs().max((b[1] - a[1]).abs()).ceil().clamp(1.0, 20_000.0) as usize;
         for s in 0..=steps {
             let t = s as f64 / steps as f64;
             let (x, y, inv) = (a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]), a[2] + t * (b[2] - a[2]));
-            let r = (path.width / 2.0 * f * inv).clamp(0.5, 12.0);
+            let r = (path.width / 2.0 * camera.pixels_per_mm(inv, h)).clamp(0.5, 12.0);
             let (x0, x1) = ((x - r).floor().max(0.0), (x + r).ceil().min(w - 1.0));
             let (y0, y1) = ((y - r).floor().max(0.0), (y + r).ceil().min(h - 1.0));
             if x1 < x0 || y1 < y0 {
@@ -544,13 +586,56 @@ mod tests {
     /// A part whose faces all face up (a plinth with a block standing on it, as one object) shows its step as an edge: the detail of a
     /// pocket or of raised lettering. The diagonal splitting a flat face into triangles, and a curved surface's facets, show none.
     #[test]
+    fn an_orthographic_camera_keeps_sizes_and_its_rays_parallel_and_finds_the_point_it_draws() {
+        let camera = Camera { target: [5.0, -3.0, 10.0], azimuth: -50.0, elevation: 25.0, distance: 200.0, ortho: true };
+        let (w, h) = (640.0, 360.0);
+        let (_, _, _, forward) = camera.frame();
+        // Two points one behind the other land on the same pixel, the nearer deeper (a larger depth value).
+        let a = camera.project([0.0, 0.0, 0.0], w, h).unwrap();
+        let b = camera.project(add([0.0, 0.0, 0.0], scale(forward, 300.0)), w, h).unwrap();
+        assert!((a[0] - b[0]).abs() < 1e-9 && (a[1] - b[1]).abs() < 1e-9 && a[2] > b[2]);
+        // A millimetre across is as many pixels near as far, as many as at the target in perspective from `distance`.
+        let (_, right, _, _) = camera.frame();
+        let across = |p: P3| camera.project(add(p, right), w, h).unwrap()[0] - camera.project(p, w, h).unwrap()[0];
+        assert!((across([0.0; 3]) - across(scale(forward, 500.0))).abs() < 1e-9);
+        let seen = Camera { ortho: false, ..camera };
+        let at_target = seen.project(add(camera.target, right), w, h).unwrap()[0] - seen.project(camera.target, w, h).unwrap()[0];
+        assert!((across(camera.target) - at_target).abs() < 1e-6, "{} against {at_target}", across(camera.target));
+        // Each pixel's ray runs along the view, and a depth found there gives the point back.
+        for p in [[0.0, 0.0, 0.0], [40.0, -30.0, 20.0], [-60.0, 50.0, 3.0]] {
+            let q = camera.project(p, w, h).unwrap();
+            let (from, dir) = camera.ray(q[0], q[1], w, h);
+            assert!((0..3).all(|k| (dir[k] - forward[k]).abs() < 1e-12));
+            let along = dot(sub(p, from), dir);
+            let off = sub(p, add(from, scale(dir, along)));
+            assert!(dot(off, off).sqrt() < 1e-6, "{p:?} is on its pixel's ray");
+            let x = q[0] - 0.5;
+            let y = q[1] - 0.5;
+            let back = camera.at_depth(x.round() as usize, y.round() as usize, [w as usize, h as usize], q[2] as f32).unwrap();
+            assert!(dot(sub(back, p), sub(back, p)).sqrt() < 1.0, "{p:?} back as {back:?}");
+        }
+        // Drawn: a box fills the same pixels whichever way round it is, and a click on it finds a point on its surface.
+        let mut scene = Scene::default();
+        scene.add("box", crate::Mesh::cuboid([20.0, 20.0, 20.0])).unwrap();
+        let pic = draw(&scene, &[], &camera, [220.0, 220.0], [w as usize, h as usize]);
+        let middle = camera.project([0.0, 0.0, 10.0], w, h).unwrap();
+        let (x, y) = (middle[0] as usize, middle[1] as usize);
+        assert_eq!(pic.id_at(x, y), Some(1));
+        let hit = pic.point_at(&camera, x, y).unwrap();
+        let inside = |c: f64, lo: f64, hi: f64| c > lo - 0.05 && c < hi + 0.05;
+        assert!(inside(hit[0], -10.0, 10.0) && inside(hit[1], -10.0, 10.0) && inside(hit[2], 0.0, 20.0), "{hit:?}");
+        let on_face = [hit[0].abs() - 10.0, hit[1].abs() - 10.0, (hit[2] - 10.0).abs() - 10.0].iter().any(|d| d.abs() < 0.05);
+        assert!(on_face, "on a face of the box: {hit:?}");
+    }
+
+    #[test]
     fn edges_show_steps_and_creases_but_not_a_face_s_own_triangles() {
         let plinth = Mesh::cuboid([60.0, 60.0, 10.0]);
         let block = Mesh::cuboid([20.0, 20.0, 4.0]).transformed(&crate::Transform::translate([0.0, 0.0, 10.0]));
         let mut scene = Scene::default();
         let id = scene.add("stepped", Mesh::merged([&plinth, &block])).unwrap();
         scene.get_mut(id).unwrap().xf = crate::Transform::IDENTITY;
-        let camera = Camera { target: [0.0, 0.0, 10.0], azimuth: -90.0, elevation: 89.0, distance: 200.0 };
+        let camera = Camera { target: [0.0, 0.0, 10.0], azimuth: -90.0, elevation: 89.0, distance: 200.0, ortho: false };
         let p = draw(&scene, &[], &camera, [220.0, 220.0], [300, 300]);
         let at = |x: f64, y: f64, z: f64| {
             let q = camera.project([x, y, z], 300.0, 300.0).unwrap();
@@ -587,7 +672,7 @@ mod tests {
 
     #[test]
     fn printed_lines_are_drawn_as_wide_as_they_print_and_the_nearer_one_in_front() {
-        let camera = Camera { target: [0.0, 0.0, 0.0], azimuth: -90.0, elevation: 89.0, distance: 100.0 };
+        let camera = Camera { target: [0.0, 0.0, 0.0], azimuth: -90.0, elevation: 89.0, distance: 100.0, ortho: false };
         let red = [220, 40, 40, 255];
         let blue = [40, 40, 220, 255];
         // From above: a red line along x at z 0.2, and a blue one crossing it a layer higher.
@@ -617,7 +702,7 @@ mod tests {
     #[test]
     fn the_plate_seen_from_close_by_is_drawn_up_to_the_eye() {
         // Low over the plate, near its middle: most of its corners are behind the eye, yet all the picture's lower half is plate.
-        let camera = Camera { target: [0.0, 0.0, 0.0], azimuth: -90.0, elevation: 10.0, distance: 30.0 };
+        let camera = Camera { target: [0.0, 0.0, 0.0], azimuth: -90.0, elevation: 10.0, distance: 30.0, ortho: false };
         let p = draw(&Scene::default(), &[], &camera, [220.0, 220.0], [100, 100]);
         let bottom = &p.pixels[90 * 100..91 * 100];
         assert!(bottom.iter().all(|&c| c == PLATE || c == GRID), "{:?}", &bottom[..4]);

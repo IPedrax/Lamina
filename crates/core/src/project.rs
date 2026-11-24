@@ -44,6 +44,9 @@ pub fn write(scene: &Scene, print: &Value) -> String {
     if !print.is_null() {
         v["print"] = print.clone();
     }
+    if let Some(h) = &scene.layer_heights {
+        v["layer_heights"] = json!(**h);
+    }
     serde_json::to_string_pretty(&v).unwrap_or_default()
 }
 
@@ -59,6 +62,12 @@ fn object_json(o: &Object) -> Value {
     });
     if let Some(r) = &o.recipe {
         v["recipe"] = (**r).clone();
+    }
+    if let Some(p) = &o.paint {
+        v["paint"] = Value::from(crate::base64::encode(p));
+    }
+    if let Some(r) = &o.ranges {
+        v["ranges"] = (**r).clone();
     }
     if let Some(m) = o.modifier {
         v["modifier"] = serde_json::to_value(m).unwrap_or(Value::Null);
@@ -84,7 +93,7 @@ pub fn read(text: &str) -> Result<Loaded, String> {
     }
     let mut ignored = Vec::new();
     for key in top.keys() {
-        if !matches!(key.as_str(), "format" | "generator" | "objects" | "print") {
+        if !matches!(key.as_str(), "format" | "generator" | "objects" | "print" | "layer_heights") {
             ignored.push(key.clone());
         }
     }
@@ -109,14 +118,24 @@ pub fn read(text: &str) -> Result<Loaded, String> {
             Value::Null
         }
     };
-    let scene = Scene::restore(objects)?;
+    let mut scene = Scene::restore(objects)?;
+    // A layer height curve that does not check out is left out, as an unknown key is.
+    if let Some(h) = top.get("layer_heights") {
+        match serde_json::from_value::<Vec<[f64; 2]>>(h.clone()).ok().filter(|p| crate::scene::check_heights(p).is_ok()) {
+            Some(points) => scene.layer_heights = Some(Arc::new(points)),
+            None => ignored.push("layer_heights".into()),
+        }
+    }
     scene.check()?;
     Ok(Loaded { scene, print, ignored })
 }
 
 fn read_object(k: usize, o: &Map<String, Value>, ignored: &mut Vec<String>) -> Result<Object, String> {
     for key in o.keys() {
-        if !matches!(key.as_str(), "id" | "name" | "transform" | "vertices" | "triangles" | "recipe" | "settings" | "modifier") {
+        if !matches!(
+            key.as_str(),
+            "id" | "name" | "transform" | "vertices" | "triangles" | "recipe" | "settings" | "modifier" | "ranges" | "paint"
+        ) {
             ignored.push(format!("objects[{k}].{key}"));
         }
     }
@@ -168,7 +187,25 @@ fn read_object(k: usize, o: &Map<String, Value>, ignored: &mut Vec<String>) -> R
             }
         },
     };
-    Ok(Object { id, name, mesh: Arc::new(mesh), xf, recipe, settings, modifier })
+    // Ranges are kept as they were written: the slicer checks each when it slices.
+    let ranges = match o.get("ranges") {
+        None | Some(Value::Null) => None,
+        Some(r @ Value::Array(_)) => Some(Arc::new(r.clone())),
+        Some(_) => {
+            ignored.push(format!("objects[{k}].ranges"));
+            None
+        }
+    };
+    // Paint is one tag a triangle: kept only when it has as many as the mesh has triangles.
+    let paint = match o.get("paint").and_then(Value::as_str).map(crate::base64::decode) {
+        None => None,
+        Some(Ok(tags)) if tags.len() == mesh.triangles.len() && tags.iter().all(|&t| t <= 3) => Some(Arc::new(tags)),
+        Some(_) => {
+            ignored.push(format!("objects[{k}].paint"));
+            None
+        }
+    };
+    Ok(Object { id, name, mesh: Arc::new(mesh), xf, recipe, settings, modifier, ranges, paint })
 }
 
 fn transform(v: &Value) -> Result<Transform, String> {

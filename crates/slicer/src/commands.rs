@@ -39,6 +39,19 @@ pub static COMMANDS: &[Command] = &[
         files: Files::None,
     },
     Command {
+        id: "layer_heights",
+        params: "{action, from?, to?, height?, radius?, min?, max?} sets the plate's layer heights by hand, which every object prints \
+                 on, in place of `layer_height` and adaptive layers. action \"set\": the layers from `from` to `to` mm up are `height` mm \
+                 thick (finer detail where the model curves, thicker where it is plain), the rest as they were. \"adaptive\": start from \
+                 adaptive layers for the plate's objects, from `min` (the project's `min_layer_height`) to `max` (its `layer_height`) mm. \
+                 \"smooth\": soften the steps, over `radius` mm (2). \"clear\": back to the profile's heights. The first layer stays \
+                 `first_layer_height`, and each height is kept to 0.8 of the nozzle. Returns {layer_heights ([z, height] points, or null), \
+                 layers (how many the tallest object has with the project's settings), thinnest, thickest}",
+        run: layer_heights,
+        undoable: true,
+        files: Files::None,
+    },
+    Command {
         id: "slicer_presets",
         params: "{} the built-in presets: {printers:[{name, about, fields}], filaments:[...], processes:[...]}. Pass a name as `printer`, \
                  `filament` or `process` to `slice` or `slice_check`; a printer sets the machine's fields, a filament its temperatures and fan, \
@@ -55,6 +68,20 @@ pub static COMMANDS: &[Command] = &[
         run: import_profile,
         undoable: false,
         files: Files::Read,
+    },
+    Command {
+        id: "set_height_range",
+        params: "{id, from, to (mm above the plate), profile} gives the object's layers whose middle is from `from` up to `to` settings of their own, laid over the object's: walls (perimeters, wall_generator), infill_density, infill_pattern, seam, perimeter_speed, infill_speed, ironing, fuzzy_skin, and nozzle_temp, fan_speed, pressure_advance, retract_length, retract_speed, flow_ratio, max_volumetric_speed (a temperature, pressure advance or retraction tower). Ranges may not overlap; the same from and to replaces a range, and `profile: {}` removes it. `inspect_scene` shows them (ranges). Returns {ranges}",
+        run: set_height_range,
+        undoable: true,
+        files: Files::None,
+    },
+    Command {
+        id: "calibration",
+        params: "{kind: \"temperature\" | \"retraction\" | \"pressure_advance\" | \"flow\", from?, to?, step?} puts a calibration part on the plate with its settings by height, as one undo step: a temperature tower (blocks 8 mm tall with a 45 degree overhang each, nozzle_temp from `from` at the bottom to `to`, default 230 to 190 by 5), two retraction towers (retract_length by 5 mm, default 0.4 to 2.0 by 0.4), a hollow square pressure advance tower (pressure_advance by 1 mm, default 0 to 0.1 by 0.005) or a row of flow blocks (flow_ratio, left to right, default 0.90 to 1.10 by 0.05). Returns {ids, steps: [{from, to, value}] (heights in mm, or for flow the blocks left to right), look (what to judge)}",
+        run: calibration,
+        undoable: true,
+        files: Files::None,
     },
     Command {
         id: "slicer_profile",
@@ -131,17 +158,78 @@ fn run(s: &Session, ids: Option<&[u32]>, settings: Settings) -> Result<print::Ou
         Some(ids) => ids.iter().map(|&id| s.scene.get(id)).collect::<Result<_, _>>()?,
         None => s.scene.objects.iter().collect(),
     };
-    let (parts, modifiers) = split(&chosen);
-    let objects: Vec<(u32, Mesh)> = parts.iter().map(|o| (o.id, o.world())).collect();
-    print::gcode_with(&objects, &own(&parts, &profile)?, &modifiers, &profile)
+    Job::of(&chosen, s.scene.layer_heights.as_deref().map(Vec::as_slice), &profile)?.gcode(&profile)
+}
+
+/// What the slicer needs from the plate, gathered from its objects and owned, so a thread can take it: the parts where they stand
+/// with their own settings, settings by height and paint, and the modifiers.
+#[derive(Clone, Default)]
+pub struct Job {
+    pub objects: Vec<(u32, Mesh)>,
+    pub own: Vec<Option<Profile>>,
+    pub ranges: print::RangeProfiles,
+    pub paint: Vec<Option<std::sync::Arc<Vec<u8>>>>,
+    pub modifiers: Vec<(lamina_core::Modifier, Mesh)>,
+    pub zones: Vec<print::Zone>,
+    pub heights: Vec<[f64; 2]>,
+}
+
+impl Job {
+    /// The job for these objects with the plate's layer heights by hand (`Scene::layer_heights`) and `profile` under each
+    /// object's own settings.
+    pub fn of(objects: &[&lamina_core::Object], heights: Option<&[[f64; 2]]>, profile: &Profile) -> Result<Job, String> {
+        let (parts, modifiers) = split(objects);
+        let own = own(&parts, profile)?;
+        Ok(Job {
+            objects: parts.iter().map(|o| (o.id, o.world())).collect(),
+            ranges: range_profiles(&parts, &own, profile)?,
+            paint: parts.iter().map(|o| o.paint.clone()).collect(),
+            own,
+            modifiers,
+            zones: zones(objects),
+            heights: heights.map(<[_]>::to_vec).unwrap_or_default(),
+        })
+    }
+
+    pub fn plate(&self) -> print::Plate<'_> {
+        print::Plate {
+            objects: &self.objects,
+            own: &self.own,
+            ranges: &self.ranges,
+            paint: &self.paint,
+            modifiers: &self.modifiers,
+            zones: &self.zones,
+            heights: &self.heights,
+        }
+    }
+
+    pub fn gcode(&self, profile: &Profile) -> Result<print::Output, String> {
+        print::gcode_plate(&self.plate(), profile)
+    }
 }
 
 /// The objects to print, and the modifiers (support enforcers and blockers) where they stand, which print nothing.
 pub fn split<'a>(objects: &[&'a lamina_core::Object]) -> (Vec<&'a lamina_core::Object>, Vec<(lamina_core::Modifier, Mesh)>) {
+    use lamina_core::Modifier;
     let parts = objects.iter().filter(|o| o.modifier.is_none()).copied().collect();
-    let modifiers = objects.iter().filter_map(|o| o.modifier.map(|m| (m, o.world()))).collect();
+    let modifiers = objects
+        .iter()
+        .filter_map(|o| o.modifier.filter(|m| matches!(m, Modifier::SupportEnforcer | Modifier::SupportBlocker)).map(|m| (m, o.world())))
+        .collect();
     (parts, modifiers)
 }
+
+/// The settings modifiers where they stand, with the fields each gives (none set: it changes nothing).
+pub fn zones(objects: &[&lamina_core::Object]) -> Vec<print::Zone> {
+    objects
+        .iter()
+        .filter(|o| o.modifier == Some(lamina_core::Modifier::Settings))
+        .map(|o| (o.id, o.world(), o.settings.as_deref().and_then(Value::as_object).cloned().unwrap_or_default()))
+        .collect()
+}
+
+/// What a settings modifier may change: the sparse infill of the parts inside it.
+pub const ZONE_FIELDS: &[&str] = &["infill_density", "infill_pattern", "infill_speed"];
 
 /// The fields an object may set for itself: what it is made of and how, never the machine, the filament or the layer heights.
 pub const PER_OBJECT_FIELDS: &[&str] = &[
@@ -169,6 +257,317 @@ pub const PER_OBJECT_FIELDS: &[&str] = &[
     "extruder",
 ];
 
+/// What a height range may set: what a layer's plan or the writer reads, never the layer heights, the supports (planned for the whole
+/// object) or the skins (counted across layers).
+pub const RANGE_FIELDS: &[&str] = &[
+    "perimeters",
+    "wall_generator",
+    "infill_density",
+    "infill_pattern",
+    "seam",
+    "perimeter_speed",
+    "infill_speed",
+    "ironing",
+    "fuzzy_skin",
+    "nozzle_temp",
+    "fan_speed",
+    "pressure_advance",
+    "retract_length",
+    "retract_speed",
+    "flow_ratio",
+    "max_volumetric_speed",
+];
+
+/// The most ranges one object may have.
+pub const MAX_RANGES: usize = 200;
+
+/// One height range as it is kept on an object.
+#[derive(Clone, Debug, Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Range {
+    pub from: f64,
+    pub to: f64,
+    pub profile: serde_json::Map<String, Value>,
+}
+
+/// An object's height ranges, checked: within limits, not overlapping, each field one a range may set. None for an object with none.
+pub fn ranges_of(o: &lamina_core::Object) -> Result<Vec<Range>, String> {
+    let Some(v) = o.ranges.as_deref() else { return Ok(Vec::new()) };
+    let ranges: Vec<Range> = serde_json::from_value(v.clone()).map_err(|e| format!("object {}'s height ranges: {e}", o.id))?;
+    check_ranges(&ranges).map_err(|e| format!("object {}'s height ranges: {e}", o.id))?;
+    Ok(ranges)
+}
+
+fn check_ranges(ranges: &[Range]) -> Result<(), String> {
+    if ranges.len() > MAX_RANGES {
+        return Err(format!("more than {MAX_RANGES} ranges"));
+    }
+    for r in ranges {
+        if !(r.from.is_finite() && r.to.is_finite() && r.from >= 0.0 && r.to > r.from && r.to <= 10_000.0) {
+            return Err(format!("a range from {} to {} mm: `to` must be above `from`, both from 0 to 10000", r.from, r.to));
+        }
+        if let Some(k) = r.profile.keys().find(|k| !RANGE_FIELDS.contains(&k.as_str())) {
+            return Err(format!("`{k}` cannot change by height; a range may set {}", RANGE_FIELDS.join(", ")));
+        }
+        presets::apply(&Profile { extruders: crate::profile::MAX_EXTRUDERS, ..Profile::default() }, &r.profile)?;
+    }
+    for (i, a) in ranges.iter().enumerate() {
+        if let Some(b) = ranges[i + 1..].iter().find(|b| a.from < b.to && b.from < a.to) {
+            return Err(format!("the range from {} to {} mm overlaps the one from {} to {} mm", a.from, a.to, b.from, b.to));
+        }
+    }
+    Ok(())
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SetRange {
+    id: u32,
+    from: f64,
+    to: f64,
+    profile: serde_json::Map<String, Value>,
+}
+
+fn set_height_range(s: &mut Session, p: &Value) -> Result<Value, String> {
+    let a = SetRange::deserialize(p).map_err(|e| format!("bad parameters: {e}"))?;
+    let o = s.scene.get(a.id)?;
+    let mut ranges = ranges_of(o)?;
+    ranges.retain(|r| !(r.from == a.from && r.to == a.to));
+    if !a.profile.is_empty() {
+        ranges.push(Range { from: a.from, to: a.to, profile: a.profile });
+    }
+    ranges.sort_by(|x, y| x.from.total_cmp(&y.from));
+    check_ranges(&ranges)?;
+    let value = serde_json::to_value(&ranges).map_err(|e| e.to_string())?;
+    let o = s.scene_mut().get_mut(a.id)?;
+    o.ranges = if ranges.is_empty() { None } else { Some(std::sync::Arc::new(value.clone())) };
+    Ok(json!({ "ranges": value }))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LayerHeights {
+    action: String,
+    from: Option<f64>,
+    to: Option<f64>,
+    height: Option<f64>,
+    radius: Option<f64>,
+    min: Option<f64>,
+    max: Option<f64>,
+}
+
+/// The project's print settings (what `open` read, or what the window shows), over the defaults.
+fn project_profile(s: &Session) -> Result<Profile, String> {
+    match s.print.get("profile") {
+        Some(v @ Value::Object(_)) => Profile::from_json(v),
+        _ => Ok(Profile::default()),
+    }
+}
+
+fn layer_heights(s: &mut Session, p: &Value) -> Result<Value, String> {
+    use lamina_core::scene::{LAYER_HEIGHTS, check_heights};
+    let a = LayerHeights::deserialize(p).map_err(|e| format!("bad parameters: {e}"))?;
+    let profile = project_profile(s)?;
+    let (lo, hi) = LAYER_HEIGHTS;
+    let number = |name: &str, v: Option<f64>, range: std::ops::RangeInclusive<f64>| -> Result<f64, String> {
+        let v = v.ok_or_else(|| format!("`{name}` is needed for \"{}\"", a.action))?;
+        if v.is_finite() && range.contains(&v) {
+            Ok(v)
+        } else {
+            Err(format!("`{name}` is from {} to {}, not {v}", range.start(), range.end()))
+        }
+    };
+    let parts: Vec<Mesh> = s.scene.objects.iter().filter(|o| o.modifier.is_none()).map(|o| o.world()).collect();
+    let top = parts.iter().filter_map(Mesh::bounds).map(|(_, hi)| hi[2]).fold(0.0, f64::max);
+    let now = s.scene.layer_heights.as_deref().cloned().unwrap_or_default();
+    // Each action takes its own fields and no others, so a field meant for another one is not quietly ignored.
+    let (band, radius, bounds) =
+        (a.from.is_some() || a.to.is_some() || a.height.is_some(), a.radius.is_some(), a.min.is_some() || a.max.is_some());
+    let (stray, takes) = match a.action.as_str() {
+        "set" => (radius || bounds, "`from`, `to` and `height`"),
+        "adaptive" => (band || radius, "`min` and `max`"),
+        "smooth" => (band || bounds, "`radius`"),
+        "clear" => (band || radius || bounds, "nothing more"),
+        other => return Err(format!("`action` is set, adaptive, smooth or clear, not `{other}`")),
+    };
+    if stray {
+        return Err(format!("\"{}\" takes {takes}", a.action));
+    }
+    let points = match a.action.as_str() {
+        "set" => {
+            let from = number("from", a.from, 0.0..=lamina_core::mesh::MAX_COORD)?;
+            let to = number("to", a.to, 0.0..=lamina_core::mesh::MAX_COORD)?;
+            if to <= from {
+                return Err(format!("`to` ({to}) is above `from` ({from})"));
+            }
+            let height = number("height", a.height, lo..=hi)?;
+            Some(crate::heights::set(&now, profile.layer_height, from, to, height))
+        }
+        "adaptive" => {
+            let min = a.min.map_or(Ok(profile.min_layer_height), |v| number("min", Some(v), lo..=hi))?;
+            let max = a.max.map_or(Ok(profile.layer_height), |v| number("max", Some(v), lo..=hi))?;
+            if parts.is_empty() {
+                return Err("adaptive layers follow the objects' surfaces, and the plate has none".into());
+            }
+            let meshes: Vec<&Mesh> = parts.iter().collect();
+            Some(crate::heights::from_tops(&crate::slice::adaptive_tops(&meshes, profile.first_layer_height, min, max)?))
+        }
+        "smooth" => {
+            let radius = number("radius", a.radius.or(Some(2.0)), 0.1..=50.0)?;
+            if now.is_empty() {
+                return Err("there are no layer heights by hand to smooth: \"set\" or \"adaptive\" first".into());
+            }
+            Some(crate::heights::smooth(&now, radius, top))
+        }
+        _ => None,
+    };
+    if let Some(points) = &points {
+        check_heights(points)?;
+    }
+    s.scene_mut().layer_heights = points.clone().map(std::sync::Arc::new);
+    // What the tallest object gets: its layer count and the thinnest and thickest of them.
+    let nozzle_hi = (0.8 * profile.nozzle).min(hi);
+    let tops = match &points {
+        Some(c) => crate::heights::tops(c, profile.first_layer_height, top, lo, nozzle_hi)?,
+        None => {
+            let n = if top <= profile.first_layer_height {
+                1
+            } else {
+                1 + ((top - profile.first_layer_height) / profile.layer_height).ceil() as usize
+            };
+            (0..n).map(|k| profile.first_layer_height + profile.layer_height * k as f64).collect()
+        }
+    };
+    let thick: Vec<f64> = tops.windows(2).map(|w| w[1] - w[0]).collect();
+    let micron = |x: f64| (x * 1000.0).round() / 1000.0;
+    Ok(json!({
+        "layer_heights": points,
+        "layers": tops.len(),
+        "thinnest": micron(thick.iter().copied().fold(profile.first_layer_height, f64::min)),
+        "thickest": micron(thick.iter().copied().fold(profile.first_layer_height, f64::max)),
+    }))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Calibrate {
+    kind: String,
+    from: Option<f64>,
+    to: Option<f64>,
+    step: Option<f64>,
+}
+
+/// Puts a mesh on the plate stood as it is, its footprint in the middle of the plate shifted by `x`, its bottom on the plate.
+fn place(s: &mut Session, name: &str, mesh: Mesh, turn: lamina_core::Transform, x: f64) -> Result<u32, String> {
+    use lamina_core::Transform;
+    let (lo, hi) = mesh.transformed(&turn).bounds().ok_or("internal: an empty calibration part")?;
+    let to = Transform::translate([x - (lo[0] + hi[0]) / 2.0, -(lo[1] + hi[1]) / 2.0, -lo[2]]);
+    s.scene_mut().add_transformed(name, mesh, turn.then(&to))
+}
+
+/// Calibration parts: each kind's part, and the values its heights (or blocks) print with.
+fn calibration(s: &mut Session, p: &Value) -> Result<Value, String> {
+    use lamina_core::Transform;
+    let a = Calibrate::deserialize(p).map_err(|e| format!("bad parameters: {e}"))?;
+    let (field, from, to, step, most, look) = match a.kind.as_str() {
+        "temperature" => (
+            "nozzle_temp",
+            230.0,
+            190.0,
+            5.0,
+            12,
+            "the coolest block whose layers still bond (try to snap it) with a clean overhang and little stringing",
+        ),
+        "retraction" => ("retract_length", 0.4, 2.0, 0.4, 12, "the lowest height band with no hairs between the towers"),
+        "pressure_advance" => {
+            ("pressure_advance", 0.0, 0.1, 0.005, 40, "the height where the corners are sharpest, neither bulging nor rounded: its value")
+        }
+        "flow" => ("flow_ratio", 0.9, 1.1, 0.05, 9, "the block whose top is smooth and closed with no ridges: its flow ratio"),
+        other => return Err(format!("`kind` is temperature, retraction, pressure_advance or flow, not `{other}`")),
+    };
+    let (from, to, step) = (a.from.unwrap_or(from), a.to.unwrap_or(to), a.step.unwrap_or(step).abs());
+    if !(from.is_finite() && to.is_finite() && step.is_finite() && step > 0.0) {
+        return Err("`from`, `to` and `step` must be finite numbers, the step above 0".into());
+    }
+    let count = ((to - from).abs() / step).round() as usize + 1;
+    if count > most || count < 2 {
+        return Err(format!("{count} steps: a {} test takes from 2 to {most}; change `step`", a.kind));
+    }
+    let values: Vec<f64> = (0..count).map(|i| from + (to - from).signum() * step * i as f64).collect();
+    let mut steps = Vec::new();
+    let mut ids = Vec::new();
+    let ranges = |s: &mut Session, id: u32, cuts: &[(f64, f64, f64)]| -> Result<(), String> {
+        let list: Vec<Range> = cuts
+            .iter()
+            .map(|&(lo, hi, v)| Range { from: lo, to: hi, profile: serde_json::Map::from_iter([(field.to_string(), json!(v))]) })
+            .collect();
+        check_ranges(&list)?;
+        s.scene_mut().get_mut(id)?.ranges = Some(std::sync::Arc::new(serde_json::to_value(&list).map_err(|e| e.to_string())?));
+        Ok(())
+    };
+    match a.kind.as_str() {
+        "temperature" => {
+            // The side seen from the front: a block 20 mm wide for each value, each with a 45 degree overhang on its right.
+            let h = 8.0;
+            let mut outline = vec![[0.0, 0.0], [20.0, 0.0]];
+            for i in 0..count {
+                let b = i as f64 * h;
+                outline.extend([[20.0, b + h / 2.0], [20.0 + h / 2.0, b + h], [20.0, b + h]]);
+            }
+            outline.push([0.0, count as f64 * h]);
+            outline.dedup();
+            let mesh = lamina_core::sketch::extrude(&outline, &[], 10.0)?;
+            let id = place(s, "temperature tower", mesh, Transform::rotate(0, 90.0), 0.0)?;
+            let cuts: Vec<(f64, f64, f64)> = values.iter().enumerate().map(|(i, &v)| (i as f64 * h, (i + 1) as f64 * h, v)).collect();
+            ranges(s, id, &cuts)?;
+            ids.push(id);
+            steps = cuts.iter().map(|c| json!({"from": c.0, "to": c.1, "value": c.2})).collect();
+        }
+        "retraction" | "pressure_advance" => {
+            let h = if a.kind == "retraction" { 5.0 } else { 1.0 };
+            let cuts: Vec<(f64, f64, f64)> = values.iter().enumerate().map(|(i, &v)| (i as f64 * h, (i + 1) as f64 * h, v)).collect();
+            let tall = count as f64 * h;
+            let parts: Vec<(Mesh, f64)> = if a.kind == "retraction" {
+                vec![(Mesh::cylinder(3.0, tall, 32), -20.0), (Mesh::cylinder(3.0, tall, 32), 20.0)]
+            } else {
+                // A hollow square, walls 1.2 mm: sharp corners at every height.
+                let hole: Vec<[f64; 2]> = vec![[1.2, 1.2], [1.2, 38.8], [38.8, 38.8], [38.8, 1.2]];
+                vec![(lamina_core::sketch::extrude(&[[0.0, 0.0], [40.0, 0.0], [40.0, 40.0], [0.0, 40.0]], &[hole], tall)?, 0.0)]
+            };
+            for (k, (mesh, x)) in parts.into_iter().enumerate() {
+                let name = if a.kind == "retraction" { format!("retraction tower {}", k + 1) } else { "pressure advance tower".into() };
+                let id = place(s, &name, mesh, Transform::IDENTITY, x)?;
+                ranges(s, id, &cuts)?;
+                ids.push(id);
+            }
+            steps = cuts.iter().map(|c| json!({"from": c.0, "to": c.1, "value": c.2})).collect();
+        }
+        _ => {
+            // Flow: a block 20 x 20 x 3 mm for each value, left to right, each one range from its bottom to its top.
+            for (i, &v) in values.iter().enumerate() {
+                let x = (i as f64 - (count as f64 - 1.0) / 2.0) * 25.0;
+                let id = place(s, &format!("flow {v:.2}"), Mesh::cuboid([20.0, 20.0, 3.0]), Transform::IDENTITY, x)?;
+                ranges(s, id, &[(0.0, 3.0, v)])?;
+                ids.push(id);
+                steps.push(json!({"from": 0.0, "to": 3.0, "value": v}));
+            }
+        }
+    }
+    Ok(json!({ "ids": ids, "steps": steps, "look": look }))
+}
+
+/// Each object's height ranges as profiles: each range's fields laid over the object's own profile (or the plate's).
+pub fn range_profiles(objects: &[&lamina_core::Object], own: &[Option<Profile>], plate: &Profile) -> Result<print::RangeProfiles, String> {
+    objects
+        .iter()
+        .enumerate()
+        .map(|(i, o)| {
+            let base = own.get(i).and_then(Option::as_ref).unwrap_or(plate);
+            ranges_of(o)?.into_iter().map(|r| Ok((r.from, r.to, presets::apply(base, &r.profile)?))).collect::<Result<Vec<_>, String>>()
+        })
+        .collect()
+}
+
 /// Each object's own profile, its settings laid over the plate's, or none where it has none.
 pub fn own(objects: &[&lamina_core::Object], plate: &Profile) -> Result<Vec<Option<Profile>>, String> {
     objects
@@ -191,8 +590,11 @@ struct ObjectSettings {
 
 fn set_object_settings(s: &mut Session, p: &Value) -> Result<Value, String> {
     let a = ObjectSettings::deserialize(p).map_err(|e| format!("bad parameters: {e}"))?;
-    s.scene.get(a.id)?;
+    let zone = s.scene.get(a.id)?.modifier == Some(lamina_core::Modifier::Settings);
     let fields = a.profile.unwrap_or_default();
+    if zone && let Some(k) = fields.keys().find(|k| !ZONE_FIELDS.contains(&k.as_str())) {
+        return Err(format!("object {} is a settings modifier, which may set {}, not `{k}`", a.id, ZONE_FIELDS.join(", ")));
+    }
     if let Some(k) = fields.keys().find(|k| !PER_OBJECT_FIELDS.contains(&k.as_str())) {
         return Err(format!("`{k}` is the plate's, not an object's; an object may set {}", PER_OBJECT_FIELDS.join(", ")));
     }
@@ -426,5 +828,262 @@ mod tests {
             assert!(s.execute("slice", &bad).is_err(), "{bad}");
         }
         assert_eq!(s.scene.objects.len(), 1);
+    }
+
+    /// The G-code of the session's plate, through `slice` to a file.
+    fn sliced(s: &mut Session, profile: Value) -> String {
+        let path = std::env::temp_dir().join(format!("lamina-ranges-{}-{}.gcode", std::process::id(), s.scene.objects.len()));
+        s.execute("slice", &json!({"path": path, "profile": profile})).unwrap();
+        let g = std::fs::read_to_string(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        g
+    }
+
+    /// The lines of layer `k` of the G-code.
+    fn layer(g: &str, k: usize) -> String {
+        g.split(&format!(";LAYER:{k}\n")).nth(1).unwrap_or("").split(";LAYER:").next().unwrap_or("").to_string()
+    }
+
+    #[test]
+    fn a_seam_painted_with_the_paint_command_moves_where_the_walls_start() {
+        let mut s = session();
+        s.execute("add_primitive", &json!({"kind": "cylinder", "radius": 10, "height": 4, "segments": 64})).unwrap();
+        // The wall's start on layer 5: where the head is when the first outer-wall line begins (the plate's middle is 0, 0).
+        let start = |g: &str| -> [f64; 2] {
+            let mut at = [f64::NAN; 2];
+            let mut wall = false;
+            for l in layer(g, 5).lines() {
+                if let Some(t) = l.strip_prefix(";TYPE:") {
+                    wall = t == "outer-wall";
+                    continue;
+                }
+                let word = |c: char| l.split(' ').find_map(|w| w.strip_prefix(c)?.parse::<f64>().ok());
+                if let (Some(x), Some(y)) = (word('X'), word('Y')) {
+                    if wall && word('E').is_some_and(|e| e > 0.0) {
+                        return at;
+                    }
+                    at = [x - 110.0, y - 110.0];
+                }
+            }
+            at
+        };
+        let profile = json!({"skirt_loops": 0, "seam": "rear", "perimeters": 1, "infill_density": 0});
+        let rear = start(&sliced(&mut s, profile.clone()));
+        assert!(rear[1] > 9.0, "the rear: {rear:?}");
+        // Painted down the front (-y), the wall starts there.
+        for z in [0.5, 1.5, 2.5, 3.5] {
+            s.execute("paint", &json!({"id": 1, "kind": "seam", "at": [0, -10, z], "radius": 1})).unwrap();
+        }
+        let front = start(&sliced(&mut s, profile.clone()));
+        assert!(front[1] < -9.0 && front[0].abs() < 1.0, "the paint: {front:?}");
+        // Rubbed out, it is back at the rear.
+        s.execute("paint", &json!({"id": 1, "kind": "none"})).unwrap();
+        assert_eq!(start(&sliced(&mut s, profile)), rear);
+    }
+
+    /// Each layer's height on the plate, as the G-code moves to it.
+    fn layer_zs(g: &str) -> Vec<f64> {
+        (0..)
+            .map_while(|k| g.contains(&format!(";LAYER:{k}\n")).then(|| layer(g, k)))
+            .map(|l| l.lines().find_map(|x| x.strip_prefix("G1 Z")?.split(' ').next()?.parse::<f64>().ok()).unwrap_or(f64::NAN))
+            .collect()
+    }
+
+    #[test]
+    fn layer_heights_by_hand_print_as_set_are_kept_in_projects_and_undo() {
+        let mut s = session();
+        s.execute("add_primitive", &json!({"kind": "box", "size": [10, 10, 10]})).unwrap();
+        // 0.2 mm layers, and 0.1 mm from 4 to 6 mm up: 20 + 20 + 20.
+        let r = s.execute("layer_heights", &json!({"action": "set", "from": 4, "to": 6, "height": 0.1})).unwrap();
+        assert_eq!((r["layers"].clone(), r["thinnest"].as_f64().unwrap()), (json!(60), 0.1), "{r}");
+        let zs = layer_zs(&sliced(&mut s, json!({"skirt_loops": 0})));
+        assert_eq!(zs.len(), 60, "{zs:?}");
+        for w in zs.windows(2) {
+            let (middle, h) = ((w[0] + w[1]) / 2.0, w[1] - w[0]);
+            let want = if (4.0..6.0).contains(&middle) { 0.1 } else { 0.2 };
+            assert!((h - want).abs() < 2e-3, "the layer at {} is {h} thick", w[1]);
+        }
+        assert!(s.execute("info", &json!({})).unwrap()["layer_heights"].is_array());
+        // Kept in a project; one undo takes it back, and the box slices as before.
+        let path = std::env::temp_dir().join(format!("lamina-heights-{}.lamina", std::process::id()));
+        s.execute("save", &json!({"path": path})).unwrap();
+        let mut t = session();
+        t.execute("open", &json!({"path": path})).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(t.scene.layer_heights, s.scene.layer_heights);
+        s.execute("undo", &json!({})).unwrap();
+        assert!(s.scene.layer_heights.is_none());
+        assert_eq!(layer_zs(&sliced(&mut s, json!({"skirt_loops": 0}))).len(), 50);
+        // Adaptive on a ball, then smoothed: thinner layers near its top and bottom, all within the limits.
+        s.execute("add_primitive", &json!({"kind": "sphere", "radius": 8})).unwrap();
+        s.execute("delete", &json!({"id": 1})).unwrap();
+        let r = s.execute("layer_heights", &json!({"action": "adaptive", "min": 0.08, "max": 0.3})).unwrap();
+        assert!(r["thinnest"].as_f64().unwrap() < 0.1 && r["thickest"].as_f64().unwrap() > 0.25, "{r}");
+        let r = s.execute("layer_heights", &json!({"action": "smooth", "radius": 1})).unwrap();
+        // Between what 0.3 mm and 0.08 mm layers give a ball 16 mm tall.
+        let layers = r["layers"].as_u64().unwrap();
+        assert!(layers > 16 * 10 / 3 && layers < 16 * 100 / 8, "{layers}");
+        s.execute("layer_heights", &json!({"action": "clear"})).unwrap();
+        assert!(s.scene.layer_heights.is_none());
+        for bad in [
+            json!({"action": "set", "from": 4, "to": 6}),
+            json!({"action": "set", "from": 6, "to": 4, "height": 0.1}),
+            json!({"action": "set", "from": 4, "to": 6, "height": 5}),
+            json!({"action": "set", "from": -1, "to": 6, "height": 0.1}),
+            json!({"action": "smooth"}),
+            json!({"action": "clear", "radius": 2}),
+            json!({"action": "adaptive", "height": 0.1}),
+            json!({"action": "thinner"}),
+            json!({"action": "clear", "colour": 1}),
+        ] {
+            assert!(s.execute("layer_heights", &bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_settings_modifier_takes_only_infill_fields_and_thickens_the_infill_inside_it() {
+        let mut s = session();
+        s.execute("add_primitive", &json!({"kind": "box", "size": [40, 10, 6]})).unwrap();
+        let before = s.execute("slice_check", &json!({})).unwrap()["features"]["sparse-infill"].as_f64().unwrap();
+        s.execute("add_primitive", &json!({"kind": "box", "size": [20, 14, 10]})).unwrap();
+        s.execute("set_modifier", &json!({"id": 2, "kind": "settings"})).unwrap();
+        // The new box was laid beside the bar: back over its right half.
+        let (lo, hi) = s.scene.get(2).unwrap().bounds().unwrap();
+        s.execute("move", &json!({"id": 2, "by": [10.0 - (lo[0] + hi[0]) / 2.0, -(lo[1] + hi[1]) / 2.0, 0]})).unwrap();
+        let o = s.scene.get(2).unwrap().bounds().unwrap();
+        assert!(o.0[0] > -1.0, "the modifier over the right half: {o:?}");
+        // With no settings it changes nothing.
+        assert_eq!(s.execute("slice_check", &json!({})).unwrap()["features"]["sparse-infill"].as_f64().unwrap(), before);
+        assert!(
+            s.execute("set_object_settings", &json!({"id": 2, "profile": {"perimeters": 3}})).unwrap_err().contains("settings modifier")
+        );
+        s.execute("set_object_settings", &json!({"id": 2, "profile": {"infill_density": 0.6, "infill_pattern": "grid"}})).unwrap();
+        let after = s.execute("slice_check", &json!({})).unwrap()["features"]["sparse-infill"].as_f64().unwrap();
+        assert!(after > 1.5 * before, "{after} against {before}");
+        assert_eq!(s.execute("info", &json!({})).unwrap()["objects"][1]["modifier"], "settings");
+    }
+
+    #[test]
+    fn a_height_range_changes_the_layers_whose_middle_is_in_it_and_no_others() {
+        let mut s = session();
+        s.execute("add_primitive", &json!({"kind": "box", "size": [10, 10, 10]})).unwrap();
+        // Layers 0.2 mm: layer k's middle is 0.2 k + 0.1, so 4 to 6 mm is layers 20 to 29.
+        let r = s.execute("set_height_range", &json!({"id": 1, "from": 4, "to": 6, "profile": {"nozzle_temp": 230, "retract_length": 2}}));
+        assert_eq!(r.unwrap()["ranges"][0]["profile"]["nozzle_temp"], 230);
+        s.execute("set_height_range", &json!({"id": 1, "from": 6, "to": 8, "profile": {"infill_density": 0.5, "perimeters": 4}})).unwrap();
+        let info = s.execute("info", &json!({})).unwrap();
+        assert_eq!(info["objects"][0]["ranges"].as_array().unwrap().len(), 2);
+        let g = sliced(&mut s, json!({"skirt_loops": 0}));
+        assert!(layer(&g, 20).contains("M104 S230") && !layer(&g, 19).contains("M104"), "hotter from layer 20");
+        assert!(layer(&g, 30).contains("M104 S210"), "back at layer 30");
+        assert!(layer(&g, 25).contains("G1 E-2.000") && !layer(&g, 15).contains("G1 E-2.000"), "its own retraction");
+        let loops = |k: usize| {
+            let l = layer(&g, k);
+            l.split(";TYPE:")
+                .filter(|t| t.starts_with("inner-wall") || t.starts_with("outer-wall"))
+                .map(|t| t.matches("G0 ").count() + 1)
+                .sum::<usize>()
+        };
+        assert!(loops(35) > loops(15), "four walls from 6 to 8 mm: {} against {}", loops(35), loops(15));
+        let infill = |k: usize| {
+            layer(&g, k).split(";TYPE:sparse-infill").nth(1).map_or(0, |t| t.split(";TYPE:").next().unwrap_or("").lines().count())
+        };
+        assert!(infill(34) > infill(14), "denser infill in the range");
+        // Ranges may not overlap or set what is not by height; the same range again replaces it, `{}` removes it.
+        assert!(
+            s.execute("set_height_range", &json!({"id": 1, "from": 5, "to": 7, "profile": {"fan_speed": 0}}))
+                .unwrap_err()
+                .contains("overlaps")
+        );
+        assert!(
+            s.execute("set_height_range", &json!({"id": 1, "from": 1, "to": 2, "profile": {"layer_height": 0.1}}))
+                .unwrap_err()
+                .contains("cannot change by height")
+        );
+        assert!(s.execute("set_height_range", &json!({"id": 1, "from": 3, "to": 2, "profile": {"fan_speed": 0}})).is_err());
+        assert!(s.execute("set_height_range", &json!({"id": 1, "from": 1, "to": 2, "profile": {"nozzle_temp": 9999}})).is_err());
+        s.execute("set_height_range", &json!({"id": 1, "from": 4, "to": 6, "profile": {"nozzle_temp": 220}})).unwrap();
+        s.execute("set_height_range", &json!({"id": 1, "from": 6, "to": 8, "profile": {}})).unwrap();
+        let ranges = s.execute("info", &json!({})).unwrap()["objects"][0]["ranges"].clone();
+        assert_eq!(ranges.as_array().unwrap().len(), 1);
+        assert_eq!(ranges[0]["profile"], json!({"nozzle_temp": 220}));
+        // Kept in projects, undone in one step.
+        let path = std::env::temp_dir().join(format!("lamina-ranges-{}.lamina", std::process::id()));
+        s.execute("save", &json!({"path": path})).unwrap();
+        let mut t = session();
+        t.execute("open", &json!({"path": path})).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(t.execute("info", &json!({})).unwrap()["objects"][0]["ranges"], ranges);
+        s.undo().unwrap();
+        assert_eq!(s.execute("info", &json!({})).unwrap()["objects"][0]["ranges"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn a_pressure_advance_and_fan_range_are_set_and_set_back() {
+        let mut s = session();
+        s.execute("add_primitive", &json!({"kind": "box", "size": [10, 10, 4]})).unwrap();
+        s.execute("set_height_range", &json!({"id": 1, "from": 2, "to": 3, "profile": {"pressure_advance": 0.05, "fan_speed": 100}}))
+            .unwrap();
+        let g = sliced(&mut s, json!({"firmware": "klipper", "pressure_advance": 0.02, "skirt_loops": 0}));
+        assert!(layer(&g, 10).contains("SET_PRESSURE_ADVANCE ADVANCE=0.05") && layer(&g, 10).contains("M106 S100"));
+        assert!(layer(&g, 15).contains("SET_PRESSURE_ADVANCE ADVANCE=0.02") && layer(&g, 15).contains("M106 S255"), "set back above");
+    }
+
+    #[test]
+    fn calibration_parts_carry_their_settings_by_height() {
+        // A temperature tower: nine blocks of 8 mm from 230 C down to 190 C, each set once in the G-code, in that order.
+        let mut s = session();
+        let r = s.execute("calibration", &json!({"kind": "temperature"})).unwrap();
+        assert_eq!(r["steps"].as_array().unwrap().len(), 9);
+        let o = &s.execute("info", &json!({})).unwrap()["objects"][0];
+        assert_eq!(o["size"], json!([24.0, 10.0, 72.0]), "standing, 72 mm tall with its overhangs");
+        assert_eq!(o["watertight"], true);
+        let g = sliced(&mut s, json!({"skirt_loops": 0}));
+        let temps: Vec<&str> = g.lines().filter(|l| l.starts_with("M104 S")).collect();
+        let want: Vec<String> = (0..9).map(|i| format!("M104 S{}", 230 - 5 * i)).collect();
+        let from = temps.iter().position(|t| *t == "M104 S230").unwrap();
+        assert_eq!(temps[from..from + 9], want, "each block hotter than the one above: {temps:?}");
+        // Retraction: two towers, each 5 mm band retracting its own length.
+        let mut s = session();
+        let r = s.execute("calibration", &json!({"kind": "retraction"})).unwrap();
+        assert_eq!(r["ids"].as_array().unwrap().len(), 2);
+        let g = sliced(&mut s, json!({"skirt_loops": 0}));
+        for v in ["0.400", "1.200", "2.000"] {
+            assert!(g.contains(&format!("G1 E-{v} ")), "retracts {v}");
+        }
+        // Pressure advance on Klipper, a step a millimetre.
+        let mut s = session();
+        s.execute("calibration", &json!({"kind": "pressure_advance", "to": 0.04, "step": 0.01})).unwrap();
+        let g = sliced(&mut s, json!({"skirt_loops": 0, "firmware": "klipper"}));
+        for v in ["0.01", "0.02", "0.03", "0.04"] {
+            assert!(g.contains(&format!("SET_PRESSURE_ADVANCE ADVANCE={v}")), "{v}");
+        }
+        // Flow: five blocks, each pushing more plastic than the one on its left.
+        let mut s = session();
+        let r = s.execute("calibration", &json!({"kind": "flow"})).unwrap();
+        let ids: Vec<u64> = r["ids"].as_array().unwrap().iter().filter_map(Value::as_u64).collect();
+        assert_eq!(ids.len(), 5);
+        let g = sliced(&mut s, json!({"skirt_loops": 0, "firmware": "klipper"}));
+        let pushed = |id: u64| -> f64 {
+            g.split(&format!("EXCLUDE_OBJECT_START NAME=object_{id}\n"))
+                .skip(1)
+                .map(|part| part.split("EXCLUDE_OBJECT_END").next().unwrap_or(""))
+                .flat_map(|part| part.lines())
+                .filter(|l| l.starts_with("G1 X"))
+                .filter_map(|l| l.split(" E").nth(1)?.split(' ').next()?.parse::<f64>().ok())
+                .sum()
+        };
+        let e: Vec<f64> = ids.iter().map(|&id| pushed(id)).collect();
+        assert!(e.windows(2).all(|w| w[1] > w[0]), "{e:?}");
+        assert!((e[4] / e[0] - 1.10 / 0.90).abs() < 0.01, "{e:?}");
+        // What cannot be calibrated, or with too many steps, or out of the setting's range, is refused and adds nothing.
+        let mut s = session();
+        for bad in [json!({"kind": "speed"}), json!({"kind": "temperature", "step": 0.5}), json!({"kind": "temperature", "from": 600})] {
+            assert!(s.execute("calibration", &bad).is_err(), "{bad}");
+        }
+        assert!(s.scene.objects.is_empty());
+        s.execute("calibration", &json!({"kind": "flow"})).unwrap();
+        s.undo().unwrap();
+        assert!(s.scene.objects.is_empty(), "one undo takes every block back");
     }
 }

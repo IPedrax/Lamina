@@ -31,7 +31,9 @@ presets live in the app's settings panel, not in these commands.
   `"variable"`: a part too thin for its walls, a fin, a thin rib or a tube wall, gets as many lines as its width holds, each a share
   of it, instead of loops that fold onto themselves and gap fill; try it for thin-walled parts), `top_layers` and `bottom_layers` (enough for 0.8 to 1.0 mm of skin).
   `adaptive_layers: true` varies each layer from `min_layer_height` (0.08) up to `layer_height`: thin on domes and gentle slopes,
-  thick on walls; good for figures and rounded parts, little use for boxy ones.
+  thick on walls; good for figures and rounded parts, little use for boxy ones. By hand, for the whole plate:
+  `layer_heights {action: "set", from, to, height}` (fine layers only where a detail is), `"adaptive"` to start from adaptive
+  layers, `"smooth"`, `"clear"`; these take the place of `layer_height` and `adaptive_layers`.
 - Strength: `infill_density` from 0 to 1. Use 0.1 to 0.2 for looks and 0.3 to 0.5 for parts that bear load. Walls add more
   strength than infill does. `infill_pattern`: `"lines"` (the default, quickest), `"grid"`, `"triangles"` (stiff in the plane),
   `"gyroid"` (strong in every direction, the usual choice for functional parts) or `"honeycomb"`.
@@ -56,7 +58,7 @@ presets live in the app's settings panel, not in these commands.
   for one object alone.
 - Seams: `seam` is where each wall loop starts and ends, which leaves a small mark: `"aligned"` (the default, one tidy line up the
   part), `"rear"` (at the back, out of sight), `"sharpest"` (hidden in an inside corner) or `"nearest"` (least travel, marks
-  scattered).
+  scattered). To put it in one place, `paint {id, kind: "seam", at: [x, y, z]}` at points up the side: each wall starts there.
 - Bridges: solid infill over air (a span between two supports) is printed straight across, at the angle whose lines rest on the
   layer below at both ends, with `bridge_speed` (25 mm/s), `bridge_flow` (1.0 of the normal flow) and `bridge_fan` (255). A span
   up to about 10 mm bridges; longer ones need support.
@@ -71,29 +73,10 @@ presets live in the app's settings panel, not in these commands.
   overhangs far from the plate, such as a figure's arms or a ball on a stalk; under a low, wide overhang the two cost about the same.
   Compare them: `slice_check {profile: {support: "everywhere", support_style: "tree"}}` and read `features`.
 
-## One object unlike the others
+## Several objects, heights and extruders
 
-`set_object_settings {id, profile: {infill_density: 0.5, perimeters: 4}}` gives one object settings of its own (walls, top and
-bottom layers, infill, seam, speeds, supports, its extruder); the printer, the filament and the layer heights stay the plate's.
-`profile: {}` clears them; `inspect_scene` shows them.
-
-## Two colours or materials
-
-A part in two colours is two objects placed together, each with its `extruder` (from 1) on a printer with `extruders` (up to 8):
-`set_object_settings {id, profile: {extruder: 2}}`, then `slice_check {profile: {extruders: 2}}`. Each layer changes tool once
-per extruder. The idle tool cools by `standby_temp_delta` (30), and `print_time` counts the wait to heat it again at
-`heating_rate` (2 C a second, a printer field); `extruder_temps` gives the extruders after the first their own
-temperature (`[235]`). Each change purges `purge_volume` mm3 (20) on a tower `tower_size` mm wide (20) at `tower_x`, `tower_y`
-(60, 60 from the plate's middle); a tower off the plate, in an object's or a support's way on a layer it rises through, or too
-small is refused (a notch, or the room under a part above the last tool change, will do). `features` counts `purge` and
-`purge-tower`. `toolchange_gcode` runs before each `T`, with `[previous_tool]`, `[next_tool]` (from 0) and `[layer_z]`. Nozzle
-offsets are the firmware's.
-
-## One object at a time
-
-`sequential: true` prints each object whole, shortest first, so a failure spoils one. Objects must stand `clearance_radius` (35
-mm, the head's reach round the nozzle) apart, measured between their convex outlines seen from above, and only the last may pass `gantry_height` (20 mm): ask the user for the real
-figures. All on one extruder. An error names the objects; `arrange {gap: 35}` spreads them.
+Settings for one object, settings by height, two colours and printing one object at a time are in the skill
+`objects-heights-and-extruders`.
 
 ## Reading the result
 

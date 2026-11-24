@@ -431,12 +431,85 @@ impl Transform {
         self.m.iter().flatten().chain(self.t.iter()).all(|c| c.is_finite())
     }
 
+    /// The matrix split into a turn and a stretch, `m = turn x stretch` (the polar decomposition, by Newton's iteration on the turn:
+    /// the mean of it and its inverse transposed). The turn is a rotation (its determinant 1); a mirror stays in the stretch, as a
+    /// negative scale does in Blender. None for a matrix that flattens.
+    pub fn polar(&self) -> Option<(Transform, [[f64; 3]; 3])> {
+        let det = self.det();
+        if !det.is_finite() || det.abs() <= 1e-12 {
+            return None;
+        }
+        let sign = det.signum();
+        let mut r = self.m.map(|row| row.map(|v| v * sign));
+        for _ in 0..64 {
+            let d = Transform { m: r, t: [0.0; 3] }.det();
+            if d.abs() <= 1e-300 {
+                return None;
+            }
+            // The inverse transposed is the cofactor matrix over the determinant.
+            let c = |i: usize, j: usize| {
+                let (a, b) = ((i + 1) % 3, (i + 2) % 3);
+                let (x, y) = ((j + 1) % 3, (j + 2) % 3);
+                r[a][x] * r[b][y] - r[a][y] * r[b][x]
+            };
+            let next: [[f64; 3]; 3] = std::array::from_fn(|i| std::array::from_fn(|j| (r[i][j] + c(i, j) / d) / 2.0));
+            let moved = (0..3).flat_map(|i| (0..3).map(move |j| (i, j))).map(|(i, j)| (next[i][j] - r[i][j]).abs()).fold(0.0, f64::max);
+            r = next;
+            if moved < 1e-14 {
+                break;
+            }
+        }
+        // stretch = turn transposed x m
+        let stretch: [[f64; 3]; 3] = std::array::from_fn(|i| std::array::from_fn(|j| (0..3).map(|k| r[k][i] * self.m[k][j]).sum()));
+        Some((Transform { m: r, t: [0.0; 3] }, stretch))
+    }
+
     /// The determinant of the matrix: how much it scales volume, negative when it mirrors.
     pub fn det(&self) -> f64 {
         let m = &self.m;
         m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
             + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
     }
+}
+
+/// The distance from `p` to the nearest point of the triangle `t`, its inside, edges or corners (the paint brush's test). The
+/// nearest point is found by which region round the triangle `p` falls in; a triangle with no area falls back to its corners.
+pub fn distance_to_triangle(p: P3, t: [P3; 3]) -> f64 {
+    let sub = |a: P3, b: P3| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    let along = |a: P3, d: P3, k: f64| [a[0] + d[0] * k, a[1] + d[1] * k, a[2] + d[2] * k];
+    let [a, b, c] = t;
+    let (ab, ac) = (sub(b, a), sub(c, a));
+    let nearest = (|| {
+        let (d1, d2) = (dot(ab, sub(p, a)), dot(ac, sub(p, a)));
+        if d1 <= 0.0 && d2 <= 0.0 {
+            return a;
+        }
+        let (d3, d4) = (dot(ab, sub(p, b)), dot(ac, sub(p, b)));
+        if d3 >= 0.0 && d4 <= d3 {
+            return b;
+        }
+        let vc = d1 * d4 - d3 * d2;
+        if vc <= 0.0 && d1 >= 0.0 && d3 <= 0.0 {
+            return along(a, ab, d1 / (d1 - d3));
+        }
+        let (d5, d6) = (dot(ab, sub(p, c)), dot(ac, sub(p, c)));
+        if d6 >= 0.0 && d5 <= d6 {
+            return c;
+        }
+        let vb = d5 * d2 - d1 * d6;
+        if vb <= 0.0 && d2 >= 0.0 && d6 <= 0.0 {
+            return along(a, ac, d2 / (d2 - d6));
+        }
+        let va = d3 * d6 - d5 * d4;
+        if va <= 0.0 && d4 - d3 >= 0.0 && d5 - d6 >= 0.0 {
+            return along(b, sub(c, b), (d4 - d3) / ((d4 - d3) + (d5 - d6)));
+        }
+        let sum = va + vb + vc;
+        along(along(a, ab, vb / sum), ac, vc / sum)
+    })();
+    let length = |d: P3| dot(d, d).sqrt();
+    let d = length(sub(p, nearest));
+    if d.is_finite() { d } else { [a, b, c].iter().map(|&q| length(sub(p, q))).fold(f64::INFINITY, f64::min) }
 }
 
 fn cross(a: P3, b: P3) -> P3 {
@@ -450,6 +523,21 @@ fn dot(a: P3, b: P3) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_distance_to_a_triangle_is_to_its_inside_edge_or_corner() {
+        let t = [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [0.0, 10.0, 0.0]];
+        let near = |p: P3, d: f64| assert!((distance_to_triangle(p, t) - d).abs() < 1e-9, "{p:?}: {}", distance_to_triangle(p, t));
+        near([2.0, 2.0, 3.0], 3.0); // above the inside
+        near([-3.0, -4.0, 0.0], 5.0); // past the corner a
+        near([14.0, -3.0, 0.0], 5.0); // past the corner b
+        near([5.0, -2.0, 0.0], 2.0); // beside the edge ab
+        near([-2.0, 5.0, 0.0], 2.0); // beside the edge ac
+        near([6.0, 6.0, 0.0], 2.0_f64.sqrt()); // beside the long edge bc
+        // A triangle with no area is measured to its corners, and nothing comes out not a number.
+        let flat = [[1.0, 1.0, 1.0]; 3];
+        assert!((distance_to_triangle([1.0, 1.0, 4.0], flat) - 3.0).abs() < 1e-9);
+    }
 
     #[test]
     fn primitives_are_closed_and_enclose_their_volume() {
@@ -591,5 +679,22 @@ mod tests {
             .map(|v| f64::from(v[0]).hypot(f64::from(v[1])))
             .collect();
         assert!(ends.iter().all(|r| (r - (4.0 - depth)).abs() < 1e-4), "{ends:?}");
+    }
+
+    #[test]
+    fn a_matrix_splits_into_its_turn_and_its_stretch() {
+        let xf = Transform::scale([2.0, 1.0, 0.5]).then(&Transform::rotate_axis([1.0, 2.0, 3.0], 40.0));
+        let (turn, stretch) = xf.polar().unwrap();
+        assert!((turn.det() - 1.0).abs() < 1e-12);
+        let back = Transform { m: stretch, t: [0.0; 3] }.then(&turn);
+        for (r, c) in (0..3).flat_map(|r| (0..3).map(move |c| (r, c))) {
+            assert!((back.m[r][c] - xf.m[r][c]).abs() < 1e-12);
+            assert!((stretch[r][c] - stretch[c][r]).abs() < 1e-12, "the stretch is symmetric");
+        }
+        let flat = Transform::scale([1.0, 0.0, 1.0]);
+        assert!(flat.polar().is_none());
+        let mirrored = Transform::scale([-1.0, 1.0, 1.0]).then(&Transform::rotate(2, 30.0));
+        let (turn, stretch) = mirrored.polar().unwrap();
+        assert!(turn.det() > 0.0 && Transform { m: stretch, t: [0.0; 3] }.det() < 0.0, "the mirror stays in the stretch");
     }
 }

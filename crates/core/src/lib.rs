@@ -22,7 +22,7 @@ pub mod zip;
 
 pub use engine::{Command, Files, Session};
 pub use mesh::{Mesh, P3, Transform};
-pub use scene::{Modifier, Object, Scene};
+pub use scene::{Modifier, Object, Paint, Scene};
 
 /// The rule that only the AI chat, the printer connection and the updater reach the network: no other crate may depend on an HTTP
 /// client or on ring, and only the desktop app may depend on the updater.

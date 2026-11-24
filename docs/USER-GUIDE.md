@@ -62,7 +62,9 @@ all, set the environment variable `LAMINA_NO_UPDATE_CHECK=1`: the menu items and
    plate: a support never goes through another object, and stands on it where it is in the way (From the plate only leaves those
    out). To support one overhang only, or to keep supports off one, add a box over it and set Prints as, under the picked
    object's tools, to Support enforcer (green) or Support blocker (red): it is not printed, and the overhangs of a part inside
-   it get supports, even with Supports off, or none. Beside Walls, Variable width gives a part thinner than its walls (a fin, a rib, a tube's wall) as many lines as its width
+   it get supports, even with Supports off, or none. Prints as Settings modifier (yellow) gives the infill of the parts inside the
+   box its own density instead, set under This object's settings (denser round a screw hole, none in a part's hollow); the
+   walls and skins stay the part's. Beside Walls, Variable width gives a part thinner than its walls (a fin, a rib, a tube's wall) as many lines as its width
    holds, each a share of it, where Classic folds a loop onto itself or leaves a gap to fill.
 4. **Slice.** Press Slice. The window stays usable while it works, and the Preview tab opens when it is done, with the layer count,
    the filament and the print time.
@@ -78,16 +80,38 @@ all, set the environment variable `LAMINA_NO_UPDATE_CHECK=1`: the menu items and
 - **Move** (G): drag the arrows to move along an axis, the square to slide on the plate, a ring to turn about its axis, the corner
   square to scale. Moves snap; hold Shift to move freely. The position and size fields under the object take typed numbers.
 - **Lay flat** (L): click a face to turn it down onto the plate. **Measure** (M): click two points.
+- **Paint** (P): click or drag over an object to paint its faces. **Seam** (violet) puts each wall's seam there; **Support**
+  (green) holds up the painted faces that look down, even with supports off; **Block** (red) keeps supports off them; **Erase**
+  rubs paint out. Brush sets how far round the pointer it reaches, and Clear the picked objects' paint takes it all off. A drag
+  that starts on the object paints along it as one undo step; one that starts off it turns the view. Paint is kept in the project
+  and goes with a copy; Repair, Simplify and editing the shape take it off, as their faces are new.
 - **G, R, S as in Blender**: with objects picked and the pointer over the 3D view, G moves them with the pointer, R turns them
   (about z) and S scales them; X, Y or Z keeps to that axis (press it again to free it), typed numbers give the exact amount (12.5
   mm, 90 degrees, 1.5 times), Ctrl snaps, and Enter or a click applies it as one undo step while Escape or a right click puts it
   back. G 12.5 Enter after X moves 12.5 mm along x; S Z 2 Enter makes them twice as tall.
+- **Alt+G**, **Alt+R** and **Alt+S** clear the picked objects' place (back to the middle of the plate), turn or scale. View, Turn
+  and scale about chooses each object's own middle or the middle of all picked (they then swing round it together), and Move and
+  turn along chooses the plate's axes or the picked object's own, for the gizmo and the G, R and X, Y, Z keys. A stretch along one
+  axis (S then X, Y or Z) is always along the plate's.
 - Over the 3D view, **1**, **3** and **7** look from the front, the right and the top (with Ctrl, the back, the left and the
-  bottom), as Blender's numpad does; **Home** frames everything and **.** the picked objects.
+  bottom), as Blender's numpad does; **5** switches between perspective and orthographic (View, Orthographic), where parallel
+  edges stay parallel; **Home** frames everything and **.** the picked objects.
+- **H** hides the picked objects from the 3D view, to see or reach what is behind them, and **Alt+H** shows them all again (View,
+  Hide picked and Show all; Show beside one in the plate list). Hidden objects still print. **B** over the 3D view, then a drag,
+  picks every object seen inside the box, as well as those already picked.
 - Away from the 3D view, **R** turns the picked objects 90 degrees, **F** frames them, **A** arranges the plate, **Ctrl+D** duplicates, **Delete**
   deletes. View, Keyboard shortcuts lists them all.
 - With one object picked, the panel also has Move by, Rotate, Mirror, Scale, Cut into pieces, Duplicate and Drop to plate. With
   several, Union, Subtract and Intersect. A boolean that cannot give a sound solid says so and changes nothing.
+- **Calibration**, in More shapes, puts a temperature tower, two retraction towers, a pressure advance tower or a row of flow
+  blocks on the plate, each with its settings changing by height (or by block); the status bar says what to look for. Ask the
+  assistant for another range.
+- **Layer heights by hand**, in the View menu, opens a strip beside the 3D view: the plate's layers drawn against height. Drag up
+  the strip over the heights to change and across to the layer height you want (thinner to the left), or click for a millimetre
+  round a point; Adaptive starts from adaptive layers, Smooth softens the steps, Reset goes back to the layer height in the
+  settings. It is kept in the project and applies to every object.
+- **By height**, under This object's settings, gives the layers between two heights their own nozzle temperature, infill or walls
+  (Add range); the assistant can set more (fan, pressure advance, retraction, flow, speeds) with `set_height_range`.
 - **This object's settings** lets one object print differently from the rest: its own walls, infill, seam, speeds or supports,
   or its own extruder.
 - **Undo** takes back a whole step, a drag or a chat turn alike; Edit, History goes back several at once.

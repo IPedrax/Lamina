@@ -62,8 +62,15 @@ pub static ALL: &[Command] = &[
     cmd("move", "{id, by:[x,y,z]} moves an object by mm", move_by, true, Files::None),
     cmd(
         "rotate",
-        "{id, axis:\"x\"|\"y\"|\"z\", degrees} turns an object about its own centre, then sets it back on the plate",
+        "{id, axis:\"x\"|\"y\"|\"z\"|[x,y,z] (a vector, for a tilted axis), degrees} turns an object about its own centre, then sets it back on the plate",
         rotate,
+        true,
+        Files::None,
+    ),
+    cmd(
+        "reset_transform",
+        "{id, what:\"location\"|\"rotation\"|\"scale\"|\"all\"} clears what moves, turns or scales an object since it was made, as Blender's Alt+G, Alt+R and Alt+S: location puts it in the middle of the plate; rotation keeps its size and place but takes its turn away; scale keeps its turn and place but its own size; all does the three. It is set back on the plate. A mirror is kept by rotation and lost by scale",
+        reset_transform,
         true,
         Files::None,
     ),
@@ -105,8 +112,15 @@ pub static ALL: &[Command] = &[
     cmd("drop_to_bed", "{id} lowers or raises an object so its lowest point touches the plate", drop_to_bed, true, Files::None),
     cmd("delete", "{id} removes an object", delete, true, Files::None),
     cmd(
+        "paint",
+        "{id, kind:\"seam\"|\"support\"|\"block\"|\"none\", at?:[x,y,z], radius? (mm, default 3)} paints the object's faces within `radius` of the point `at` on its surface (where the window's brush is clicked): \"seam\" puts each wall's seam there, \"support\" holds those faces up even with supports off, \"block\" keeps supports off them, \"none\" rubs paint out. Without `at`, \"none\" clears all its paint. Repair, simplify and edit drop the paint. Returns {painted} (faces now that kind)",
+        paint,
+        true,
+        Files::None,
+    ),
+    cmd(
         "set_modifier",
-        "{id, kind: \"support_enforcer\" | \"support_blocker\" | \"none\"} makes an object a modifier, which is not printed: the overhangs of any part inside a support enforcer get supports (even with supports off), and those inside a support blocker get none. Place a box over the overhang it is for. \"none\" makes it a part again. Arrange leaves modifiers where they are. Returns {}",
+        "{id, kind: \"support_enforcer\" | \"support_blocker\" | \"settings\" | \"none\"} makes an object a modifier, which is not printed: the overhangs of any part inside a support enforcer get supports (even with supports off), and those inside a support blocker get none. Place a box over the overhang it is for. A \"settings\" modifier gives the sparse infill of every part inside it its own settings: give them with `set_object_settings {id, profile: {infill_density, infill_pattern, infill_speed}}` (denser infill round a screw hole, none in a hollow). \"none\" makes it a part again. Arrange leaves modifiers where they are. Returns {}",
         set_modifier,
         true,
         Files::None,
@@ -127,7 +141,7 @@ pub static ALL: &[Command] = &[
     ),
     cmd(
         "info",
-        "{} every object: id, name, triangles, size, min, max, volume_mm3, watertight (a slicer can only fill a closed mesh), and its problems: open_edges (holes), nonmanifold_edges (edges of three or more faces), flipped_faces; `repair` mends what it can; its recipe, its own settings and its modifier (support_enforcer, support_blocker, or null for a part)",
+        "{} every object: id, name, triangles, size, min, max, volume_mm3, watertight (a slicer can only fill a closed mesh), and its problems: open_edges (holes), nonmanifold_edges (edges of three or more faces), flipped_faces; `repair` mends what it can; its recipe, its own settings, its modifier (support_enforcer, support_blocker, settings, or null for a part), its settings by height (ranges) and its painted faces (painted: how many seam, support, block). Also the plate's layer height curve (layer_heights: [z, height] points, or null)",
         info,
         false,
         Files::None,
@@ -630,7 +644,7 @@ fn edit(s: &mut Session, p: &Value) -> Result<Value, String> {
     }
     let mesh = cook(s, &recipe)?;
     let o = s.scene_mut().get_mut(a.id)?;
-    (o.mesh, o.recipe) = (std::sync::Arc::new(mesh), Some(std::sync::Arc::new(recipe)));
+    (o.mesh, o.recipe, o.paint) = (std::sync::Arc::new(mesh), Some(std::sync::Arc::new(recipe)), None);
     // Where it stands stays; a part that grew or shrank is set back on the plate.
     settle(o)?;
     let world = o.world();
@@ -659,8 +673,16 @@ fn move_by(s: &mut Session, p: &Value) -> Result<Value, String> {
 #[serde(deny_unknown_fields)]
 struct Rotate {
     id: u32,
-    axis: String,
+    axis: Axis,
     degrees: f64,
+}
+
+/// An axis by name, or as a vector (an object's own axis, as the window's local orientation gives it).
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Axis {
+    Named(String),
+    Vector([f64; 3]),
 }
 
 fn rotate(s: &mut Session, p: &Value) -> Result<Value, String> {
@@ -668,13 +690,54 @@ fn rotate(s: &mut Session, p: &Value) -> Result<Value, String> {
     if !a.degrees.is_finite() {
         return Err("`degrees` must be a finite number".into());
     }
-    let axis = match a.axis.as_str() {
-        "x" => 0,
-        "y" => 1,
-        "z" => 2,
-        other => return Err(format!("unknown axis `{other}`: x, y or z")),
+    let turn = match a.axis {
+        Axis::Named(name) => match name.as_str() {
+            "x" => Transform::rotate(0, a.degrees),
+            "y" => Transform::rotate(1, a.degrees),
+            "z" => Transform::rotate(2, a.degrees),
+            other => return Err(format!("unknown axis `{other}`: x, y or z, or a vector [x, y, z]")),
+        },
+        Axis::Vector(v) => {
+            let len = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+            if !(1e-9..=1e6).contains(&len) {
+                return Err("an axis vector must be finite and not zero".into());
+            }
+            Transform::rotate_axis(v, a.degrees)
+        }
     };
-    about_centre(s.scene_mut().get_mut(a.id)?, &Transform::rotate(axis, a.degrees))?;
+    about_centre(s.scene_mut().get_mut(a.id)?, &turn)?;
+    Ok(json!({}))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Reset {
+    id: u32,
+    what: String,
+}
+
+/// Clears an object's location, its turn or its scale, as Blender's Alt+G, Alt+R and Alt+S do. Its turn and its scale are the
+/// polar decomposition of its matrix (`Transform::polar`); clearing one keeps the other, about the object's middle, and it is set
+/// back on the plate. Its location is the middle of the plate.
+fn reset_transform(s: &mut Session, p: &Value) -> Result<Value, String> {
+    let a: Reset = parse(p)?;
+    let o = s.scene_mut().get_mut(a.id)?;
+    let (turn, stretch) = o.xf.polar().ok_or("the object's transform flattens it")?;
+    let m = match a.what.as_str() {
+        "location" => o.xf.m,
+        "rotation" => stretch,
+        "scale" => turn.m,
+        "all" => Transform::IDENTITY.m,
+        other => return Err(format!("`what` is location, rotation, scale or all, not `{other}`")),
+    };
+    let (lo, hi) = size_of(o)?;
+    let middle = [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, (lo[2] + hi[2]) / 2.0];
+    o.xf = Transform { m, t: o.xf.t };
+    let (lo, hi) = size_of(o)?;
+    let now = [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0];
+    let to = if matches!(a.what.as_str(), "location" | "all") { [0.0, 0.0] } else { [middle[0], middle[1]] };
+    o.xf = o.xf.then(&Transform::translate([to[0] - now[0], to[1] - now[1], 0.0]));
+    settle(o)?;
     Ok(json!({}))
 }
 
@@ -742,7 +805,9 @@ fn repair(s: &mut Session, p: &Value) -> Result<Value, String> {
     }
     // Only a change makes an undo step.
     if r.changed() {
-        s.scene_mut().get_mut(a.id)?.mesh = std::sync::Arc::new(mesh);
+        let o = s.scene_mut().get_mut(a.id)?;
+        // Its triangles are new: paint on the old ones does not carry over.
+        (o.mesh, o.paint) = (std::sync::Arc::new(mesh), None);
     }
     Ok(json!({"dropped": r.dropped, "flipped": r.flipped, "holes_filled": r.holes_filled, "watertight": r.closed}))
 }
@@ -771,7 +836,8 @@ fn simplify(s: &mut Session, p: &Value) -> Result<Value, String> {
     }
     let out = crate::simplify::simplify(&mesh, target)?;
     let (triangles, watertight) = (out.triangles.len(), out.is_watertight());
-    s.scene_mut().get_mut(a.id)?.mesh = std::sync::Arc::new(out);
+    let o = s.scene_mut().get_mut(a.id)?;
+    (o.mesh, o.paint) = (std::sync::Arc::new(out), None);
     Ok(json!({"before": before, "triangles": triangles, "watertight": watertight}))
 }
 
@@ -854,8 +920,13 @@ fn duplicate(s: &mut Session, p: &Value) -> Result<Value, String> {
     let o = s.scene.get(a.id)?.clone();
     let mut ids = Vec::with_capacity(count as usize);
     for _ in 0..count {
-        // The mesh is an `Arc`: a copy shares it and costs nothing.
-        ids.push(s.scene_mut().add_shared(&o.name, std::sync::Arc::clone(&o.mesh), o.xf)?);
+        // The mesh is an `Arc`: a copy shares it and costs nothing. It carries what was set on the first: its recipe, settings,
+        // modifier kind, settings by height and paint.
+        let id = s.scene_mut().add_shared(&o.name, std::sync::Arc::clone(&o.mesh), o.xf)?;
+        let c = s.scene_mut().get_mut(id)?;
+        (c.recipe, c.settings, c.modifier, c.ranges, c.paint) =
+            (o.recipe.clone(), o.settings.clone(), o.modifier, o.ranges.clone(), o.paint.clone());
+        ids.push(id);
     }
     let fits = if a.arrange.unwrap_or(true) {
         let all: Vec<u32> = s.scene.objects.iter().map(|o| o.id).collect();
@@ -922,6 +993,52 @@ fn delete(s: &mut Session, p: &Value) -> Result<Value, String> {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct PaintArgs {
+    id: u32,
+    kind: String,
+    at: Option<P3>,
+    radius: Option<f64>,
+}
+
+fn paint(s: &mut Session, p: &Value) -> Result<Value, String> {
+    use crate::Paint;
+    let a: PaintArgs = parse(p)?;
+    let tag = match a.kind.as_str() {
+        "seam" => Paint::Seam,
+        "support" => Paint::Support,
+        "block" => Paint::Block,
+        "none" => Paint::None,
+        other => return Err(format!("`kind` is seam, support, block or none, not `{other}`")),
+    };
+    let radius = positive("radius", a.radius.unwrap_or(3.0), 1000.0)?;
+    let o = s.scene_mut().get_mut(a.id)?;
+    let n = o.mesh.triangles.len();
+    let mut tags: Vec<u8> = o.paint.as_deref().cloned().filter(|t| t.len() == n).unwrap_or_else(|| vec![0; n]);
+    match a.at {
+        None if tag == Paint::None => tags.iter_mut().for_each(|t| *t = 0),
+        None => return Err("`at` is needed to paint: the point on the surface to paint round".into()),
+        Some(at) => {
+            let at = finite3("at", at)?;
+            if at.iter().any(|c| c.abs() > crate::mesh::MAX_COORD) {
+                return Err(format!("`at` is a point on the object, within {} mm of the plate's middle", crate::mesh::MAX_COORD));
+            }
+            // A face is painted when any part of it is within the radius of the point: small faces near it and large faces it lands
+            // on alike.
+            let world = o.world();
+            for (i, t) in tags.iter_mut().enumerate() {
+                if world.tri(i).is_some_and(|c| crate::mesh::distance_to_triangle(at, c) <= radius) {
+                    *t = tag as u8;
+                }
+            }
+        }
+    }
+    let painted = tags.iter().filter(|&&t| t == tag as u8 && tag != Paint::None).count();
+    o.paint = if tags.iter().all(|&t| t == 0) { None } else { Some(std::sync::Arc::new(tags)) };
+    Ok(json!({ "painted": painted }))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct SetModifier {
     id: u32,
     kind: String,
@@ -933,7 +1050,7 @@ fn set_modifier(s: &mut Session, p: &Value) -> Result<Value, String> {
         "none" => None,
         kind => Some(
             serde_json::from_value(json!(kind))
-                .map_err(|_| format!("`kind` is support_enforcer, support_blocker or none, not `{kind}`"))?,
+                .map_err(|_| format!("`kind` is support_enforcer, support_blocker, settings or none, not `{kind}`"))?,
         ),
     };
     s.scene_mut().get_mut(a.id)?.modifier = modifier;
@@ -958,10 +1075,20 @@ fn info(s: &mut Session, p: &Value) -> Result<Value, String> {
                 "recipe": o.recipe.as_deref().cloned().unwrap_or(Value::Null),
                 "settings": o.settings.as_deref().cloned().unwrap_or(Value::Null),
                 "modifier": o.modifier.map_or(Value::Null, |m| serde_json::to_value(m).unwrap_or(Value::Null)),
+                "ranges": o.ranges.as_deref().cloned().unwrap_or(Value::Null),
+                "painted": painted(o),
             })
         })
         .collect();
-    Ok(json!({"objects": objects}))
+    let heights = s.scene.layer_heights.as_deref().map_or(Value::Null, |h| json!(h));
+    Ok(json!({"objects": objects, "layer_heights": heights}))
+}
+
+/// How many faces carry each kind of paint, or null when none do.
+fn painted(o: &crate::Object) -> Value {
+    let Some(tags) = o.paint.as_deref() else { return Value::Null };
+    let count = |t: u8| tags.iter().filter(|&&x| x == t).count();
+    json!({"seam": count(1), "support": count(2), "block": count(3)})
 }
 
 #[derive(Deserialize)]
@@ -1500,6 +1627,82 @@ mod tests {
     }
 
     #[test]
+    fn paint_marks_the_faces_round_a_point_and_comes_off_again() {
+        let mut s = Session::new();
+        run(&mut s, "add_primitive", json!({"kind": "box", "size": [20, 20, 10]})).unwrap();
+        let faces = s.scene.get(1).unwrap().mesh.triangles.len();
+        // The box stands on the plate with its middle at the origin: (10, 0, 5) is the middle of its +x side.
+        let r = run(&mut s, "paint", json!({"id": 1, "kind": "seam", "at": [10, 0, 5], "radius": 2})).unwrap();
+        let n = r["painted"].as_u64().unwrap() as usize;
+        assert!((1..=2).contains(&n), "only the side's faces under the brush: {n}");
+        let o = s.scene.get(1).unwrap();
+        let tags = o.paint.as_deref().unwrap();
+        assert_eq!(tags.len(), faces);
+        let world = o.world();
+        for (i, &t) in tags.iter().enumerate() {
+            let c = world.tri(i).unwrap();
+            let on_the_side = c.iter().all(|q| (q[0] - 10.0).abs() < 1e-9);
+            assert!(t == 0 || on_the_side, "face {i} painted off the +x side");
+        }
+        assert_eq!(run(&mut s, "info", json!({})).unwrap()["objects"][0]["painted"]["seam"], n);
+        // A copy carries it; a project keeps it.
+        run(&mut s, "duplicate", json!({"id": 1, "arrange": false})).unwrap();
+        assert_eq!(s.scene.get(2).unwrap().paint, s.scene.get(1).unwrap().paint);
+        let dir = std::env::temp_dir().join(format!("lamina-paint-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("painted.lamina");
+        run(&mut s, "save", json!({"path": path.to_str().unwrap()})).unwrap();
+        let mut t = Session::new();
+        run(&mut t, "open", json!({"path": path.to_str().unwrap()})).unwrap();
+        assert_eq!(t.scene.get(1).unwrap().paint, s.scene.get(1).unwrap().paint);
+        std::fs::remove_dir_all(&dir).ok();
+        // "none" at the point rubs it out; with no point it clears it all, and nothing painted is no paint at all.
+        run(&mut s, "paint", json!({"id": 1, "kind": "support", "at": [0, 0, 0], "radius": 30})).unwrap();
+        assert!(s.scene.get(1).unwrap().paint.as_deref().unwrap().iter().all(|&t| t == 2), "a big brush paints every face");
+        run(&mut s, "paint", json!({"id": 1, "kind": "none", "at": [10, 0, 5], "radius": 2})).unwrap();
+        assert_eq!(s.scene.get(1).unwrap().paint.as_deref().unwrap().iter().filter(|&&t| t == 0).count(), n);
+        run(&mut s, "paint", json!({"id": 1, "kind": "none"})).unwrap();
+        assert!(s.scene.get(1).unwrap().paint.is_none());
+        run(&mut s, "undo", json!({})).unwrap();
+        assert!(s.scene.get(1).unwrap().paint.is_some(), "each stroke is one undo step");
+        // Simplify makes new triangles: the paint goes with the old ones.
+        let ball = run(&mut s, "add_primitive", json!({"kind": "sphere", "radius": 10})).unwrap()["id"].as_u64().unwrap() as u32;
+        run(&mut s, "paint", json!({"id": ball, "kind": "seam", "at": [0, 0, 0], "radius": 100})).unwrap();
+        run(&mut s, "simplify", json!({"id": ball, "ratio": 0.5})).unwrap();
+        assert!(s.scene.get(ball).unwrap().paint.is_none());
+        for bad in [
+            json!({"id": 1, "kind": "glitter", "at": [0, 0, 0]}),
+            json!({"id": 1, "kind": "seam"}),
+            json!({"id": 1, "kind": "seam", "at": [0, 0, 0], "radius": 0}),
+            json!({"id": 1, "kind": "seam", "at": [0, 0, 1e300]}),
+            json!({"id": 1, "kind": "seam", "at": [0, 0, 0], "size": 3}),
+            json!({"id": 9, "kind": "seam", "at": [0, 0, 0]}),
+        ] {
+            assert!(run(&mut s, "paint", bad.clone()).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_project_with_paint_of_the_wrong_length_opens_without_it() {
+        let mut s = Session::new();
+        run(&mut s, "add_primitive", json!({"kind": "box", "size": [10, 10, 10]})).unwrap();
+        run(&mut s, "paint", json!({"id": 1, "kind": "block", "at": [0, 0, 0], "radius": 100})).unwrap();
+        let dir = std::env::temp_dir().join(format!("lamina-paint-bad-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("p.lamina");
+        run(&mut s, "save", json!({"path": path.to_str().unwrap()})).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        let mut v: Value = serde_json::from_str(&text).unwrap();
+        v["objects"][0]["paint"] = json!(crate::base64::encode(&[1, 2, 3]));
+        std::fs::write(&path, serde_json::to_string(&v).unwrap()).unwrap();
+        let mut t = Session::new();
+        let r = run(&mut t, "open", json!({"path": path.to_str().unwrap()})).unwrap();
+        assert!(t.scene.get(1).unwrap().paint.is_none());
+        assert!(r.to_string().contains("objects[0].paint"), "{r}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
     fn a_face_laid_flat_ends_up_on_the_plate_facing_down() {
         let mut s = Session::new();
         // A pyramid lying on its base; laying one of its slanted sides flat tips it over onto that side.
@@ -1644,5 +1847,53 @@ mod tests {
         assert!(s.execute("set_modifier", &json!({"id": 9, "kind": "none"})).is_err());
         s.undo().unwrap();
         assert_eq!(s.scene.get(2).unwrap().modifier, Some(crate::Modifier::SupportBlocker), "one undo step");
+    }
+
+    #[test]
+    fn reset_transform_clears_location_turn_or_scale_and_keeps_the_rest() {
+        let mut s = Session::new();
+        s.execute("add_primitive", &json!({"kind": "box", "size": [20, 20, 10]})).unwrap();
+        let size = |s: &Session| {
+            let (lo, hi) = s.scene.get(1).unwrap().bounds().unwrap();
+            [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]]
+        };
+        let middle = |s: &Session| {
+            let (lo, hi) = s.scene.get(1).unwrap().bounds().unwrap();
+            [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, lo[2]]
+        };
+        let near = |a: [f64; 3], b: [f64; 3]| a.iter().zip(&b).all(|(x, y)| (x - y).abs() < 1e-4);
+        s.execute("scale", &json!({"id": 1, "by": [2, 1, 1]})).unwrap();
+        s.execute("rotate", &json!({"id": 1, "axis": [0, 0, 1], "degrees": 30})).unwrap();
+        s.execute("move", &json!({"id": 1, "by": [30, 10, 0]})).unwrap();
+        let (turned, at) = (size(&s), middle(&s));
+        assert!(near(turned, [40.0 * 30f64.to_radians().cos() + 20.0 * 0.5, 40.0 * 0.5 + 20.0 * 30f64.to_radians().cos(), 10.0]));
+        // Its turn taken away: 40 x 20 again, where it stood.
+        s.execute("reset_transform", &json!({"id": 1, "what": "rotation"})).unwrap();
+        assert!(near(size(&s), [40.0, 20.0, 10.0]) && near(middle(&s), at), "{:?} {:?}", size(&s), middle(&s));
+        s.undo().unwrap();
+        // Its scale taken away: the 20 mm square, still turned 30 degrees.
+        s.execute("reset_transform", &json!({"id": 1, "what": "scale"})).unwrap();
+        let w = 20.0 * (30f64.to_radians().cos() + 0.5);
+        assert!(near(size(&s), [w, w, 10.0]) && near(middle(&s), at), "{:?}", size(&s));
+        s.undo().unwrap();
+        s.execute("reset_transform", &json!({"id": 1, "what": "location"})).unwrap();
+        assert!(near(middle(&s), [0.0, 0.0, 0.0]) && near(size(&s), turned));
+        s.execute("reset_transform", &json!({"id": 1, "what": "all"})).unwrap();
+        assert!(near(size(&s), [20.0, 20.0, 10.0]) && near(middle(&s), [0.0, 0.0, 0.0]));
+        // A mirror stays when the turn goes.
+        s.execute("mirror", &json!({"id": 1, "axis": "x"})).unwrap();
+        s.execute("rotate", &json!({"id": 1, "axis": "z", "degrees": 45})).unwrap();
+        s.execute("reset_transform", &json!({"id": 1, "what": "rotation"})).unwrap();
+        assert!(s.scene.get(1).unwrap().xf.det() < 0.0 && near(size(&s), [20.0, 20.0, 10.0]));
+        // A named axis and its vector turn alike; bad requests change nothing.
+        let mut t = Session::new();
+        t.execute("add_primitive", &json!({"kind": "box", "size": [30, 10, 10]})).unwrap();
+        t.execute("rotate", &json!({"id": 1, "axis": [0, 0, 2], "degrees": 90})).unwrap();
+        assert!(near(size(&t), [10.0, 30.0, 10.0]));
+        for bad in [json!({"id": 1, "what": "colour"}), json!({"id": 7, "what": "all"})] {
+            assert!(t.execute("reset_transform", &bad).is_err());
+        }
+        assert!(t.execute("rotate", &json!({"id": 1, "axis": [0, 0, 0], "degrees": 9})).is_err());
+        assert!(t.execute("rotate", &json!({"id": 1, "axis": "w", "degrees": 9})).is_err());
     }
 }

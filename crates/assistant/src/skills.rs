@@ -22,6 +22,7 @@ const FILES: &[&str] = &[
     include_str!("../skills/calibration.md"),
     include_str!("../skills/materials.md"),
     include_str!("../skills/supports.md"),
+    include_str!("../skills/objects-heights-and-extruders.md"),
 ];
 
 fn parse(file: &'static str) -> Option<Skill> {
@@ -144,7 +145,7 @@ mod tests {
                 }
             }
         }
-        assert!(claims >= 3, "found only {claims} claims of something missing: has the way skills write them changed?");
+        assert!(claims >= 2, "found only {claims} claims of something missing: has the way skills write them changed?");
     }
 
     /// The slicing skill promises this split: the model checks a slice, the user writes the file.

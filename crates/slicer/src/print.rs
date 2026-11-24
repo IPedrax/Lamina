@@ -130,6 +130,44 @@ pub fn gcode_each(objects: &[(u32, Mesh)], own: &[Option<Profile>], p: &Profile)
 /// The same, with the plate's modifiers where they stand: support enforcers and blockers, which print nothing and say where the
 /// parts' supports go.
 pub fn gcode_with(objects: &[(u32, Mesh)], own: &[Option<Profile>], modifiers: &[(Modifier, Mesh)], p: &Profile) -> Result<Output, String> {
+    gcode_plate(&Plate { objects, own, modifiers, ..Plate::default() }, p)
+}
+
+/// Each object's height ranges: `(from, to, profile)`.
+pub type RangeProfiles = Vec<Vec<(f64, f64, Profile)>>;
+
+/// A settings modifier: its id, its mesh where it stands, and the fields it gives the sparse infill inside it
+/// (`commands::ZONE_FIELDS`).
+pub type Zone = (u32, Mesh, serde_json::Map<String, serde_json::Value>);
+
+/// Everything on the plate the slicer reads, each list in the order of `objects` (a shorter list leaves the rest unset).
+#[derive(Clone, Copy, Default)]
+pub struct Plate<'a> {
+    /// Each object's id and its mesh where it stands.
+    pub objects: &'a [(u32, Mesh)],
+    /// Each object's own profile, where it has one.
+    pub own: &'a [Option<Profile>],
+    /// Each object's settings by height: `(from, to, profile)`, a layer whose middle is from `from` up to `to` printing with
+    /// `profile` (made from the object's own by `commands::range_profiles`).
+    pub ranges: &'a [Vec<(f64, f64, Profile)>],
+    /// Each object's paint, one `lamina_core::Paint` tag a triangle of its mesh (ignored when the lengths differ).
+    pub paint: &'a [Option<std::sync::Arc<Vec<u8>>>],
+    /// The support enforcers and blockers where they stand.
+    pub modifiers: &'a [(Modifier, Mesh)],
+    /// The settings modifiers where they stand.
+    pub zones: &'a [Zone],
+    /// Layer heights by hand (`heights`), for the whole plate; empty for the profile's.
+    pub heights: &'a [[f64; 2]],
+}
+
+/// The same, with all the plate holds: settings by height, paint and modifiers.
+pub fn gcode_plate<'a>(plate: &Plate<'a>, p: &'a Profile) -> Result<Output, String> {
+    let Plate { objects, own, ranges, paint, modifiers, zones, heights } = *plate;
+    // A settings modifier with no settings changes nothing, and is left out.
+    let zones: Vec<&Zone> = zones.iter().filter(|z| !z.2.is_empty()).collect();
+    for r in ranges.iter().flatten() {
+        r.2.check()?;
+    }
     for o in own.iter().flatten() {
         o.check()?;
         if (o.layer_height, o.first_layer_height, o.adaptive_layers, o.min_layer_height)
@@ -170,18 +208,40 @@ pub fn gcode_with(objects: &[(u32, Mesh)], own: &[Option<Profile>], modifiers: &
         (0..objects.len()).map(|i| own.get(i).and_then(Option::as_ref).unwrap_or(p).extruder.saturating_sub(1) as usize).collect();
     let sequence = if p.sequential { Some(one_at_a_time(objects, &tools, p)?) } else { None };
     let w = p.line_width();
-    // Adaptive layers are the plate's, chosen from every object's surfaces, so the objects' layers stay level with each other.
-    let tops = if p.adaptive_layers {
+    // Layers by hand, or adaptive layers, are the plate's (adaptive ones chosen from every object's surfaces), so the objects'
+    // layers stay level with each other. Each height by hand is kept to what the nozzle prints.
+    let tops = if !heights.is_empty() {
+        let top = objects.iter().filter_map(|(_, m)| m.bounds()).map(|(_, hi)| hi[2]).fold(0.0, f64::max);
+        let (lo, hi) = (lamina_core::scene::LAYER_HEIGHTS.0, (0.8 * p.nozzle).min(lamina_core::scene::LAYER_HEIGHTS.1));
+        Some(crate::heights::tops(heights, p.first_layer_height, top, lo, hi)?)
+    } else if p.adaptive_layers {
         let meshes: Vec<&Mesh> = objects.iter().map(|(_, m)| m).collect();
         Some(slice::adaptive_tops(&meshes, p.first_layer_height, p.min_layer_height, p.layer_height)?)
     } else {
         None
     };
     let profile_of = |i: usize| own.get(i).and_then(Option::as_ref).unwrap_or(p);
+
     // Every object sliced first, so supports are planned for the plate: on the plate's layer k stands each object's layer k.
     let sliced: Vec<Vec<slice::Layer>> =
         objects.iter().enumerate().map(|(i, (_, m))| object_layers(m, profile_of(i), tops.as_deref())).collect::<Result<_, _>>()?;
     let regions: Vec<Vec<Region>> = sliced.iter().map(|ls| ls.iter().map(|l| geom::region(&l.loops)).collect()).collect();
+    // Each object's settings on each of its layers: those of the height range the layer's middle is in, else its own.
+    let per_layer: Vec<Vec<&Profile>> = sliced
+        .iter()
+        .enumerate()
+        .map(|(i, layers)| {
+            let own_ranges = ranges.get(i).map_or(&[][..], Vec::as_slice);
+            layers
+                .iter()
+                .map(|l| {
+                    let middle = l.z - l.height / 2.0;
+                    own_ranges.iter().find(|r| r.0 <= middle && middle < r.1).map_or(profile_of(i), |r| &r.2)
+                })
+                .collect()
+        })
+        .collect();
+    let layer_profile = |i: usize, k: usize| per_layer.get(i).and_then(|l| l.get(k)).copied().unwrap_or(profile_of(i));
     // The modifiers sliced on the same layers, gathered by kind.
     let count = regions.iter().map(Vec::len).max().unwrap_or(0);
     let mut volumes = support::Volumes { enforce: vec![Region::new(); count], block: vec![Region::new(); count] };
@@ -190,12 +250,56 @@ pub fn gcode_with(objects: &[(u32, Mesh)], own: &[Option<Profile>], modifiers: &
         let into = match kind {
             Modifier::SupportEnforcer => &mut volumes.enforce,
             Modifier::SupportBlocker => &mut volumes.block,
+            Modifier::Settings => continue,
         };
         for (k, l) in layers.iter().enumerate().take(count) {
             into[k] = geom::union(&into[k], &geom::region(&l.loops));
         }
     }
+    // Faces painted for supports, or against them, do as an enforcer or a blocker does where their shadow falls; faces painted for
+    // the seam give each layer's seam points. A paint whose length is not the mesh's is ignored.
+    let tags_of = |i: usize| {
+        let tags = paint.get(i).and_then(Option::as_deref)?;
+        (tags.len() == objects.get(i)?.1.triangles.len()).then_some(tags.as_slice())
+    };
+    for (i, layers) in sliced.iter().enumerate() {
+        let (Some(tags), Some((_, m))) = (tags_of(i), objects.get(i)) else { continue };
+        for (kind, into) in [(lamina_core::Paint::Support, &mut volumes.enforce), (lamina_core::Paint::Block, &mut volumes.block)] {
+            for (k, r) in crate::paint::shadows(m, tags, kind, layers, w / 2.0).into_iter().enumerate().take(count) {
+                if !geom::is_empty(&r) {
+                    into[k] = geom::union(&into[k], &r);
+                }
+            }
+        }
+    }
+    let seam_points: Vec<Vec<Vec<P2>>> = sliced
+        .iter()
+        .enumerate()
+        .map(|(i, layers)| match (tags_of(i), objects.get(i)) {
+            (Some(tags), Some((_, m))) => crate::paint::seams(m, tags, layers),
+            _ => Vec::new(),
+        })
+        .collect();
     let supports = plate_supports(&sliced, &regions, &profile_of, p.sequential, &volumes);
+    // Settings modifiers: each one's slice on the plate's layers, and each object's settings inside it (its own, with the
+    // modifier's infill fields over them).
+    if let Some((id, k)) =
+        zones.iter().find_map(|(id, _, f)| f.keys().find(|k| !crate::commands::ZONE_FIELDS.contains(&k.as_str())).map(|k| (id, k)))
+    {
+        return Err(format!("modifier {id} is a settings modifier, which may set {}, not `{k}`", crate::commands::ZONE_FIELDS.join(", ")));
+    }
+    let zone_regions: Vec<Vec<Region>> = zones
+        .iter()
+        .map(|(_, m, _)| object_layers(m, p, tops.as_deref()).map(|ls| ls.iter().map(|l| geom::region(&l.loops)).collect()))
+        .collect::<Result<_, _>>()?;
+    let zone_profiles: Vec<Vec<Profile>> = (0..objects.len())
+        .map(|i| {
+            zones
+                .iter()
+                .map(|(id, _, f)| crate::presets::apply(profile_of(i), f).map_err(|e| format!("modifier {id}'s settings: {e}")))
+                .collect::<Result<_, _>>()
+        })
+        .collect::<Result<_, _>>()?;
     // What each object prints on each layer, its supports included: what a purge tower may not stand in (only a printer with
     // several extruders changes tools and has one).
     let occupied: Vec<Vec<Region>> = regions
@@ -220,7 +324,11 @@ pub fn gcode_with(objects: &[(u32, Mesh)], own: &[Option<Profile>], modifiers: &
         .zip(regions)
         .zip(supports)
         .enumerate()
-        .map(|(i, ((layers, regions), supports))| plan(layers, regions, supports, profile_of(i), w))
+        .map(|(i, ((layers, regions), supports))| {
+            let here: Vec<(&[Region], &Profile)> =
+                zone_regions.iter().zip(zone_profiles.get(i).into_iter().flatten()).map(|(r, zp)| (r.as_slice(), zp)).collect();
+            plan(layers, regions, supports, profile_of(i), w, &|k| layer_profile(i, k), &here)
+        })
         .collect::<Result<_, _>>()?;
     let count = plans.iter().map(|(_, l)| l.len()).max().unwrap_or(0);
     // Each layer's extruders in the order they print (the one in use first, then the rest from the lowest, so each changes once a
@@ -260,6 +368,7 @@ pub fn gcode_with(objects: &[(u32, Mesh)], own: &[Option<Profile>], modifiers: &
 
     let mut g = Writer {
         p,
+        pa: p.pressure_advance,
         out: String::new(),
         at: None,
         z: 0.0,
@@ -268,6 +377,7 @@ pub fn gcode_with(objects: &[(u32, Mesh)], own: &[Option<Profile>], modifiers: &
         planner: crate::time::Planner::new(p.max_acceleration, p.junction_deviation),
         seams: Vec::new(),
         below: Vec::new(),
+        painted: Vec::new(),
         feature: None,
         by_feature: std::collections::BTreeMap::new(),
         fan: 0.0,
@@ -295,11 +405,7 @@ pub fn gcode_with(objects: &[(u32, Mesh)], own: &[Option<Profile>], modifiers: &
     g.line(p.expand(&p.start_gcode)?);
     g.line("G90\nM83\nG92 E0".into());
     if p.pressure_advance > 0.0 {
-        g.line(match p.firmware {
-            Firmware::Marlin => format!("M900 K{}", p.pressure_advance),
-            Firmware::Klipper => format!("SET_PRESSURE_ADVANCE ADVANCE={}", p.pressure_advance),
-            Firmware::Reprap => format!("M572 D0 S{}", p.pressure_advance),
-        });
+        g.line(pressure_advance(p.firmware, p.pressure_advance));
     }
     // Klipper: each object named with its outline, so one that fails can be cancelled and the others go on.
     let names: Vec<String> = objects.iter().map(|(id, _)| format!("object_{id}")).collect();
@@ -361,6 +467,10 @@ pub fn gcode_with(objects: &[(u32, Mesh)], own: &[Option<Profile>], modifiers: &
     for (k, (z, height, strokes, _)) in raft.into_iter().enumerate() {
         g.line(format!(";LAYER:{k}"));
         g.set_z(z);
+        // A raft's third layer is the print's: the first layer's temperatures end there, as they do without one.
+        if k == 2 {
+            g.past_first_layers();
+        }
         if let Some((skirt, _)) = first.take() {
             g.strokes(skirt, flow(height, w, p.filament_diameter));
         }
@@ -370,7 +480,7 @@ pub fn gcode_with(objects: &[(u32, Mesh)], own: &[Option<Profile>], modifiers: &
     // Whether a tool has printed: the first one chosen needs no purge.
     let mut started = false;
     // Layer `k` of the objects `which`, in that order, as layer `label` of the file.
-    let mut layer = |g: &mut Writer, plans: &mut [ObjectPlan], k: usize, label: usize, which: &[usize]| -> Result<(), String> {
+    let mut layer = |g: &mut Writer<'a>, plans: &mut [ObjectPlan], k: usize, label: usize, which: &[usize]| -> Result<(), String> {
         lamina_core::cancel::check()?;
         g.line(format!(";LAYER:{label}"));
         // The fan: off for the first layer, then up a step a layer to full at `fan_full_layer`; for each object again when they print
@@ -394,13 +504,7 @@ pub fn gcode_with(objects: &[(u32, Mesh)], own: &[Option<Profile>], modifiers: &
             }
         }
         if label == 2 {
-            let t = g.tool;
-            if nozzle_temp(p, t, 1) != nozzle_temp(p, t, 2) {
-                g.heat(t, nozzle_temp(p, t, 2));
-            }
-            if p.bed_temp != p.first_layer_bed_temp {
-                g.line(format!("M140 S{:.0}", p.bed_temp));
-            }
+            g.past_first_layers();
         }
         // The tower, on every layer up to the last tool change; each change on the layer purges on it.
         let mut tower_here = match (&tower, last_change) {
@@ -432,6 +536,9 @@ pub fn gcode_with(objects: &[(u32, Mesh)], own: &[Option<Profile>], modifiers: &
         let mut done = 0;
         for &i in which {
             let Some((z, height, strokes, region)) = plans[i].1.get_mut(k) else { continue };
+            // This object's settings on this layer, from its layer change on: a height range's retraction, flow and the rest.
+            let lp = layer_profile(i, k);
+            g.p = lp;
             // A vase layer climbs to its height as it prints, from where the last one ended.
             if !strokes.is_empty() && strokes.iter().all(|s| s.spiral) {
                 g.spiral = Some((g.z, *z + lift));
@@ -457,10 +564,32 @@ pub fn gcode_with(objects: &[(u32, Mesh)], own: &[Option<Profile>], modifiers: &
             if klipper {
                 g.line(format!("EXCLUDE_OBJECT_START NAME={}", names[i]));
             }
+            // A height range's temperature (from the third layer, after the first layer's own), fan and pressure advance.
+            if label >= 2 {
+                let want = nozzle_temp(lp, g.tool, label);
+                if g.heat_at.get(g.tool).is_some_and(|&now| (now - want).abs() > 0.5) {
+                    g.heat(g.tool, want);
+                }
+            }
+            if lp.fan_speed != p.fan_speed {
+                let fan = fan_at(lp, k + below);
+                if (fan - g.fan).abs() > 0.5 {
+                    g.line(format!("M106 S{fan:.0}"));
+                    (g.fan, g.fan_now) = (fan, fan);
+                }
+            }
+            if (lp.pressure_advance - g.pa).abs() > 1e-9 {
+                g.line(pressure_advance(p.firmware, lp.pressure_advance));
+                g.pa = lp.pressure_advance;
+            }
+            // Painted seams: each wall loop near one starts there, whatever the seam rule.
+            g.painted = seam_points.get(i).and_then(|l| l.get(k)).cloned().unwrap_or_default();
             g.strokes(std::mem::take(strokes), flow(*height, w, p.filament_diameter));
+            g.painted.clear();
             if klipper {
                 g.line(format!("EXCLUDE_OBJECT_END NAME={}", names[i]));
             }
+            g.p = p;
             started |= busy;
         }
         Ok(())
@@ -501,6 +630,15 @@ pub fn gcode_with(objects: &[(u32, Mesh)], own: &[Option<Profile>], modifiers: &
     g.retract();
     g.line(p.expand(&p.end_gcode)?);
     Ok(Output { gcode: g.out, layers, filament_mm: g.filament, seconds: g.planner.seconds(), warnings, features: g.by_feature })
+}
+
+/// The firmware's command that sets pressure advance (linear advance on Marlin).
+fn pressure_advance(firmware: Firmware, v: f64) -> String {
+    match firmware {
+        Firmware::Marlin => format!("M900 K{v}"),
+        Firmware::Klipper => format!("SET_PRESSURE_ADVANCE ADVANCE={v}"),
+        Firmware::Reprap => format!("M572 D0 S{v}"),
+    }
 }
 
 /// A nozzle that was never heated, or was turned off, is taken to be at room temperature, C.
@@ -759,20 +897,36 @@ fn plate_supports<'a>(
 
 /// One object's first layer as a region, then its layers as (top z, thickness, strokes in print order), from its `layers`, their
 /// `regions` and its `supports` (planned for the plate).
-fn plan(layers: &[slice::Layer], regions: Vec<Region>, supports: Vec<support::Layer>, p: &Profile, w: f64) -> Result<ObjectPlan, String> {
+/// `at(k)` is layer k's profile: the object's, or the height range's its middle is in.
+fn plan<'p>(
+    layers: &[slice::Layer],
+    regions: Vec<Region>,
+    supports: Vec<support::Layer>,
+    base: &'p Profile,
+    w: f64,
+    at: &dyn Fn(usize) -> &'p Profile,
+    zones: &[(&[Region], &Profile)],
+) -> Result<ObjectPlan, String> {
     let no_support = support::Layer::default();
-    let walls = f64::from(p.perimeters);
     // Walls of varying width: each layer's parts too thin for its walls, and the lines that print them.
-    let thin: Vec<(Region, Vec<crate::walls::Line>)> = if p.wall_generator == crate::walls::WallGenerator::Variable {
-        regions.iter().map(|r| crate::walls::thin(r, p.perimeters, w)).collect()
-    } else {
-        Vec::new()
-    };
+    let thin: Vec<(Region, Vec<crate::walls::Line>)> = regions
+        .iter()
+        .enumerate()
+        .map(|(k, r)| {
+            let p = at(k);
+            if p.wall_generator == crate::walls::WallGenerator::Variable {
+                crate::walls::thin(r, p.perimeters, w)
+            } else {
+                (Region::new(), Vec::new())
+            }
+        })
+        .collect();
     let inner: Vec<Region> = regions
         .iter()
         .enumerate()
         .map(|(k, r)| {
-            let inner = if p.perimeters == 0 { r.clone() } else { geom::inset(r, walls * w - INFILL_OVERLAP * w) };
+            let p = at(k);
+            let inner = if p.perimeters == 0 { r.clone() } else { geom::inset(r, f64::from(p.perimeters) * w - INFILL_OVERLAP * w) };
             match thin.get(k) {
                 Some((area, _)) if !geom::is_empty(area) => geom::difference(&inner, area),
                 _ => inner,
@@ -782,6 +936,8 @@ fn plan(layers: &[slice::Layer], regions: Vec<Region>, supports: Vec<support::La
     let mut out = Vec::with_capacity(layers.len());
     for (k, layer) in layers.iter().enumerate() {
         lamina_core::cancel::check()?;
+        // This layer's settings; the skins above and below are counted with the object's own.
+        let p = at(k);
         let speed = |s: f64| if k == 0 { p.first_layer_speed } else { s };
         let mut strokes = Vec::new();
         // Vase mode, above the bottom: the outer wall alone, climbing as it goes round; no infill and no top.
@@ -889,7 +1045,7 @@ fn plan(layers: &[slice::Layer], regions: Vec<Region>, supports: Vec<support::La
                 });
             }
         }
-        let covered = covered(&inner, k, p.top_layers as usize, p.bottom_layers as usize);
+        let covered = covered(&inner, k, base.top_layers as usize, base.bottom_layers as usize);
         let solid = geom::difference(&inner[k], &covered);
         let sparse = geom::intersect(&inner[k], &covered);
         // Alternate the direction so each layer bridges the one below.
@@ -918,14 +1074,33 @@ fn plan(layers: &[slice::Layer], regions: Vec<Region>, supports: Vec<support::La
                 spiral: false,
             }));
         }
-        if p.infill_density > 0.0 && !geom::is_empty(&sparse) {
-            let spacing = w / p.infill_density;
-            let pattern = infill::sparse(p.infill_pattern, &sparse, layer.z, k, w, p.infill_density, lines);
-            let joined = connect(pattern, &sparse, CONNECT_REACH * spacing, p.infill_pattern != infill::Pattern::Lines);
+        // Inside a settings modifier the sparse infill is the modifier's: each piece of the sparse area is filled once, by the first
+        // modifier over it, and the rest with the layer's own settings.
+        let mut rest = sparse;
+        let mut fills: Vec<(Region, &Profile)> = Vec::with_capacity(zones.len() + 1);
+        for (zone, zp) in zones {
+            let Some(r) = zone.get(k).filter(|r| !geom::is_empty(r)) else { continue };
+            if geom::is_empty(&rest) {
+                break;
+            }
+            let part = geom::intersect(&rest, r);
+            if !geom::is_empty(&part) {
+                rest = geom::difference(&rest, r);
+                fills.push((part, zp));
+            }
+        }
+        fills.push((rest, p));
+        for (area, fp) in fills {
+            if fp.infill_density <= 0.0 || geom::is_empty(&area) {
+                continue;
+            }
+            let spacing = w / fp.infill_density;
+            let pattern = infill::sparse(fp.infill_pattern, &area, layer.z, k, w, fp.infill_density, lines);
+            let joined = connect(pattern, &area, CONNECT_REACH * spacing, fp.infill_pattern != infill::Pattern::Lines);
             strokes.extend(joined.into_iter().map(|pts| Stroke {
                 pts,
                 closed: false,
-                speed: speed(p.infill_speed),
+                speed: speed(fp.infill_speed),
                 kind: Feature::SparseInfill,
                 flow: 1.0,
                 spiral: false,
@@ -1302,6 +1477,8 @@ fn seam(pts: &[P2], rule: Seam, here: P2, below: &[P2]) -> Option<usize> {
 
 struct Writer<'a> {
     p: &'a Profile,
+    /// The pressure advance last set.
+    pa: f64,
     out: String,
     at: Option<P2>,
     z: f64,
@@ -1311,6 +1488,8 @@ struct Writer<'a> {
     /// Where this layer's loops started, and the layer below's, for aligned seams.
     seams: Vec<P2>,
     below: Vec<P2>,
+    /// Where seam paint crosses the layer of the object being printed: a wall loop near one of these starts there.
+    painted: Vec<P2>,
     /// The feature last named with `;TYPE:`, named again after each layer change.
     feature: Option<Feature>,
     /// The fan the layer asks for, and the fan as last set (a bridge turns it up).
@@ -1405,6 +1584,17 @@ impl Writer<'_> {
     }
 
     /// Sets tool `t`'s temperature without waiting: a plain `M104` on a printer with one extruder.
+    /// From the third layer on, the nozzle and the bed at their own temperatures rather than the first layer's.
+    fn past_first_layers(&mut self) {
+        let (p, t) = (self.p, self.tool);
+        if nozzle_temp(p, t, 1) != nozzle_temp(p, t, 2) {
+            self.heat(t, nozzle_temp(p, t, 2));
+        }
+        if p.bed_temp != p.first_layer_bed_temp {
+            self.line(format!("M140 S{:.0}", p.bed_temp));
+        }
+    }
+
     fn heat(&mut self, t: usize, temp: f64) {
         if let Some(h) = self.heat_at.get_mut(t) {
             *h = temp;
@@ -1604,7 +1794,13 @@ impl Writer<'_> {
                 break;
             };
             let mut s = loops.swap_remove(i);
-            if let Some(start) = seam(&s.pts, self.p.seam, here, &self.below) {
+            // A wall near painted seam starts at the paint: the outer wall is half a line in from the surface, the last inner one a
+            // line for each wall further.
+            let reach = (self.p.perimeters as f64 + 1.0) * self.p.line_width();
+            let wall = matches!(s.kind, Feature::OuterWall | Feature::InnerWall);
+            if wall && crate::paint::start_near(&mut s.pts, &self.painted, reach) {
+                self.seams.push(s.pts[0]);
+            } else if let Some(start) = seam(&s.pts, self.p.seam, here, &self.below) {
                 s.pts.rotate_left(start);
                 self.seams.push(s.pts[0]);
             }
@@ -1680,6 +1876,7 @@ impl Writer<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     /// The filament the file pushes in the print (the sum of the positive E of moves that travel), as volume in mm³.
     fn volume(g: &str, p: &Profile) -> f64 {
@@ -1992,6 +2189,107 @@ mod tests {
         // An enforcer under nothing over air (a box beside the tee) adds nothing.
         let beside = Mesh::cuboid([5.0, 5.0, 5.0]).transformed(&lamina_core::Transform::translate([30.0, 0.0, 0.0]));
         assert!(!gcode_with(&tee, &[], &[(Modifier::SupportEnforcer, beside)], &off).unwrap().features.contains_key("support"));
+    }
+
+    #[test]
+    fn a_settings_modifier_fills_the_part_inside_it_with_its_own_infill_and_leaves_the_rest() {
+        // A bar 40 mm long, and a box over its right half (x from 0) asking for 50 % infill where the part has 15 %.
+        let bar = vec![(1, Mesh::cuboid([40.0, 10.0, 6.0]))];
+        let right = Mesh::cuboid([20.0, 14.0, 10.0]).transformed(&lamina_core::Transform::translate([10.0, 0.0, 0.0]));
+        let dense: Vec<Zone> = vec![(2, right.clone(), json!({"infill_density": 0.5}).as_object().unwrap().clone())];
+        let p = Profile { infill_density: 0.15, skirt_loops: 0, ..Profile::default() };
+        let plain = gcode(&bar, &p).unwrap();
+        let zoned = gcode_plate(&Plate { objects: &bar, zones: &dense, ..Plate::default() }, &p).unwrap();
+        // Sparse infill on a middle layer, by length: the part of each line left of x = -2, or right of x = 2.
+        let length = |g: &str, sign: f64| -> f64 {
+            let beyond = |a: P2, b: P2| -> f64 {
+                let (u, v) = (a[0] * sign - 2.0, b[0] * sign - 2.0);
+                let share = match (u > 0.0, v > 0.0) {
+                    (true, true) => 1.0,
+                    (false, false) => 0.0,
+                    _ => u.max(v) / (u - v).abs(),
+                };
+                dist(a, b) * share
+            };
+            layer_runs(g, 15, "sparse-infill", &p).iter().flat_map(|r| r.windows(2).map(|w| beyond(w[0], w[1])).collect::<Vec<_>>()).sum()
+        };
+        let (left, right_len) = (length(&zoned.gcode, -1.0), length(&zoned.gcode, 1.0));
+        println!(
+            "sparse infill on layer 15: left {left:.0} mm, right {right_len:.0} mm, without {:.0} and {:.0}",
+            length(&plain.gcode, -1.0),
+            length(&plain.gcode, 1.0)
+        );
+        assert!((left - length(&plain.gcode, -1.0)).abs() < 0.05 * left, "the left half as it was");
+        assert!(right_len > 2.5 * left, "the right half three times as dense: {right_len} against {left}");
+        // The walls and the skins are the part's own, as without the modifier.
+        let walls = |g: &str| (0..30).map(|k| layer_runs(g, k, "outer-wall", &p).len()).sum::<usize>();
+        assert_eq!(walls(&zoned.gcode), walls(&plain.gcode));
+        // None inside: the right half hollow.
+        let hollow: Vec<Zone> = vec![(2, right.clone(), json!({"infill_density": 0}).as_object().unwrap().clone())];
+        let none = gcode_plate(&Plate { objects: &bar, zones: &hollow, ..Plate::default() }, &p).unwrap();
+        assert!(length(&none.gcode, 1.0) < 1.0 && length(&none.gcode, -1.0) > 0.9 * left);
+        // A modifier beside the part changes nothing; one with a field it may not set is refused.
+        let away = Mesh::cuboid([5.0, 5.0, 5.0]).transformed(&lamina_core::Transform::translate([60.0, 0.0, 0.0]));
+        let beside: Vec<Zone> = vec![(3, away, json!({"infill_density": 0.9}).as_object().unwrap().clone())];
+        assert_eq!(gcode_plate(&Plate { objects: &bar, zones: &beside, ..Plate::default() }, &p).unwrap().gcode, plain.gcode);
+        let walled: Vec<Zone> = vec![(2, right, json!({"perimeters": 4}).as_object().unwrap().clone())];
+        let e = gcode_plate(&Plate { objects: &bar, zones: &walled, ..Plate::default() }, &p).unwrap_err();
+        assert!(e.contains("modifier 2") && e.contains("perimeters"), "{e}");
+    }
+
+    #[test]
+    fn painted_faces_say_where_the_seams_start_and_where_supports_go() {
+        use std::sync::Arc;
+        let tags = |m: &Mesh, kind: u8, pick: &dyn Fn([lamina_core::P3; 3]) -> bool| -> Option<Arc<Vec<u8>>> {
+            Some(Arc::new((0..m.triangles.len()).map(|i| if pick(m.tri(i).unwrap()) { kind } else { 0 }).collect()))
+        };
+        // Seams: a tower 8 mm round with its side painted round +x. The rule says the rear (+y); the paint wins on every layer, and
+        // the inner wall starts there too.
+        let tower = Mesh::cylinder(8.0, 6.0, 48);
+        let at_x = tags(&tower, 1, &|t| t.iter().all(|q| q[0] > 7.0 && q[1].abs() < 1.2));
+        let p = Profile { seam: Seam::Rear, skirt_loops: 0, infill_density: 0.0, top_layers: 0, bottom_layers: 0, ..Profile::default() };
+        let objects = vec![(1, tower.clone())];
+        let painted = gcode_plate(&Plate { objects: &objects, paint: std::slice::from_ref(&at_x), ..Plate::default() }, &p).unwrap();
+        let layers = painted.layers;
+        for k in 0..layers {
+            for kind in ["outer-wall", "inner-wall"] {
+                // A loop ends where it starts (its first point is missing from the run when no travel led to it).
+                let runs = layer_runs(&painted.gcode, k, kind, &p);
+                let start = runs.first().and_then(|r| r.last()).copied().unwrap_or_else(|| panic!("layer {k}: no {kind}"));
+                assert!(start[0] > 6.0 && start[1].abs() < 0.6, "layer {k}'s {kind} starts at {start:?}");
+            }
+        }
+        let plain = gcode(&objects, &p).unwrap();
+        let start = *layer_runs(&plain.gcode, 3, "outer-wall", &p)[0].last().unwrap();
+        assert!(start[1] > 7.0, "unpainted, the rear: {start:?}");
+        // Paint of the wrong length is ignored.
+        let wrong = Some(Arc::new(vec![1u8; 3]));
+        let ignored = gcode_plate(&Plate { objects: &objects, paint: std::slice::from_ref(&wrong), ..Plate::default() }, &p).unwrap();
+        assert_eq!(ignored.gcode, plain.gcode);
+
+        // Supports: a tee whose arms are boxes of their own, so the right arm's underside can be painted alone.
+        let pillar = Mesh::cuboid([6.0, 6.0, 6.0]);
+        let arm = |x: f64| Mesh::cuboid([7.0, 6.0, 2.0]).transformed(&lamina_core::Transform::translate([x, 0.0, 4.0]));
+        let tee = Mesh::merged([&pillar, &arm(-6.5), &arm(6.5)]);
+        let under_right = |kind: u8| tags(&tee, kind, &|t| t.iter().all(|q| (q[2] - 4.0).abs() < 1e-9 && q[0] >= 3.0 - 1e-9));
+        let side = |g: &str, p: &Profile, sign: f64| -> usize {
+            (0..30).flat_map(|k| layer_runs(g, k, "support", p)).flatten().filter(|q| q[0] * sign > 3.5).count()
+        };
+        let objects = vec![(1, tee.clone())];
+        // Supports off: painted support holds the right arm up, and the left gets none.
+        let off = Profile { skirt_loops: 0, ..Profile::default() };
+        assert!(!gcode(&objects, &off).unwrap().features.contains_key("support"));
+        let wanted = under_right(2);
+        let held = gcode_plate(&Plate { objects: &objects, paint: std::slice::from_ref(&wanted), ..Plate::default() }, &off).unwrap();
+        assert!(side(&held.gcode, &off, 1.0) > 0 && side(&held.gcode, &off, -1.0) == 0);
+        // Supports everywhere: painted block takes the right arm's away, and the left keeps its own.
+        let on = Profile { support: support::Support::Everywhere, skirt_loops: 0, ..Profile::default() };
+        let all = gcode(&objects, &on).unwrap();
+        assert!(side(&all.gcode, &on, 1.0) > 0 && side(&all.gcode, &on, -1.0) > 0);
+        let unwanted = under_right(3);
+        let blocked = gcode_plate(&Plate { objects: &objects, paint: std::slice::from_ref(&unwanted), ..Plate::default() }, &on).unwrap();
+        assert_eq!(side(&blocked.gcode, &on, 1.0), 0, "painted block takes the right arm's support away");
+        assert!(side(&blocked.gcode, &on, -1.0) > 0);
     }
 
     #[test]

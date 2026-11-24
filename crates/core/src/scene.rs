@@ -16,6 +16,9 @@ pub enum Modifier {
     SupportEnforcer,
     /// No supports for the overhangs of a part inside it.
     SupportBlocker,
+    /// Settings of its own (the object's `settings`, a few infill fields the slicer names) for the sparse infill of every part inside
+    /// it.
+    Settings,
 }
 
 #[derive(Clone, Debug)]
@@ -31,6 +34,30 @@ pub struct Object {
     pub settings: Option<Arc<serde_json::Value>>,
     /// A modifier is not printed (`set_modifier`); none for a part.
     pub modifier: Option<Modifier>,
+    /// Settings by height (`set_height_range`): a list of `{from, to, profile}` the slicer reads, kept as it was given.
+    pub ranges: Option<Arc<serde_json::Value>>,
+    /// Paint on its mesh's triangles (`paint`), one [`Paint`] tag each, as long as the mesh has triangles; none when unpainted.
+    pub paint: Option<Arc<Vec<u8>>>,
+}
+
+/// What a face is painted: where the seam goes, or where supports must or must not hold it up. The tag kept per triangle.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Paint {
+    None = 0,
+    Seam = 1,
+    Support = 2,
+    Block = 3,
+}
+
+impl Paint {
+    pub fn from_tag(tag: u8) -> Paint {
+        match tag {
+            1 => Paint::Seam,
+            2 => Paint::Support,
+            3 => Paint::Block,
+            _ => Paint::None,
+        }
+    }
 }
 
 impl Object {
@@ -48,6 +75,35 @@ impl Object {
 pub struct Scene {
     pub objects: Vec<Object>,
     next_id: u32,
+    /// Layer heights by hand (`layer_heights`): points `[z, height]`, mm, z rising, for the whole plate; between two points the
+    /// height is read along the line joining them, below the first and above the last it is theirs. None: the profile's heights.
+    pub layer_heights: Option<Arc<Vec<[f64; 2]>>>,
+}
+
+/// The most points a layer height curve holds.
+pub const MAX_HEIGHT_POINTS: usize = 10_000;
+/// The thinnest and thickest layer a curve may ask for, mm; the slicer keeps each to what the nozzle prints too.
+pub const LAYER_HEIGHTS: (f64, f64) = (0.02, 1.6);
+
+/// Whether `points` make a layer height curve: at least one, at most [`MAX_HEIGHT_POINTS`], z from 0 up to `MAX_COORD` and rising,
+/// each height within [`LAYER_HEIGHTS`].
+pub fn check_heights(points: &[[f64; 2]]) -> Result<(), String> {
+    if points.is_empty() || points.len() > MAX_HEIGHT_POINTS {
+        return Err(format!("a layer height curve has from 1 to {MAX_HEIGHT_POINTS} points"));
+    }
+    let (lo, hi) = LAYER_HEIGHTS;
+    for (k, &[z, h]) in points.iter().enumerate() {
+        if !(z.is_finite() && (0.0..=MAX_COORD).contains(&z)) {
+            return Err(format!("point {k}: the height on the plate, {z}, is from 0 to {MAX_COORD} mm"));
+        }
+        if !(h.is_finite() && (lo..=hi).contains(&h)) {
+            return Err(format!("point {k}: a layer {h} mm thick; layers are from {lo} to {hi} mm"));
+        }
+        if k > 0 && z <= points[k - 1][0] {
+            return Err(format!("point {k}: the points rise, each above the last"));
+        }
+    }
+    Ok(())
 }
 
 impl Scene {
@@ -75,6 +131,8 @@ impl Scene {
             recipe: None,
             settings: None,
             modifier: None,
+            ranges: None,
+            paint: None,
         });
         Ok(self.next_id)
     }
@@ -96,6 +154,8 @@ impl Scene {
             recipe: None,
             settings: None,
             modifier: None,
+            ranges: None,
+            paint: None,
         });
         Ok(self.next_id)
     }
@@ -114,7 +174,17 @@ impl Scene {
             return Err("the mesh is empty".into());
         }
         self.next_id += 1;
-        self.objects.push(Object { id: self.next_id, name: name.to_string(), mesh, xf, recipe: None, settings: None, modifier: None });
+        self.objects.push(Object {
+            id: self.next_id,
+            name: name.to_string(),
+            mesh,
+            xf,
+            recipe: None,
+            settings: None,
+            modifier: None,
+            ranges: None,
+            paint: None,
+        });
         Ok(self.next_id)
     }
 
@@ -129,7 +199,7 @@ impl Scene {
             return Err(format!("two objects have the id {}", w[0]));
         }
         let next_id = ids.last().copied().unwrap_or(0);
-        Ok(Scene { objects, next_id })
+        Ok(Scene { objects, next_id, layer_heights: None })
     }
 
     /// What every command must leave true: a transform that stays finite and an object that stays within reach.

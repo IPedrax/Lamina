@@ -9,6 +9,7 @@ pub mod comfort;
 pub mod control;
 pub mod files;
 pub mod gpu;
+pub mod heights;
 pub mod icon;
 pub mod lang;
 pub mod preview;
@@ -24,7 +25,7 @@ use std::sync::Arc;
 
 use egui::{Color32, Key, Panel, RichText, ScrollArea, Ui};
 use lamina_assistant::net::Net;
-use lamina_core::{Mesh, Scene, Session};
+use lamina_core::{Scene, Session};
 use lamina_i18n::ui_msg;
 use lamina_slicer::presets::{self, FILAMENT_FIELDS, FILAMENTS, PRINTER_FIELDS, PRINTERS, PROCESS_FIELDS, PROCESSES};
 use lamina_slicer::profile::Profile;
@@ -124,6 +125,22 @@ pub struct Fields {
     pub size: [f64; 3],
 }
 
+/// A height range being written in the window: where it is and what it changes (each optional).
+#[derive(Clone, Debug, PartialEq)]
+pub struct RangeForm {
+    pub from: f64,
+    pub to: f64,
+    pub nozzle_temp: Option<f64>,
+    pub infill: Option<f64>,
+    pub walls: Option<u32>,
+}
+
+impl Default for RangeForm {
+    fn default() -> RangeForm {
+        RangeForm { from: 5.0, to: 10.0, nozzle_temp: Some(220.0), infill: None, walls: None }
+    }
+}
+
 /// A slice of the plate, read back from its G-code, and which scene it was made of (so the preview can say it is out of date).
 pub struct Sliced {
     pub layers: Vec<preview::Layer>,
@@ -136,6 +153,8 @@ pub struct App {
     pub session: Session,
     pub selected: Vec<u32>,
     pub view: view3d::View,
+    /// The layer heights strip beside the 3D view.
+    pub strip: heights::Strip,
     pub tab: Tab,
     pub profile: Profile,
     pub sliced: Option<Sliced>,
@@ -158,6 +177,8 @@ pub struct App {
     fields: Option<Fields>,
     /// Whether a size typed keeps the proportions.
     pub keep_proportions: bool,
+    /// The form for a new height range in This object's settings: from, to, and the settings it may give.
+    pub range: RangeForm,
     axis: usize,
     degrees: f64,
     factor: f64,
@@ -229,6 +250,7 @@ impl App {
             session,
             selected: Vec::new(),
             view: view3d::View::default(),
+            strip: heights::Strip::default(),
             tab: Tab::Prepare,
             profile: Profile::default(),
             sliced: None,
@@ -246,6 +268,7 @@ impl App {
             connector_fit: 0.2,
             fields: None,
             keep_proportions: true,
+            range: RangeForm::default(),
             axis: 2,
             degrees: 90.0,
             factor: 1.5,
@@ -521,6 +544,10 @@ impl App {
             return None;
         }
         let result = self.session.execute(command, &params);
+        if result.is_ok() && lamina_core::bridge::REPLACES.contains(&command) {
+            // A new plate's ids start again: what was hidden on the old one is not hidden on it.
+            self.view.hidden.clear();
+        }
         self.prune();
         match result {
             Ok(v) => {
@@ -569,6 +596,7 @@ impl App {
     fn prune(&mut self) {
         let alive: Vec<u32> = self.session.scene.objects.iter().map(|o| o.id).collect();
         self.selected.retain(|id| alive.contains(id));
+        self.view.hidden.retain(|id| alive.contains(id));
     }
 
     /// Opens a project or imports a mesh, by its extension (the file named on the command line).
@@ -624,16 +652,15 @@ impl App {
     /// Slices the plate with the settings shown, on a thread, and opens the preview when it is done.
     pub fn slice(&mut self) {
         let all: Vec<&lamina_core::Object> = self.session.scene.objects.iter().collect();
-        let (parts, modifiers) = lamina_slicer::commands::split(&all);
-        let objects: Vec<(u32, Mesh)> = parts.iter().map(|o| (o.id, o.world())).collect();
-        let own = match lamina_slicer::commands::own(&parts, &self.profile) {
-            Ok(own) => own,
-            Err(e) => return (self.failed, self.status) = (true, e),
-        };
+        let job =
+            match lamina_slicer::commands::Job::of(&all, self.session.scene.layer_heights.as_deref().map(Vec::as_slice), &self.profile) {
+                Ok(job) => job,
+                Err(e) => return (self.failed, self.status) = (true, e),
+            };
         let profile = self.profile.clone();
         let scene = Arc::as_ptr(&self.session.scene) as usize;
         let work = move |_: &mut Session| {
-            let out = lamina_slicer::print::gcode_with(&objects, &own, &modifiers, &profile)?;
+            let out = job.gcode(&profile)?;
             let layers = preview::parse(&out.gcode);
             let minutes = (out.seconds / 60.0).round() as u64;
             let summary = tf(
@@ -868,6 +895,43 @@ impl App {
                         "round_holes": [[-24, -14, 3.4], [24, -14, 3.4], [24, 14, 3.4], [-24, 14, 3.4]]});
                     self.add_with("extrude", plate, 60.0);
                 }
+                ui.separator();
+                ui.menu_button(t("Calibration"), |ui| {
+                    let parts = [
+                        (
+                            ui_msg!("Temperature tower, 230 to 190 C"),
+                            "temperature",
+                            ui_msg!("Hottest at the bottom, 5 C a block: take the coolest block that bonds well and stays clean."),
+                        ),
+                        (
+                            ui_msg!("Retraction towers, 0.4 to 2 mm"),
+                            "retraction",
+                            ui_msg!("0.4 mm more every 5 mm up: take the lowest band with no hairs between the towers."),
+                        ),
+                        (
+                            ui_msg!("Pressure advance tower, 0 to 0.1"),
+                            "pressure_advance",
+                            ui_msg!("0.005 more every millimetre up: the height of the sharpest corners, in mm, times 0.005."),
+                        ),
+                        (
+                            ui_msg!("Flow blocks, 0.90 to 1.10"),
+                            "flow",
+                            ui_msg!("0.90, 0.95, 1.00, 1.05 and 1.10 from left to right: take the block with the smoothest top."),
+                        ),
+                    ];
+                    for (label, kind, look) in parts {
+                        if ui
+                            .button(t(label))
+                            .on_hover_text(t("Its settings change with height; the assistant can change the range"))
+                            .clicked()
+                            && let Some(v) = self.run("calibration", json!({ "kind": kind }))
+                        {
+                            self.selected = v["ids"].as_array().into_iter().flatten().filter_map(Value::as_u64).map(|i| i as u32).collect();
+                            self.status = t(look).into();
+                            self.frame_all();
+                        }
+                    }
+                });
             });
             if ui.button(t("Import mesh...")).clicked()
                 && let Some(p) = rfd::FileDialog::new().add_filter(t("Mesh"), files::MESHES).pick_file()
@@ -898,6 +962,8 @@ impl App {
                     .on_hover_text(t("Click a face to turn it down onto the plate (L)"));
                 ui.selectable_value(&mut self.view.tool, Tool::Measure, t("Measure"))
                     .on_hover_text(t("Click two points to measure between them (M)"));
+                ui.selectable_value(&mut self.view.tool, Tool::Paint, t("Paint"))
+                    .on_hover_text(t("Paint where seams go and where supports must or must not go: click or drag over an object (P)"));
                 if self.view.tool != before {
                     self.view.marks.clear();
                 }
@@ -973,6 +1039,11 @@ impl App {
                     self.context_pick(Some(id));
                 }
                 row.context_menu(|ui| self.object_menu(ui));
+                if self.view.hidden.contains(&id)
+                    && ui.small_button(t("Show")).on_hover_text(t("Hidden from the 3D view (H); it still prints")).clicked()
+                {
+                    self.view.hidden.retain(|&h| h != id);
+                }
                 if let Some(p) = problems {
                     ui.label(RichText::new("\u{26a0}").color(WARNING)).on_hover_text(tf(
                         "This mesh is not a clean solid: {}. Parts of it may not print; Repair mends what it can.",
@@ -1092,23 +1163,28 @@ impl App {
                 None => t("A part"),
                 Some(Modifier::SupportEnforcer) => t("Support enforcer"),
                 Some(Modifier::SupportBlocker) => t("Support blocker"),
+                Some(Modifier::Settings) => t("Settings modifier"),
             };
             ui.label(t("Prints as"));
             let mut chosen = now;
             egui::ComboBox::from_id_salt("modifier")
                 .selected_text(name(now))
                 .show_ui(ui, |ui| {
-                    for m in [None, Some(Modifier::SupportEnforcer), Some(Modifier::SupportBlocker)] {
+                    for m in [None, Some(Modifier::SupportEnforcer), Some(Modifier::SupportBlocker), Some(Modifier::Settings)] {
                         ui.selectable_value(&mut chosen, m, name(m));
                     }
                 })
                 .response
-                .on_hover_text(t("A support enforcer or blocker is not printed: the overhangs of a part inside it get supports, or none"));
+                .on_hover_text(t(
+                    "A modifier is not printed. The overhangs of a part inside a support enforcer get supports, inside a blocker none; \
+                     a settings modifier gives the infill of a part inside it its own density (in This object's settings)",
+                ));
             if chosen != now {
                 let kind = match chosen {
                     None => "none",
                     Some(Modifier::SupportEnforcer) => "support_enforcer",
                     Some(Modifier::SupportBlocker) => "support_blocker",
+                    Some(Modifier::Settings) => "settings",
                 };
                 self.run("set_modifier", json!({ "id": id, "kind": kind }));
             }
@@ -1306,8 +1382,13 @@ impl App {
     fn object_settings(&mut self, ui: &mut Ui, id: u32) {
         let Ok(o) = self.session.scene.get(id) else { return };
         let mine = o.settings.as_deref().and_then(Value::as_object).cloned().unwrap_or_default();
+        // A settings modifier gives only the infill inside it.
+        let zone = o.modifier == Some(lamina_core::Modifier::Settings);
         let mut changed = None;
         crate::lang::section("This object's settings").show(ui, |ui| {
+            if zone {
+                ui.label(t("The infill of the parts inside this modifier:"));
+            }
             let mut infill = mine.get("infill_density").and_then(Value::as_f64);
             let mut walls = mine.get("perimeters").and_then(Value::as_u64).map(|w| w as u32);
             let mut own_infill = infill.is_some();
@@ -1322,25 +1403,29 @@ impl App {
                     changed = Some(());
                 }
             });
-            ui.horizontal(|ui| {
-                ui.checkbox(&mut own_walls, t("Walls"));
-                let mut w = walls.unwrap_or(self.profile.perimeters);
-                if ui.add_enabled(own_walls, crate::lang::number(&mut w).range(0..=10)).changed() || own_walls != walls.is_some() {
-                    walls = own_walls.then_some(w);
-                    changed = Some(());
-                }
-            });
             let mut extruder = mine.get("extruder").and_then(Value::as_u64).map(|e| e as u32);
-            let mut own_extruder = extruder.is_some();
-            ui.horizontal(|ui| {
-                ui.checkbox(&mut own_extruder, t("Extruder")).on_hover_text(hint("extruder"));
-                let mut e = extruder.unwrap_or(self.profile.extruder);
-                let range = 1..=self.profile.extruders.max(1);
-                if ui.add_enabled(own_extruder, crate::lang::number(&mut e).range(range)).changed() || own_extruder != extruder.is_some() {
-                    extruder = own_extruder.then_some(e);
-                    changed = Some(());
-                }
-            });
+            if !zone {
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut own_walls, t("Walls"));
+                    let mut w = walls.unwrap_or(self.profile.perimeters);
+                    if ui.add_enabled(own_walls, crate::lang::number(&mut w).range(0..=10)).changed() || own_walls != walls.is_some() {
+                        walls = own_walls.then_some(w);
+                        changed = Some(());
+                    }
+                });
+                let mut own_extruder = extruder.is_some();
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut own_extruder, t("Extruder")).on_hover_text(hint("extruder"));
+                    let mut e = extruder.unwrap_or(self.profile.extruder);
+                    let range = 1..=self.profile.extruders.max(1);
+                    if ui.add_enabled(own_extruder, crate::lang::number(&mut e).range(range)).changed()
+                        || own_extruder != extruder.is_some()
+                    {
+                        extruder = own_extruder.then_some(e);
+                        changed = Some(());
+                    }
+                });
+            }
             if changed.is_some() {
                 let mut fields = mine.clone();
                 let own = [
@@ -1357,7 +1442,80 @@ impl App {
                 changed = None;
                 self.run("set_object_settings", json!({ "id": id, "profile": fields }));
             }
+            if !zone {
+                self.ranges_ui(ui, id);
+            }
         });
+    }
+
+    /// The object's settings by height: each range with what it sets and Remove, and a form to add one.
+    fn ranges_ui(&mut self, ui: &mut Ui, id: u32) {
+        ui.separator();
+        ui.label(t("By height")).on_hover_text(t(
+            "Layers between two heights print with settings of their own: a temperature tower, denser infill near a load",
+        ));
+        let ranges = self.session.scene.get(id).ok().and_then(|o| o.ranges.as_deref().cloned()).unwrap_or(Value::Null);
+        let mut remove = None;
+        for r in ranges.as_array().into_iter().flatten() {
+            let (from, to) = (r["from"].as_f64().unwrap_or(0.0), r["to"].as_f64().unwrap_or(0.0));
+            let what = r["profile"]
+                .as_object()
+                .map(|m| m.iter().map(|(k, v)| format!("{k} {v}")).collect::<Vec<_>>().join(", "))
+                .unwrap_or_default();
+            ui.horizontal(|ui| {
+                ui.label(tf("{} to {} mm: {}", &[&lang::mark(from.to_string()), &lang::mark(to.to_string()), &what]));
+                if ui.small_button(t("Remove")).clicked() {
+                    remove = Some((from, to));
+                }
+            });
+        }
+        if let Some((from, to)) = remove {
+            self.run("set_height_range", json!({ "id": id, "from": from, "to": to, "profile": {} }));
+        }
+        let f = &mut self.range;
+        ui.horizontal(|ui| {
+            ui.label(t("From"));
+            ui.add(crate::lang::number(&mut f.from).speed(0.5).range(0.0..=10_000.0).suffix(" mm"));
+            ui.label(t("to"));
+            ui.add(crate::lang::number(&mut f.to).speed(0.5).range(0.0..=10_000.0).suffix(" mm"));
+        });
+        let row = |ui: &mut Ui, label: &str, on: bool| -> bool {
+            let mut on = on;
+            ui.checkbox(&mut on, label);
+            on
+        };
+        ui.horizontal(|ui| {
+            let on = row(ui, t("Nozzle, C"), f.nozzle_temp.is_some());
+            let mut v = f.nozzle_temp.unwrap_or(self.profile.nozzle_temp);
+            ui.add_enabled(on, crate::lang::number(&mut v).range(0.0..=400.0));
+            f.nozzle_temp = on.then_some(v);
+        });
+        ui.horizontal(|ui| {
+            let on = row(ui, t("Infill"), f.infill.is_some());
+            let mut v = f.infill.unwrap_or(self.profile.infill_density) * 100.0;
+            ui.add_enabled(on, crate::lang::number(&mut v).range(0.0..=100.0).suffix(" %"));
+            f.infill = on.then_some(v / 100.0);
+        });
+        ui.horizontal(|ui| {
+            let on = row(ui, t("Walls"), f.walls.is_some());
+            let mut v = f.walls.unwrap_or(self.profile.perimeters);
+            ui.add_enabled(on, crate::lang::number(&mut v).range(0..=10));
+            f.walls = on.then_some(v);
+        });
+        let mut profile = serde_json::Map::new();
+        for (k, v) in [
+            ("nozzle_temp", f.nozzle_temp.map(Value::from)),
+            ("infill_density", f.infill.map(Value::from)),
+            ("perimeters", f.walls.map(Value::from)),
+        ] {
+            if let Some(v) = v {
+                profile.insert(k.into(), v);
+            }
+        }
+        let (from, to) = (f.from, f.to);
+        if ui.add_enabled(!profile.is_empty(), egui::Button::new(t("Add range"))).clicked() {
+            self.run("set_height_range", json!({ "id": id, "from": from, "to": to, "profile": profile }));
+        }
     }
 
     /// Moves object `id` so its footprint's middle and bottom are `at` (they are `now`).
@@ -1702,28 +1860,65 @@ impl App {
         });
     }
 
+    /// The brush's settings, over the 3D view while the paint tool is in hand.
+    fn brush_ui(&mut self, ui: &mut Ui) {
+        use lamina_core::Paint;
+        ui.horizontal_wrapped(|ui| {
+            let b = &mut self.view.brush;
+            ui.label(t("Paint:"));
+            ui.selectable_value(&mut b.kind, Paint::Seam, t("Seam")).on_hover_text(t("Each wall's seam starts on the painted faces"));
+            ui.selectable_value(&mut b.kind, Paint::Support, t("Support"))
+                .on_hover_text(t("Painted faces looking down are held up, even with supports off"));
+            ui.selectable_value(&mut b.kind, Paint::Block, t("Block")).on_hover_text(t("No support under the painted faces"));
+            ui.selectable_value(&mut b.kind, Paint::None, t("Erase")).on_hover_text(t("Rub paint out"));
+            ui.separator();
+            ui.label(t("Brush"));
+            ui.add(crate::lang::number(&mut b.radius).speed(0.1).range(0.2..=50.0).suffix(" mm"));
+            ui.separator();
+            let painted: Vec<u32> =
+                self.selected.iter().copied().filter(|&id| self.session.scene.get(id).is_ok_and(|o| o.paint.is_some())).collect();
+            if ui
+                .add_enabled(!painted.is_empty(), egui::Button::new(t("Clear the picked objects' paint")))
+                .on_hover_text(t("Take all paint off the picked objects"))
+                .clicked()
+            {
+                let commands = painted.iter().map(|&id| ("paint", json!({ "id": id, "kind": "none" }))).collect();
+                self.run_all("paint", commands);
+            }
+        });
+    }
+
     fn prepare(&mut self, ui: &mut Ui) {
+        if self.strip.open {
+            Panel::right("layer-heights").resizable(false).exact_size(170.0).show(ui, |ui| self.heights_ui(ui));
+        }
+        if self.view.tool == view3d::Tool::Paint {
+            self.brush_ui(ui);
+        }
         let scene = Arc::clone(&self.session.scene);
         let shown = self.view.show(ui, &scene, &self.selected, self.profile.bed);
+        if let Some(ids) = &shown.boxed {
+            // As Blender's B: what the box covers joins what is picked.
+            for &id in ids {
+                if !self.selected.contains(&id) {
+                    self.selected.push(id);
+                }
+            }
+            self.status = tf("{} picked.", &[&self.selected.len().to_string()]);
+        }
+        if let Some((id, points)) = &shown.painted {
+            // A stroke is one step to undo: each point painted round, in one transaction.
+            let (kind, radius) = (self.view.brush.command_kind(), self.view.brush.radius);
+            let commands = points.iter().map(|p| ("paint", json!({ "id": id, "kind": kind, "at": p, "radius": radius }))).collect();
+            self.run_all("paint", commands);
+        }
         if let Some(note) = self.view.card.note.take() {
             (self.failed, self.status) = (true, note);
         }
         if let Some((ids, change)) = &shown.moved {
-            use crate::view3d::Change;
-            // One command for each picked object, in one transaction, so one undo takes the whole drag back.
-            let (label, commands): (&str, Vec<(&str, Value)>) = match *change {
-                Change::Move(by) => ("move", ids.iter().map(|&id| ("move", json!({ "id": id, "by": by }))).collect()),
-                Change::Turn(axis, degrees) => {
-                    let axis = ["x", "y", "z"][axis.min(2)];
-                    ("rotate", ids.iter().map(|&id| ("rotate", json!({ "id": id, "axis": axis, "degrees": degrees }))).collect())
-                }
-                Change::Scale(f) => ("scale", ids.iter().map(|&id| ("scale", json!({ "id": id, "factor": f }))).collect()),
-                Change::Stretch(axis, f) => {
-                    let mut by = [1.0; 3];
-                    by[axis.min(2)] = f;
-                    ("scale", ids.iter().map(|&id| ("scale", json!({ "id": id, "by": by }))).collect())
-                }
-            };
+            // One command (or two, about the middle of them all) for each picked object, in one transaction, so one undo takes the
+            // whole drag back.
+            let (label, commands) = view3d::commands_for(*change, ids, &self.session.scene, self.view.pivot, &self.view.axes);
             self.run_all(label, commands);
         }
         if let Some((id, face)) = shown.face
@@ -1807,6 +2002,7 @@ mod tests {
     use super::*;
     use egui_kittest::Harness;
     use egui_kittest::kittest::Queryable;
+    use lamina_core::Mesh;
 
     fn window() -> Harness<'static, App> {
         let app = App::new(session(), Arc::new(lamina_assistant::testing::Fake::default()));
@@ -2572,6 +2768,67 @@ mod tests {
     }
 
     #[test]
+    fn a_turn_goes_about_each_middle_or_the_middle_of_all_and_moves_go_along_an_objects_own_axes() {
+        let mut h = window();
+        let app = h.state_mut();
+        app.run("add_primitive", json!({"kind": "box", "size": [20, 10, 10], "at": [-20, 0]}));
+        app.run("add_primitive", json!({"kind": "box", "size": [20, 10, 10], "at": [20, 0]}));
+        app.selected = vec![1, 2];
+        h.run();
+        let middle = h.state().view.rect.unwrap().center();
+        let keyed = |h: &mut Harness<App>, keys: &[Key], text: &str| {
+            h.hover_at(middle);
+            h.run();
+            for &k in keys {
+                h.key_press(k);
+                h.run();
+            }
+            h.event(egui::Event::Text(text.to_string()));
+            h.run();
+            h.key_press(Key::Enter);
+            h.run();
+        };
+        let centre = |h: &Harness<App>, id: u32| {
+            let (lo, hi) = h.state().session.scene.get(id).unwrap().bounds().unwrap();
+            [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, hi[0] - lo[0]]
+        };
+        let near = |a: [f64; 3], b: [f64; 3]| a.iter().zip(&b).all(|(x, y)| (x - y).abs() < 1e-4);
+        // Each about its own middle: they turn where they stand.
+        keyed(&mut h, &[Key::R], "90");
+        assert!(near(centre(&h, 1), [-20.0, 0.0, 10.0]) && near(centre(&h, 2), [20.0, 0.0, 10.0]), "{:?}", centre(&h, 1));
+        press(&mut h, "Undo");
+        // About the middle of both: they swing round it, in one undo step.
+        h.state_mut().view.pivot = view3d::Pivot::Middle;
+        keyed(&mut h, &[Key::R], "90");
+        assert!(
+            near(centre(&h, 1), [0.0, -20.0, 10.0]) && near(centre(&h, 2), [0.0, 20.0, 10.0]),
+            "{:?} {:?}",
+            centre(&h, 1),
+            centre(&h, 2)
+        );
+        press(&mut h, "Undo");
+        assert!(near(centre(&h, 1), [-20.0, 0.0, 20.0]), "one step: {:?}", centre(&h, 1));
+        // Along its own axes: a box turned 30 degrees moves 10 mm along its own x.
+        h.state_mut().view.pivot = view3d::Pivot::Each;
+        h.state_mut().run("rotate", json!({"id": 1, "axis": "z", "degrees": 30}));
+        h.state_mut().selected = vec![1];
+        h.state_mut().view.orientation = view3d::Orientation::Own;
+        h.run();
+        let before = centre(&h, 1);
+        keyed(&mut h, &[Key::G, Key::X], "10");
+        let after = centre(&h, 1);
+        let (c, s) = (30f64.to_radians().cos(), 30f64.to_radians().sin());
+        assert!((after[0] - before[0] - 10.0 * c).abs() < 1e-4 && (after[1] - before[1] - 10.0 * s).abs() < 1e-4, "{before:?} {after:?}");
+        // Alt+R takes its turn away, Alt+G puts it in the middle of the plate.
+        h.key_press_modifiers(egui::Modifiers::ALT, Key::R);
+        h.run();
+        assert!(near([0.0, 0.0, centre(&h, 1)[2]], [0.0, 0.0, 20.0]), "{:?}", centre(&h, 1));
+        h.key_press_modifiers(egui::Modifiers::ALT, Key::G);
+        h.run();
+        assert!(near(centre(&h, 1), [0.0, 0.0, 20.0]), "{:?}", centre(&h, 1));
+    }
+
+    #[test]
     fn the_number_keys_look_from_the_front_the_right_and_the_top_and_home_frames_all() {
         let mut h = window();
         press(&mut h, "Add box");
@@ -2604,6 +2861,102 @@ mod tests {
     }
 
     #[test]
+    fn h_hides_the_picked_from_the_view_alt_h_shows_them_and_b_picks_what_a_box_covers() {
+        let mut h = window();
+        press(&mut h, "Add box");
+        press(&mut h, "Add cylinder");
+        press(&mut h, "Add sphere");
+        h.state_mut().view.camera.frame_all(([-15.0, -15.0, 0.0], [80.0, 15.0, 20.0]));
+        h.state_mut().view.card.cpu = true;
+        h.state_mut().selected = vec![2];
+        let rect = h.state().view.rect.unwrap();
+        h.hover_at(rect.center());
+        h.run();
+        let seen = |h: &Harness<App>| -> Vec<u32> {
+            let p = h.state().view.picture.as_ref().expect("the processor's picture");
+            let mut ids: Vec<u32> =
+                (0..p.size[1]).flat_map(|y| (0..p.size[0]).map(move |x| (x, y))).filter_map(|(x, y)| p.id_at(x, y)).collect();
+            ids.sort_unstable();
+            ids.dedup();
+            ids
+        };
+        assert_eq!(seen(&h), [1, 2, 3]);
+        // H: the cylinder leaves the picture and the pick, and the plate list offers to show it; it still prints.
+        h.key_press(Key::H);
+        h.run();
+        h.run();
+        assert_eq!((h.state().view.hidden.clone(), h.state().selected.clone()), (vec![2], vec![]));
+        assert_eq!(seen(&h), [1, 3]);
+        h.get_by_label("Show");
+        assert_eq!(h.state().session.scene.objects.len(), 3);
+        // B, then a drag over the whole view: what it sees is picked, the hidden cylinder not.
+        h.key_press(Key::B);
+        h.run();
+        assert!(h.state().view.boxing.is_some());
+        drag(&mut h, rect.left_top() + egui::vec2(2.0, 2.0), rect.right_bottom() - egui::vec2(2.0, 2.0));
+        assert_eq!(h.state().selected, [1, 3], "{}", h.state().status);
+        assert!(h.state().view.boxing.is_none());
+        // A box over empty plate picks nothing more; Escape gives one up.
+        h.state_mut().selected.clear();
+        h.hover_at(rect.center());
+        h.key_press(Key::B);
+        h.run();
+        drag(&mut h, rect.left_top() + egui::vec2(2.0, 2.0), rect.left_top() + egui::vec2(12.0, 12.0));
+        assert!(h.state().selected.is_empty());
+        h.hover_at(rect.center());
+        h.key_press(Key::B);
+        h.run();
+        h.key_press(Key::Escape);
+        h.run();
+        assert!(h.state().view.boxing.is_none());
+        // Alt+H: everything back.
+        h.key_press_modifiers(egui::Modifiers::ALT, Key::H);
+        h.run();
+        h.run();
+        assert!(h.state().view.hidden.is_empty());
+        assert_eq!(seen(&h), [1, 2, 3]);
+        // 5 over the view: orthographic, and still drawn and picked.
+        h.hover_at(rect.center());
+        h.key_press(Key::Num5);
+        h.run();
+        h.run();
+        assert!(h.state().view.camera.ortho);
+        assert_eq!(seen(&h), [1, 2, 3]);
+        h.key_press(Key::Num5);
+        h.run();
+        assert!(!h.state().view.camera.ortho);
+    }
+
+    #[test]
+    fn the_calibration_menu_puts_a_tower_on_the_plate_and_says_what_to_look_for() {
+        let mut h = window();
+        press(&mut h, "More shapes");
+        h.get_by_label_contains("Calibration").hover();
+        h.run();
+        press(&mut h, "Temperature tower, 230 to 190 C");
+        let s = &h.state().session.scene;
+        assert_eq!(s.objects.len(), 1);
+        assert_eq!(s.objects[0].ranges.as_deref().and_then(Value::as_array).map(Vec::len), Some(9));
+        assert!(h.state().status.contains("coolest block"), "{}", h.state().status);
+        assert_eq!(h.state().selected, vec![1]);
+    }
+
+    #[test]
+    fn a_height_range_is_added_and_removed_from_the_objects_settings() {
+        let app = App::new(session(), Arc::new(lamina_assistant::testing::Fake::default()));
+        let mut h = Harness::builder().with_size([1400.0, 2400.0]).build_ui_state(|ui, app: &mut App| app.show(ui), app);
+        h.run();
+        press(&mut h, "Add box");
+        press(&mut h, "This object's settings");
+        press(&mut h, "Add range");
+        let ranges = h.state().session.scene.get(1).unwrap().ranges.as_deref().cloned().unwrap();
+        assert_eq!(ranges, json!([{"from": 5.0, "to": 10.0, "profile": {"nozzle_temp": 220.0}}]));
+        h.get_by_label_contains("5 to 10 mm: nozzle_temp 220");
+        press(&mut h, "Remove");
+        assert!(h.state().session.scene.get(1).unwrap().ranges.is_none());
+    }
+
+    #[test]
     fn prints_as_makes_the_picked_object_a_support_blocker_in_one_step() {
         let mut h = window();
         press(&mut h, "Add box");
@@ -2615,6 +2968,24 @@ mod tests {
         h.get_by(|n| n.role() == egui::accesskit::Role::ComboBox && n.value().as_deref() == Some("Support blocker"));
         press(&mut h, "Undo");
         assert_eq!(h.state().session.scene.get(1).unwrap().modifier, None);
+    }
+
+    #[test]
+    fn a_settings_modifier_shows_only_the_infill_in_its_settings() {
+        let mut h = window();
+        press(&mut h, "Add box");
+        h.get_by(|n| n.role() == egui::accesskit::Role::ComboBox && n.value().as_deref() == Some("A part")).click();
+        h.run();
+        press(&mut h, "Settings modifier");
+        assert_eq!(h.state().session.scene.get(1).unwrap().modifier, Some(lamina_core::Modifier::Settings));
+        press(&mut h, "This object's settings");
+        h.get_by_label("The infill of the parts inside this modifier:");
+        assert!(h.query_by_label("By height").is_none(), "a modifier has no settings by height");
+        // The object's own Infill is a checkbox; the print settings' Infill is a label.
+        h.get_by(|n| n.role() == egui::accesskit::Role::CheckBox && n.label().as_deref() == Some("Infill")).click();
+        h.run();
+        let fields = h.state().session.scene.get(1).unwrap().settings.as_deref().cloned().unwrap();
+        assert_eq!(fields["infill_density"], h.state().profile.infill_density, "{fields}");
     }
 
     #[test]
@@ -2872,7 +3243,7 @@ fill_angle = 45
         // Lay flat: a click in the middle of the view, looking at the box, turns the face there down.
         press(&mut h, "Lay flat");
         let app = h.state_mut();
-        app.view.camera = view3d::Camera { target: [0.0, 0.0, 10.0], azimuth: -90.0, elevation: 0.0, distance: 200.0 };
+        app.view.camera = view3d::Camera { target: [0.0, 0.0, 10.0], azimuth: -90.0, elevation: 0.0, distance: 200.0, ortho: false };
         h.run();
         h.run();
         let middle = h.state().view.rect.unwrap().center();
@@ -2896,6 +3267,86 @@ fill_angle = 45
         assert!(h.state().session.can_undo());
     }
 
+    #[test]
+    fn the_layer_heights_strip_sets_a_band_by_dragging_and_its_buttons_fill_smooth_and_reset() {
+        let mut h = window();
+        press(&mut h, "Add box");
+        h.state_mut().strip.open = true;
+        h.run();
+        let top = h.state().session.scene.get(1).unwrap().bounds().unwrap().1[2];
+        press(&mut h, "Adaptive");
+        assert!(h.state().session.scene.layer_heights.is_some(), "{}", h.state().status);
+        press(&mut h, "Reset");
+        assert!(h.state().session.scene.layer_heights.is_none());
+        // A drag from a quarter of the way up to halfway, a quarter of the way across: those heights at a quarter of the most the
+        // nozzle prints (0.32 mm for 0.4).
+        let plot = h.state().strip.plot.unwrap();
+        let at = |x: f32, y: f32| egui::pos2(plot.left() + x * plot.width(), plot.bottom() - y * plot.height());
+        drag(&mut h, at(0.25, 0.25), at(0.25, 0.5));
+        let curve = h.state().session.scene.layer_heights.clone().expect("a band set");
+        let height = |z: f64| lamina_slicer::heights::at(&curve, z);
+        assert!((height(top * 0.375) - 0.08).abs() < 0.011, "{curve:?}");
+        assert!((height(top * 0.1) - h.state().profile.layer_height).abs() < 1e-9, "below the band as it was");
+        press(&mut h, "Smooth");
+        assert_ne!(h.state().session.scene.layer_heights.as_ref(), Some(&curve), "smoothed");
+        // Each is one step to undo.
+        h.state_mut().run("undo", json!({}));
+        assert_eq!(h.state().session.scene.layer_heights.as_ref(), Some(&curve));
+    }
+
+    #[test]
+    fn the_paint_tool_paints_where_it_is_clicked_and_dragged_and_each_stroke_is_one_undo() {
+        use lamina_core::Paint;
+        let mut h = window();
+        press(&mut h, "Add box");
+        press(&mut h, "Paint");
+        assert_eq!(h.state().view.tool, view3d::Tool::Paint);
+        // Looking at the box's front face (y = -10) square on, its middle in the middle of the view.
+        h.state_mut().view.camera =
+            view3d::Camera { target: [0.0, 0.0, 10.0], azimuth: -90.0, elevation: 0.0, distance: 200.0, ortho: false };
+        h.run();
+        h.run();
+        let rect = h.state().view.rect.unwrap();
+        let tags = |h: &Harness<App>| h.state().session.scene.get(1).unwrap().paint.as_deref().cloned();
+        let click = |h: &mut Harness<App>, at: egui::Pos2| {
+            h.hover_at(at);
+            h.run();
+            for pressed in [true, false] {
+                let (button, modifiers) = (egui::PointerButton::Primary, egui::Modifiers::NONE);
+                h.event(egui::Event::PointerButton { pos: at, button, pressed, modifiers });
+                h.run();
+            }
+        };
+        // A click paints the seam on the front face's two triangles, and nowhere else.
+        click(&mut h, rect.center());
+        let seam = tags(&h).expect("painted");
+        assert_eq!(seam.iter().filter(|&&t| t == Paint::Seam as u8).count(), 2, "{seam:?}");
+        let front: Vec<usize> = (0..seam.len()).filter(|&i| seam[i] != 0).collect();
+        let world = h.state().session.scene.get(1).unwrap().world();
+        assert!(front.iter().all(|&i| world.tri(i).unwrap().iter().all(|q| (q[1] + 10.0).abs() < 1e-6)));
+        // A drag across the face with the support brush: the same faces, now support, in one step.
+        let steps = h.state().session.history().0.len();
+        press(&mut h, "Erase");
+        assert_eq!(h.state().view.brush.kind, Paint::None);
+        h.state_mut().view.brush.kind = Paint::Support;
+        let camera = h.state().view.camera;
+        drag(&mut h, rect.center() - egui::vec2(20.0, 0.0), rect.center() + egui::vec2(20.0, 0.0));
+        let support = tags(&h).unwrap();
+        assert!(front.iter().all(|&i| support[i] == Paint::Support as u8), "{support:?}");
+        assert_eq!(h.state().session.history().0.len(), steps + 1, "one stroke, one step");
+        assert_eq!(h.state().view.camera, camera, "a stroke on the object does not turn the view");
+        h.state_mut().run("undo", json!({}));
+        assert_eq!(tags(&h).unwrap(), seam);
+        // A drag that starts off the object turns the view and paints nothing.
+        drag(&mut h, rect.left_top() + egui::vec2(10.0, 10.0), rect.left_top() + egui::vec2(60.0, 10.0));
+        assert_ne!(h.state().view.camera, camera);
+        assert_eq!(tags(&h).unwrap(), seam);
+        // Clearing the picked object's paint takes it all off.
+        h.state_mut().selected = vec![1];
+        press(&mut h, "Clear the picked objects' paint");
+        assert!(tags(&h).is_none());
+    }
+
     /// A window taller than the graphics card's largest texture (2048 pixels in the test harness) draws the 3D view smaller and
     /// stretches it, and a click still finds what is under the pointer.
     #[test]
@@ -2905,7 +3356,8 @@ fill_angle = 45
         h.run();
         press(&mut h, "Add box");
         h.state_mut().selected.clear();
-        h.state_mut().view.camera = view3d::Camera { target: [0.0, 0.0, 10.0], azimuth: -90.0, elevation: 0.0, distance: 120.0 };
+        h.state_mut().view.camera =
+            view3d::Camera { target: [0.0, 0.0, 10.0], azimuth: -90.0, elevation: 0.0, distance: 120.0, ortho: false };
         h.run();
         h.run();
         let rect = h.state().view.rect.unwrap();
@@ -3123,7 +3575,8 @@ fill_angle = 45
         h.run();
         press(&mut h, "Add box");
         h.state_mut().selected.clear();
-        h.state_mut().view.camera = view3d::Camera { target: [0.0, 0.0, 10.0], azimuth: -60.0, elevation: 30.0, distance: 200.0 };
+        h.state_mut().view.camera =
+            view3d::Camera { target: [0.0, 0.0, 10.0], azimuth: -60.0, elevation: 30.0, distance: 200.0, ortho: false };
         h.run();
         assert!(h.state().view.on_card() && !h.state().failed, "{}", h.state().status);
         let middle = h.state().view.rect.unwrap().center();
@@ -3177,6 +3630,17 @@ fill_angle = 45
             h.render().unwrap().save(out.replace(".png", &format!("-{}.png", language.code()))).unwrap();
         }
         h.state_mut().lang = lang::Lang::English;
+        h.run();
+        // The layer heights strip with adaptive layers, and the paint tool with the box painted.
+        h.state_mut().strip.open = true;
+        h.run();
+        press(&mut h, "Adaptive");
+        press(&mut h, "Paint");
+        h.state_mut().run("paint", json!({"id": 1, "kind": "seam", "at": [0, -10, 10], "radius": 4}));
+        h.state_mut().run("paint", json!({"id": 1, "kind": "block", "at": [0, 0, 20], "radius": 4}));
+        h.run();
+        h.render().unwrap().save(out.replace(".png", "-tools.png")).unwrap();
+        h.state_mut().strip.open = false;
         h.run();
         press(&mut h, "Slice");
         h.render().unwrap().save(out.replace(".png", "-preview.png")).unwrap();

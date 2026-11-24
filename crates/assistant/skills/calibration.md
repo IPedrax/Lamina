@@ -17,39 +17,29 @@ calipers.
 - Wrong in z by a fixed amount: the first layer is squashed or high (the printer's z offset, not a setting here).
 - All three off by the same percentage: the printer's steps per mm, which are set in the printer, not in Lamina.
 
-## Flow (one wall, measured)
+## Temperature, retraction and pressure advance: towers
 
-A box printed as a single wall shows whether the extruder pushes what the slicer asks.
+`calibration {kind}` puts a part on the plate whose settings change with height, as one undo step, and returns its `steps`
+(each height band and its value) and `look` (what to judge). Ask before clearing the plate; slice it with the user's own printer
+and filament (`slice_check` to check), and have them read the result back to you as a height.
 
-1. `add_primitive {kind: "box", size: [20, 20, 15]}` and slice it with `vase: true` and `bottom_layers: 1`.
-2. The user measures the wall at several places. It should be the line width, which is the nozzle's diameter (0.4 mm for a 0.4
-   nozzle).
-3. `flow_ratio` (a filament field, 1.0) multiplies every line's plastic: a wall 3 % too thick wants `flow_ratio` 0.97, one 3 %
-   too thin 1.03. Change it in steps of no more than 0.05, and print the box again to check.
+- `calibration {kind: "temperature", from: 230, to: 190, step: 5}`: blocks 8 mm tall, each with a 45 degree overhang, the hottest
+  at the bottom. The coolest block that still bonds well (the user tries to snap it), with a clean overhang and little
+  stringing, is the filament's `nozzle_temp`. Centre `from` and `to` on the label's range.
+- `calibration {kind: "retraction", from: 0.4, to: 2.0, step: 0.4}`: two towers; each 5 mm band retracts its own length (use from
+  2 to 6 by 1 on a Bowden printer). The lowest band without hairs between the towers is `retract_length`; then lower `nozzle_temp`
+  by 5 C if a few hairs remain. Too much retraction grinds the filament.
+- `calibration {kind: "pressure_advance", from: 0, to: 0.1, step: 0.005}`: a hollow square tower, one value a millimetre (for
+  Bowden try to 1.0 by 0.05). The height where the corners are sharpest, neither bulging nor rounded, gives the value:
+  `pressure_advance` is `from` plus that height in mm times `step`. Needs Klipper, or Marlin with linear advance.
 
-## Temperature
+## Flow (blocks, then one wall)
 
-Lamina cannot change the temperature part way up a print (no temperature tower), so print the same small part at a few
-temperatures, one print each.
-
-1. A part with an overhang and a bridge: `add_primitive {kind: "box", size: [30, 10, 10]}` is enough for looks and layer bonding.
-2. Slice it at the filament's middle temperature, then 10 C either side: `slice_check {filament: "PETG", profile: {nozzle_temp: 230}}`.
-3. The user compares: too cold shows weak layers that snap apart and a dull surface; too hot shows stringing, blobs and droopy
-   overhangs. Take the coolest temperature that still bonds well.
-
-## Retraction (two towers)
-
-1. `add_primitive {kind: "cylinder", radius: 4, height: 30, at: [-20, 0]}` and
-   `add_primitive {kind: "cylinder", radius: 4, height: 30, at: [20, 0]}`.
-2. Print with `combing` off so every travel between them retracts, starting at `retract_length` 0.8 (direct drive) or 4
-   (Bowden), and raise it by 0.4 or 1 per print until the hairs between the towers stop.
-3. Then lower `nozzle_temp` by 5 C if hairs remain. Too much retraction grinds the filament or leaves gaps where printing starts again.
-
-## Pressure advance
-
-On Klipper and Marlin with linear advance, `pressure_advance` (a filament field) sharpens corners. Lamina has no test pattern for
-it: suggest the firmware's own tuning (Klipper's tuning tower, Marlin's K factor test), then put the value they find in the
-filament's `pressure_advance`.
+1. `calibration {kind: "flow", from: 0.9, to: 1.1, step: 0.05}`: five blocks, left to right, each printed at its own
+   `flow_ratio`. The block with a smooth, closed top and no ridges gives the ratio.
+2. To check it: `add_primitive {kind: "box", size: [20, 20, 15]}` sliced with `vase: true` and `bottom_layers: 1`; the user measures
+   the wall at several places. It should be the line width (0.45 mm for a 0.4 nozzle). A wall 3 % too thick wants the ratio
+   times 0.97.
 
 ## Speed and acceleration
 

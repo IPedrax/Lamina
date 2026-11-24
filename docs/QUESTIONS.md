@@ -2,6 +2,24 @@
 
 Decisions the overnight run took on its own, and what blocked it. Each says the question, the options, the default taken and why.
 
+## 2026-11-24: defaults taken while building the P2 items
+
+- **A settings modifier changes the infill only.** It sets `infill_density`, `infill_pattern` and `infill_speed` for the parts
+  inside it. Options: infill only; also walls and skins of their own inside it (PrusaSlicer's modifier, Cura's cutting mesh),
+  which needs the walls planned for each piece of a layer. Taken: infill only, the common use (denser round a screw, hollow
+  elsewhere), done without changing how walls are made. Say if walls by modifier are wanted next.
+- **One layer height curve for the plate.** Layers by hand apply to every object, as adaptive layers do, so every object prints on
+  the same layers. Options: one for the plate; one for each object (PrusaSlicer's), which means objects on different layers and a
+  head that changes height within a layer. Taken: one for the plate.
+- **A painted seam wins over the seam rule.** A wall loop within reach of seam paint starts there whatever `seam` says; loops far
+  from it keep the rule. Painted support works with supports off, as an enforcer does (see the enforcer question below).
+- **Box select adds.** B then a drag adds what the box covers to what is picked, as Blender's B does; a click on empty plate first
+  starts afresh. There is no way yet to take objects off with a box.
+- **Hidden is the window's.** Hiding (H) is not saved in the project and hidden objects still print; a new or opened plate starts
+  with none hidden.
+- **A copy carries everything.** `duplicate` used to give the copy only the mesh and the place; it now also carries the recipe, the
+  object's own settings, its modifier kind, its settings by height and its paint, as a copy in any editor would.
+
 ## 2026-11-24: defaults taken while lifting the known limits
 
 - **R over the 3D view.** R used to turn the picked objects 90 degrees. With Blender's keys (7.10), R over the 3D view starts a turn

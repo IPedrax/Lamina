@@ -137,6 +137,14 @@ Priorities:
   tool for a tapped hole, `clearance` (0.2 mm a side) wider. At most 24,000 triangles, so a boolean with it stays within its limit.
   Tested: every corner on the profile, the volume of the profile's area swept round within 2 %, an M8 nut cut and an M6 bolt joined,
   both closed and of the right volume; in More shapes and the modelling skill. Not printed.
+- **3.16 Pivot, orientation and clearing a transform.** `reset_transform {id, what}` clears an object's location, turn or scale
+  (Blender's Alt+G, R, S, which the window binds), from the polar decomposition of its matrix (`Transform::polar`: a turn and a
+  symmetric stretch, a mirror kept in the stretch); `rotate` takes a vector axis. In the window, View chooses what turns and scales
+  go about (each object's own middle, or the middle of all picked, which swings them round together through a move of each) and
+  which axes the gizmo and the X, Y, Z keys follow (the plate's, or the picked object's own, its turn without its scale); a
+  one-axis stretch stays along the plate's axes. Tested: the decomposition puts its matrix back, reset clears each part and keeps
+  the rest (a mirror too), two boxes turned about their shared middle swap ends in one undo step, a box turned 30 degrees moves
+  along its own x, and Alt+R and Alt+G clear its turn and place.
 - **4.1 Supports.** `crates/slicer/src/support.rs`: where a layer leans past `support_angle` from vertical, all of it that is over
   air is held up; overhangs are carried down to the model or the plate (`support`: `off`, `everywhere`, `from_plate`), keep
   `support_xy_gap` from the walls and stop `support_z_gap` below the model, with `support_interface_layers` of denser lines on top.
@@ -282,6 +290,58 @@ Priorities:
   `filament_flow_ratio`, and both slicers' `filament_max_volumetric_speed`. In the window's Speeds group; the calibration skill and
   PRINT-TESTS.md use the flow ratio. Tested: 1.05 pushes 5 % more filament with the same moves; infill at 300 mm/s under a cap of 8
   mm3/s is slowed to the cap, the walls keep their speed, the print takes longer.
+- **4.27 Settings by height.** `set_height_range {id, from, to, profile}` keeps ranges on the object (opaque to the core, in
+  projects, shown by `info`, one undo step; no overlaps, `{}` removes one). A layer whose middle is in a range prints with the
+  range's fields over the object's own (`commands::range_profiles`, `print::gcode_ranged`): walls, wall generator, infill and its
+  pattern, seam, wall and infill speeds, ironing and fuzzy skin in its plan; nozzle temperature (from the third layer), fan,
+  pressure advance, retraction and flow in the writer, set back above the range. Supports, skins and layer heights stay
+  whole-object. In the window, By height under This object's settings (nozzle, infill, walls). Found and fixed on the way: with a
+  raft the first layer's temperatures never ended; they now end on the third layer printed (the golden rafted case gains its
+  `M104 S210`). Tested through G-code: hotter from the range's first layer and back after, its own retraction, four walls and
+  denser infill inside its range, pressure advance and fan set and set back on Klipper; checks refused; kept in projects.
+- **4.28 Calibration prints.** `calibration {kind, from?, to?, step?}` puts a part on the plate with its settings by height (4.27),
+  one undo step: a temperature tower (8 mm blocks, a 45 degree overhang each, 230 to 190 C by default), two retraction towers
+  (5 mm bands), a hollow square pressure advance tower (a value a millimetre) or a row of flow blocks (a flow ratio each). It
+  returns each band's value and what to judge; the calibration skill teaches each and how to read the result back, and the window
+  has them under More shapes, Calibration. OrcaSlicer's tolerance and maximum volumetric speed tests and a ringing tower for input
+  shaping are not made; input shaping stays the firmware's (Klipper's TEST_RESONANCES and SHAPER_CALIBRATE). Tested through G-code:
+  the tower's nine temperatures in order, the retraction lengths, Klipper's pressure advance values, each flow block pushing more
+  than the one before by its ratio; bad kinds, steps and values refused; one undo takes every block back. Not printed.
+- **4.29 Painted seams and supports.** `paint {id, kind, at?, radius?}` tags the faces within `radius` of a point on the surface
+  (one tag a triangle on the object, base64 in projects, shown by `info`, one undo step; a copy carries it; repair, simplify and
+  edit drop it, as their triangles are new; a project whose paint does not fit its mesh opens without it). `crates/slicer/src/paint.rs`
+  reads it on each layer: the shadow of the downward faces painted "support" or "block", between the middle of the layer below and
+  its own, joins the enforcers' and blockers' regions (4.24); where seam paint crosses a layer's cut gives one point a run of
+  paint, and each wall loop within reach of one starts there, whatever `seam` says. `print::Plate` and `commands::Job` now carry
+  everything the slicer reads from the plate, for the `slice` command and the window alike. In the window, the Paint tool (P):
+  Seam, Support, Block or Erase, a brush size, a click or a drag over an object (one stroke one undo step, a drag that starts off
+  the object turns the view), Clear the picked objects' paint; painted faces are drawn violet, green or red by the processor and
+  by the card (the paint in the top two bits of the face's index). Tested through G-code: every layer's outer and inner wall
+  start at the painted side of a tower whose rule says the rear, and back at the rear when rubbed out; painted support holds up
+  one arm of a tee with supports off, painted block takes one arm's support away with them on; paint of the wrong length is
+  ignored. Not done: painting by a smart fill (a whole flat face or an overhang angle at once) and the brush's circle shown on
+  the model before a click.
+- **4.30 Layer heights by hand.** The plate keeps a curve of layer height against height on the plate (`Scene::layer_heights`,
+  `[z, height]` points read along straight lines; in projects, in `info`, undone with the plate). `layer_heights {action}` sets a
+  band (`"set"`, from, to, height), starts from adaptive layers for the plate's objects (`"adaptive"`, min and max), smooths
+  (`"smooth"`, a weighted mean over `radius` mm) or clears; it answers with the layer count and the thinnest and thickest layer.
+  `crates/slicer/src/heights.rs` turns the curve into the plate's layer tops (each layer as thick as the curve at its middle, kept
+  from 0.02 mm to 0.8 of the nozzle), used in place of `layer_height` and adaptive layers; the first layer stays
+  `first_layer_height`. In the window, View, Layer heights by hand opens a strip beside the 3D view: the layers drawn against height,
+  Adaptive, Smooth and Reset, a drag up the strip sets the heights it covers to the height across, a click a millimetre round
+  it. Tested through G-code: a box with 0.1 mm layers from 4 to 6 mm and 0.2 mm elsewhere, 60 layers; adaptive then smoothed on a
+  ball; kept in a project, one undo; hostile curves; the strip's drag, buttons and undo. Not done: PrusaSlicer's brush that adds or
+  takes away detail gradually with the wheel, and a curve per object (one curve serves the plate, as adaptive layers do).
+- **4.31 Settings modifiers.** `set_modifier {id, kind: "settings"}` makes an object a modifier whose own settings
+  (`set_object_settings`, only `infill_density`, `infill_pattern` and `infill_speed`, `commands::ZONE_FIELDS`) fill the sparse
+  infill of every part inside it, as PrusaSlicer's modifier and Cura's infill mesh do for infill. Sliced on the plate's layers
+  (`print::Zone`), each layer's sparse area split by it: the piece inside filled with the modifier's settings over the part's
+  own, the rest as before; the first of two overlapping modifiers wins. One without settings changes nothing. Drawn yellow; in
+  the window Prints as, Settings modifier, and This object's settings shows only Infill for it. Tested through G-code: a bar
+  whose right half is under a 50 % modifier gets 2.7 times the infill there and the same on the left, the same walls; 0 % leaves
+  the right half hollow; a modifier beside the part changes nothing; a field it may not set is refused by `set_object_settings`
+  and by the slicer. Not done: walls, skins and speeds of their own inside a modifier (Cura's cutting mesh and PrusaSlicer's
+  perimeters by modifier), which need the walls planned for each piece.
 - **5.1 Process presets.** A third kind in `presets.rs`, setting only the layers and the strength (`PROCESS_FIELDS`): 0.12 mm Fine,
   0.20 mm Standard, 0.28 mm Draft and Strong. `slice` and `slice_check` take `process` (after the printer and the filament, before
   `profile`); `slicer_presets` lists them; the window has a Process picker and Save process, kept in the settings file and the
@@ -395,6 +455,18 @@ Priorities:
   front, the right and the top, with Ctrl from the back, the left and the bottom, keeping the target and distance; Home frames
   everything and the period key the picked objects. An orthographic view (Blender's numpad 5) needs the renderer's projection and
   is not done. Tested with egui_kittest: each key's angles, Home and period framing.
+- **7.12 Hide, show, box select and an orthographic view.** As Blender's: H hides the picked objects from the 3D view and unpicks
+  them, Alt+H shows them all (View, Hide picked and Show all; Show beside a hidden one in the plate list). Hidden is the window's
+  (`View::hidden`), not the scene's, so they still print and a new plate starts with none hidden; the processor draws a copy of
+  the scene without them and the card skips their runs, so neither shows nor picks them. B over the view, then a drag, picks every
+  object whose pixels the box covers (from the processor's picture, or one drawn for it when the card drew the view), as well as
+  those picked; Escape, a click or a right click gives up. 5 (View, Orthographic) switches the camera (`Camera::ortho`): parallel
+  rays, the target as large as from the camera's distance, the eye far back, and a depth of `1 - z / ORTHO_FAR`, which runs
+  straight across a face in its picture, so the processor and the card interpolate it exactly as they do one over the distance
+  in perspective; picking, measuring, the gizmo and the G-code preview follow. Tested: the orthographic camera keeps sizes,
+  its rays are parallel and a depth gives its point back; the card against the processor in orthographic on lavapipe (0.06 % of
+  the objects' pixels differ, along edges); in the window H, the list's Show, B over everything and over nothing, Escape, Alt+H
+  and 5. Not done: hiding in the G-code preview, which shows what will print.
 - **8.2 Benchmarks.** Ignored tests that print their times: `crates/slicer/tests/bench.rs` (about 100,000 triangles, three ways)
   and `crates/csg/tests/bench.rs` (a 5,120-triangle sphere with a 384-triangle cylinder, each boolean), plus
   `simplify::tests::heavy`. First run, on the session's machine in a dev build: slicing 6.1 s with the defaults, 9.4 s with gyroid
@@ -474,35 +546,7 @@ and one Klipper printer, measure with calipers, fill in the tables, and fix what
 
 ## 3. Modelling
 
-**3.16 Pivot, orientation and clearing a transform (P2).** Blender turns and scales about the median point, the box's centre, each
-object's own origin or the 3D cursor (its Pivot Point menu), moves along the global or the object's own axes (Transform
-Orientations), and clears location, rotation or scale with Alt+G, R, S. Lamina turns each object about its own centre and moves
-along the plate's axes. How: a pivot choice in the view (median, each its own) for the gizmo's rings and square; local axes for the
-gizmo from the object's transform; `reset_transform {id, what}`.
-
 ## 4. Slicer
-
-**4.27 Settings by height (P2).** PrusaSlicer's height range modifier gives a range of layers its own settings (its own layer
-height too). Lamina's per-object settings are whole-object. How: `set_height_range {id, from, to, profile}`, ranges kept on the
-object, the plan taking each layer's settings from the range it is in; the layer heights stay the plate's at first.
-
-**4.28 Calibration prints (P2).** OrcaSlicer's calibration menu makes a temperature tower (5 C steps), flow ratio blocks, pressure
-advance tower, line and pattern, a retraction tower, a tolerance test and a maximum volumetric speed test; Klipper documents a
-tuning tower for pressure advance and an accelerometer for input shaping. How: commands that build each part and its settings by
-height (4.27), with the calibration skill reading the result back into the presets. Input shaping stays the firmware's (Klipper's
-TEST_RESONANCES and SHAPER_CALIBRATE), with a ringing tower part for printers without an accelerometer.
-
-**4.29 Painted seams and supports (P2).** PrusaSlicer (since 2.3) and OrcaSlicer paint seams and supports on the model's faces. How:
-a per-triangle tag on the object (kept in projects), a brush in the 3D view over the picked faces, the seam choosing among painted
-points first and the support planner treating painted faces as enforcers or blockers (4.24).
-
-**4.30 Variable layer height by hand (P2).** PrusaSlicer's variable layer height takes adaptive layers as a start and lets the user
-add or remove detail by height and smooth it. Lamina has adaptive layers only. How: a layer-height curve kept with the plate, edited
-in a strip beside the 3D view, used as `slice::layers_at` tops.
-
-**4.31 Modifier meshes with settings (P2).** PrusaSlicer's modifier and Cura's infill and cutting meshes give part of an object its
-own infill, walls or speed. How: 4.24's `modifier` with `kind: "settings"` and a profile; the plan splits each layer's region by the
-modifier's slice and plans each part with its settings.
 
 ## 5. Profiles and settings
 
@@ -512,10 +556,6 @@ modifier's slice and plans each part with its settings.
 which Bambu's 2025 authorization keeps to Bambu Connect or a printer in Developer Mode. Its own module in `crates/printer` if done.
 
 ## 7. Desktop
-
-**7.12 Hide, show, box select and an orthographic view (P2).** Blender hides the picked objects with H and shows them with Alt+H, and B drags a box to
-pick. How: a hidden flag in the window (not the scene), skipped by the picture and the slice preview but not the slice; a box
-drag that picks every object whose picture pixels it covers.
 
 ## 8. Quality and infrastructure
 

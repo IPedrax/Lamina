@@ -66,6 +66,11 @@ fragile overhang supported and nothing else). Size and `move` the box so it cove
 to a little above it; `inspect_scene` shows `modifier` for each object, and `"none"` makes it a part again. Check the result with
 `slice_check` and its `features`.
 
+Or paint the faces themselves: `paint {id, kind: "support", at: [x, y, z], radius: 3}` marks the faces within `radius` mm of a
+point on the surface, and a painted face that looks down is held up even with `support` off; `kind: "block"` keeps supports off
+the faces painted, and `"none"` rubs paint out (without `at`, all of it). Points come from `inspect_scene` (an underside is at
+the object's `min` z) or the user's clicks; paint several points for a long edge. `info` counts each object's painted faces.
+
 ## One part supported, the others not
 
 `set_object_settings {id, profile: {support: "everywhere"}}` turns supports on for one object only.
@@ -74,7 +79,3 @@ to a little above it; `inspect_scene` shows `modifier` for each object, and `"no
 
 A brim (`brim_width`) holds the first layer's edges down and a raft (`raft_layers`) lifts the part onto a few coarse layers; neither
 holds up an overhang.
-
-## What is not there yet
-
-Painting support areas on the faces themselves. Say so if the user asks, and place an enforcer or blocker box instead.

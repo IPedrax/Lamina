@@ -13,7 +13,7 @@ struct Globals {
     // The eye, mm.
     eye: vec4<f32>,
     // The picture's right and up, each times the focal length over half the picture's width (or height): `dot(d, right) / ahead`
-    // is where a point `d` from the eye lands across the picture, -1 to 1.
+    // is where a point `d` from the eye lands across the picture, -1 to 1. In orthographic (`forward.w` 1), `dot(d, right)` is.
     right: vec4<f32>,
     up: vec4<f32>,
     forward: vec4<f32>,
@@ -30,12 +30,14 @@ struct Globals {
 
 // The nearest the eye sees, mm (`render::NEAR`): the card's depth is NEAR over the distance ahead, 1 at the near plane.
 const NEAR: f32 = 1.0;
+// The furthest an orthographic camera sees (`render::ORTHO_FAR`): its depth is 1 - ahead / ORTHO_FAR, as the processor's.
+const ORTHO_FAR: f32 = 20000.0;
 
 struct VertexIn {
     @location(0) position: vec3<f32>,
     // The triangle's unit normal; none for the plate and the grid, which are not lit.
     @location(1) normal: vec3<f32>,
-    // The triangle's place in its object's mesh.
+    // The triangle's place in its object's mesh, and its paint in the top two bits (`gpu::paint_bits`).
     @location(2) tri: u32,
     // The object's: its id and colour (red in the low byte), and the transform a drag shows it moved by, as three rows.
     @location(3) object: vec2<u32>,
@@ -57,9 +59,23 @@ fn vs_scene(v: VertexIn) -> VertexOut {
     let world = vec3<f32>(dot(v.row0, p), dot(v.row1, p), dot(v.row2, p));
     let d = world - g.eye.xyz;
     var o: VertexOut;
-    o.clip = vec4<f32>(dot(d, g.right.xyz), dot(d, g.up.xyz), NEAR, dot(d, g.forward.xyz));
-    o.ids = vec2<u32>(v.object.x, v.tri);
-    let base = unpack4x8unorm(v.object.y).xyz * 255.0;
+    let ahead = dot(d, g.forward.xyz);
+    if g.forward.w > 0.5 {
+        o.clip = vec4<f32>(dot(d, g.right.xyz), dot(d, g.up.xyz), 1.0 - ahead / ORTHO_FAR, 1.0);
+    } else {
+        o.clip = vec4<f32>(dot(d, g.right.xyz), dot(d, g.up.xyz), NEAR, ahead);
+    }
+    o.ids = vec2<u32>(v.object.x, v.tri & 0x3fffffffu);
+    // Paint over the object's colour: `render::PAINT`, seam, support and block.
+    let paint = v.tri >> 30u;
+    var base = unpack4x8unorm(v.object.y).xyz * 255.0;
+    if paint == 1u {
+        base = vec3<f32>(175.0, 95.0, 235.0);
+    } else if paint == 2u {
+        base = vec3<f32>(70.0, 190.0, 90.0);
+    } else if paint == 3u {
+        base = vec3<f32>(225.0, 70.0, 70.0);
+    }
     // What is not a part's face (the plate) is level, through the origin: `render::FLAT`.
     o.plane = vec4<f32>(0.0, 0.0, 1.0, 0.0);
     var k = 1.0;
