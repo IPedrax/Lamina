@@ -56,6 +56,8 @@ pub const PROCESS_FIELDS: &[&str] = &[
 ];
 pub const FILAMENT_FIELDS: &[&str] = &[
     "nozzle_temp",
+    "flow_ratio",
+    "max_volumetric_speed",
     "first_layer_nozzle_temp",
     "bed_temp",
     "first_layer_bed_temp",

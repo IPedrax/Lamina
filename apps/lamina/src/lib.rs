@@ -1571,6 +1571,8 @@ impl App {
             field(ui, "Travel, mm/s", "travel_speed", &mut p.travel_speed, 1.0);
             field(ui, "Bridges, mm/s", "bridge_speed", &mut p.bridge_speed, 1.0);
             field(ui, "Slowest when cooling, mm/s", "min_print_speed", &mut p.min_print_speed, 1.0);
+            field(ui, "Most plastic, mm3/s", "max_volumetric_speed", &mut p.max_volumetric_speed, 0.5);
+            field(ui, "Flow ratio", "flow_ratio", &mut p.flow_ratio, 0.005);
         });
         group(ui, ui_msg!("Retraction and travel"), &mut |ui| {
             field(ui, "Retract, mm", "retract_length", &mut p.retract_length, 0.1);

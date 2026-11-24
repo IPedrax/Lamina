@@ -221,6 +221,8 @@ The same text is the tooltip in the window. The names are the ones a profile fil
 | `pressure_advance` | The filament's pressure advance (linear advance on Marlin), sent at the start; 0 leaves the printer's own. | 0 to 2 | 0.0 |
 | `max_acceleration` | The printer's acceleration, mm/s2: the print time estimate plans each move with it. | 10 to 100000 | 1500.0 |
 | `junction_deviation` | How fast the printer takes corners (Marlin's junction deviation, mm); used for the time estimate. | 0 to 1 | 0.013 |
+| `flow_ratio` | The filament's flow: every line's plastic times this; set it from a single-wall box's measured wall. | 0.5 to 1.5 | 1.0 |
+| `max_volumetric_speed` | The most plastic the hot end melts, mm3 a second: a line that would need more prints slower; 0 for no limit. | 0 to 100 | 0.0 |
 | `nozzle` | The nozzle's diameter, mm: lines are this wide, and layers at most 80 % of it. | 0.1 to 2 | 0.4 |
 | `filament_diameter` | The filament's diameter, mm, usually 1.75. | 1 to 3.5 | 1.75 |
 | `start_gcode` | G-code sent before the print; [name] is replaced by that setting, and {expression} by its value. |  | see the window |

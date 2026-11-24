@@ -1626,7 +1626,14 @@ impl Writer<'_> {
             self.line(format!("M106 S{fan:.0}"));
             self.fan_now = fan;
         }
-        let per_mm = per_mm * s.flow;
+        let per_mm = per_mm * s.flow * self.p.flow_ratio;
+        // No faster than the hot end melts: the plastic a second this line asks for at most `max_volumetric_speed`.
+        let section = PI * (self.p.filament_diameter / 2.0).powi(2);
+        let speed = if self.p.max_volumetric_speed > 0.0 && per_mm > 0.0 {
+            s.speed.min(self.p.max_volumetric_speed / (per_mm * section))
+        } else {
+            s.speed
+        };
         self.travel(*first);
         if let (true, Some((from, to))) = (s.spiral, self.spiral) {
             // Each point a little higher, in proportion to the way round, so the loop ends where the next begins.
@@ -1636,7 +1643,7 @@ impl Writer<'_> {
             for q in s.pts.iter().skip(1).chain(std::iter::once(first)) {
                 done += dist(prev, *q);
                 prev = *q;
-                self.climb(*q, from + (to - from) * (done / total), per_mm, s.speed);
+                self.climb(*q, from + (to - from) * (done / total), per_mm, speed);
             }
         } else if self.p.arc_fitting {
             // Runs of points on a circle go out as one arc each; the rest as straight moves.
@@ -1648,21 +1655,21 @@ impl Writer<'_> {
             while i + 1 < path.len() {
                 match fit_arc(&path, i, self.p.arc_tolerance) {
                     Some((j, centre, ccw)) => {
-                        self.arc(&path[i..=j], centre, ccw, per_mm, s.speed);
+                        self.arc(&path[i..=j], centre, ccw, per_mm, speed);
                         i = j;
                     }
                     None => {
-                        self.extrude(path[i + 1], per_mm, s.speed);
+                        self.extrude(path[i + 1], per_mm, speed);
                         i += 1;
                     }
                 }
             }
         } else {
             for q in s.pts.iter().skip(1) {
-                self.extrude(*q, per_mm, s.speed);
+                self.extrude(*q, per_mm, speed);
             }
             if s.closed {
-                self.extrude(*first, per_mm, s.speed);
+                self.extrude(*first, per_mm, speed);
             }
         }
         // A wipe goes on round a loop from where it closed, or back along a line.
@@ -1985,6 +1992,37 @@ mod tests {
         // An enforcer under nothing over air (a box beside the tee) adds nothing.
         let beside = Mesh::cuboid([5.0, 5.0, 5.0]).transformed(&lamina_core::Transform::translate([30.0, 0.0, 0.0]));
         assert!(!gcode_with(&tee, &[], &[(Modifier::SupportEnforcer, beside)], &off).unwrap().features.contains_key("support"));
+    }
+
+    #[test]
+    fn the_flow_ratio_scales_the_plastic_and_the_volumetric_cap_slows_only_what_passes_it() {
+        let p = Profile::default();
+        let plain = gcode(&cube(10.0), &p).unwrap();
+        let more = gcode(&cube(10.0), &Profile { flow_ratio: 1.05, ..p.clone() }).unwrap();
+        assert!((more.filament_mm / plain.filament_mm - 1.05).abs() < 1e-6, "{} {}", more.filament_mm, plain.filament_mm);
+        let moves = |g: &str| {
+            g.lines().filter(|l| l.starts_with("G1 X")).map(|l| l.split(" E").next().unwrap_or(l).to_string()).collect::<Vec<_>>()
+        };
+        assert_eq!(moves(&more.gcode), moves(&plain.gcode), "the same moves");
+        // Infill at 300 mm/s pushes 0.0814 mm2 x 300 = about 24 mm3/s: a cap of 8 slows it to about 98 mm/s, and the walls at 45 mm/s
+        // (3.7 mm3/s) not at all.
+        let fast = Profile { infill_speed: 300.0, ..p.clone() };
+        let capped = Profile { max_volumetric_speed: 8.0, ..fast.clone() };
+        let (a, b) = (gcode(&cube(10.0), &fast).unwrap(), gcode(&cube(10.0), &capped).unwrap());
+        assert!(b.seconds > a.seconds, "slower: {} against {}", b.seconds, a.seconds);
+        assert_eq!(moves(&a.gcode).len(), moves(&b.gcode).len());
+        let section = PI * (p.filament_diameter / 2.0).powi(2);
+        let walls = |g: &str| g.split(";TYPE:outer-wall\n").nth(5).and_then(|w| w.lines().find(|l| l.contains(" F"))).map(str::to_string);
+        assert_eq!(walls(&a.gcode), walls(&b.gcode), "the walls keep their speed");
+        let fastest = b
+            .gcode
+            .lines()
+            .filter(|l| l.starts_with("G1 X") && l.contains(" E") && !l.contains(" E-"))
+            .filter_map(|l| l.split(' ').find_map(|w| w.strip_prefix('F')?.parse::<f64>().ok()))
+            .fold(0.0, f64::max)
+            / 60.0;
+        let per_mm = flow(p.layer_height, p.line_width(), p.filament_diameter);
+        assert!(fastest * per_mm * section <= 8.0 + 1e-3, "{fastest} mm/s pushes {} mm3/s", fastest * per_mm * section);
     }
 
     /// The farthest a first-layer extrusion reaches from the middle of the plate, in x.
