@@ -234,6 +234,12 @@ Priorities:
   holds it, and so does the room under a shelf above the last tool change, while a support standing there is refused. One at a time
   measures the distance between the objects' convex hulls seen from above (`geom::hull_distance`) against `clearance_radius`, so two
   wedges whose boxes overlap but whose slanted sides are 28 mm apart print with a smaller clearance. Both cases were refused before.
+- **4.22 The wait for a tool to heat in the time estimate.** A printer field `heating_rate` (2 C a second by default, about what a
+  40 W heater does near printing temperature). The writer keeps each tool's temperature as it last set it (the first tool at its
+  start temperature, the others at room temperature until warmed to standby, a tool let cool taken to have reached its standby by
+  the time it is chosen again), and each tool change waits the rise over the rate, the head at rest (`time::Planner::wait`). Tested:
+  20 changes from 30 below cost 300 s more at 1 C a second than at 2; a standby 10 below a third of that; a second tool the start
+  never warmed heats from room temperature; one extruder never waits. In the window's Extruders group.
 - **5.1 Process presets.** A third kind in `presets.rs`, setting only the layers and the strength (`PROCESS_FIELDS`): 0.12 mm Fine,
   0.20 mm Standard, 0.28 mm Draft and Strong. `slice` and `slice_check` take `process` (after the printer and the filament, before
   `profile`); `slicer_presets` lists them; the window has a Process picker and Save process, kept in the settings file and the
@@ -422,12 +428,6 @@ after, and keep a test that a chain which passed still passes with the same volu
 
 ## 4. Slicer
 
-**4.22 The wait for a tool to heat in the time estimate (P2).** A tool change waits (`M109`, `M116`) for the new tool to come up
-from its standby temperature, which the estimate leaves out. How: a printer setting `heating_rate` (degrees per second, 2 by
-default, about what a 40 W heater does near printing temperature); each change adds the rise from where the tool was left (its
-standby, or off) to its temperature over the rate, as time the planner waits with the head at rest. Test: two extruders with a
-standby 30 degrees below add 15 s a change at the default rate.
-
 **4.23 Walls of varying width (P2).** A thin feature gets walls of a fixed width and a gap-fill line, so a 0.6 mm fin prints as one
 line of a third more plastic and a 1 mm wall as two walls and a sliver. How, in the spirit of what PrusaSlicer and Cura document
 for Arachne (written from the documentation and the geometry, never their code): `wall_generator`, `"classic"` (today's, the
@@ -461,8 +461,8 @@ which Bambu's 2025 authorization keeps to Bambu Connect or a printer in Develope
   refused, never wrong. A boolean's result keeps the repair's slivers and fans, and works on its world mesh, so its tilted faces are
   flat only to f32.
 - Tool changes are for a nozzle per extruder: a single nozzle fed several filaments (a multi-material unit, with its ramming and
-  long purges) is not handled. The time estimate leaves out the wait for a tool to heat. None of it has run on a printer with two
-  extruders.
+  long purges) is not handled. The time estimate takes a tool let cool to have reached its standby when it is chosen again, so a
+  quick return is counted as longer than it is. None of it has run on a printer with two extruders.
 - Printing one object at a time takes the head as a cylinder of `clearance_radius` and the gantry as a bar across the whole
   plate, and each object as its convex outline from above, so it may refuse an arrangement a real head would clear (a notch the
   head could reach into). It takes one extruder.

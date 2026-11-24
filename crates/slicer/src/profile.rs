@@ -157,6 +157,9 @@ pub struct Profile {
     pub extruder_temps: Vec<f64>,
     /// An idle extruder waits this much below its own temperature, and heats again before it prints.
     pub standby_temp_delta: f64,
+    /// How fast a nozzle heats near its printing temperature, degrees a second: the time estimate waits the rise over this rate at
+    /// each tool change.
+    pub heating_rate: f64,
     /// G-code at each tool change, before the `T` the slicer writes; `[previous_tool]`, `[next_tool]` and `[layer_z]` as well as
     /// the settings.
     pub toolchange_gcode: String,
@@ -270,6 +273,7 @@ impl Default for Profile {
             extruder: 1,
             extruder_temps: Vec::new(),
             standby_temp_delta: 30.0,
+            heating_rate: 2.0,
             toolchange_gcode: String::new(),
             tower_x: 60.0,
             tower_y: 60.0,
@@ -339,6 +343,7 @@ pub const LIMITS: &[(&str, f64, f64)] = &[
     ("extruders", 1.0, 8.0),
     ("extruder", 1.0, 8.0),
     ("standby_temp_delta", 0.0, 300.0),
+    ("heating_rate", 0.1, 50.0),
     ("tower_x", -1000.0, 1000.0),
     ("tower_y", -1000.0, 1000.0),
     ("tower_size", 5.0, 200.0),
@@ -463,6 +468,10 @@ pub const ABOUT: &[(&str, &str)] = &[
     (
         "standby_temp_delta",
         ui_msg!("How far an idle extruder cools below its own temperature while another prints, C; it heats again before it prints."),
+    ),
+    (
+        "heating_rate",
+        ui_msg!("How fast a nozzle heats near its printing temperature, C a second: the time estimate waits for each tool change's rise."),
     ),
     (
         "toolchange_gcode",

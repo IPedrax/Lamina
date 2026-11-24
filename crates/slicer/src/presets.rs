@@ -37,6 +37,7 @@ pub const PRINTER_FIELDS: &[&str] = &[
     "travel_speed",
     "extruders",
     "toolchange_gcode",
+    "heating_rate",
     "clearance_radius",
     "gantry_height",
 ];
