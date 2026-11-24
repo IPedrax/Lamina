@@ -229,6 +229,11 @@ Priorities:
   interface's own layers below; a branch dropped with `from_plate` takes its part of the interface with it. Tested with a roof over
   a solid block and one beside it: from the plate only, nothing is left over the block while the roof beside it keeps its interface;
   everywhere, both keep theirs. A T's arms keep the whole interface as before.
+- **4.21 The purge tower and one-at-a-time printing by outlines.** The tower is refused only where it overlaps what an object prints
+  (its layers and their supports) on a layer the tower rises through, and the error names the object and the layer: an L's notch
+  holds it, and so does the room under a shelf above the last tool change, while a support standing there is refused. One at a time
+  measures the distance between the objects' convex hulls seen from above (`geom::hull_distance`) against `clearance_radius`, so two
+  wedges whose boxes overlap but whose slanted sides are 28 mm apart print with a smaller clearance. Both cases were refused before.
 - **5.1 Process presets.** A third kind in `presets.rs`, setting only the layers and the strength (`PROCESS_FIELDS`): 0.12 mm Fine,
   0.20 mm Standard, 0.28 mm Draft and Strong. `slice` and `slice_check` take `process` (after the printer and the filament, before
   `profile`); `slicer_presets` lists them; the window has a Process picker and Save process, kept in the settings file and the
@@ -417,13 +422,6 @@ after, and keep a test that a chain which passed still passes with the same volu
 
 ## 4. Slicer
 
-**4.21 The purge tower and one-at-a-time printing by outlines (P2).** The tower is refused over an object's bounding box, and one at
-a time takes each object as its box, so both refuse arrangements that would print. How: the tower against the union of each
-object's layers up to the tower's last layer (an overhang above the first layer can still reach over the tower), refused only
-where they overlap; one at a time with the distance between the objects' convex hulls (`geom::hull` of each mesh's points seen from
-above) against `clearance_radius`. Test: an L whose notch holds the tower slices, and two Ls nested closer than their boxes allow
-but farther than the clearance print one at a time.
-
 **4.22 The wait for a tool to heat in the time estimate (P2).** A tool change waits (`M109`, `M116`) for the new tool to come up
 from its standby temperature, which the estimate leaves out. How: a printer setting `heating_rate` (degrees per second, 2 by
 default, about what a 40 W heater does near printing temperature); each change adds the rise from where the tool was left (its
@@ -463,8 +461,9 @@ which Bambu's 2025 authorization keeps to Bambu Connect or a printer in Develope
   refused, never wrong. A boolean's result keeps the repair's slivers and fans, and works on its world mesh, so its tilted faces are
   flat only to f32.
 - Tool changes are for a nozzle per extruder: a single nozzle fed several filaments (a multi-material unit, with its ramming and
-  long purges) is not handled. The purge tower is checked against each object's bounding box, not its outline, and the time
-  estimate leaves out the wait for a tool to heat. None of it has run on a printer with two extruders.
+  long purges) is not handled. The time estimate leaves out the wait for a tool to heat. None of it has run on a printer with two
+  extruders.
 - Printing one object at a time takes the head as a cylinder of `clearance_radius` and the gantry as a bar across the whole
-  plate, and each object as its bounding box, so it may refuse an arrangement a real head would clear. It takes one extruder.
+  plate, and each object as its convex outline from above, so it may refuse an arrangement a real head would clear (a notch the
+  head could reach into). It takes one extruder.
 - Nothing has been printed on real hardware.

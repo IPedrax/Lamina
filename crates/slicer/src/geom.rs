@@ -192,6 +192,30 @@ pub fn hull(points: impl IntoIterator<Item = P2>) -> Loop {
     out
 }
 
+/// How far apart two convex polygons are (each as `hull` gives it): 0 when they touch or overlap, else the shortest distance from a
+/// corner of one to a side of the other.
+pub fn hull_distance(a: &[P2], b: &[P2]) -> f64 {
+    let sides = |c: &[P2]| (0..c.len()).map(|i| (c[i], c[(i + 1) % c.len()])).collect::<Vec<_>>();
+    let (sa, sb) = (sides(a), sides(b));
+    // Two sides that cross, or a corner inside the other: they overlap.
+    let turn = |o: P2, p: P2, q: P2| (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0]);
+    let crosses = |(p, q): (P2, P2), (r, t): (P2, P2)| {
+        let (d1, d2, d3, d4) = (turn(r, t, p), turn(r, t, q), turn(p, q, r), turn(p, q, t));
+        d1 * d2 < 0.0 && d3 * d4 < 0.0
+    };
+    let inside = |c: &[P2], q: P2| c.len() >= 3 && (0..c.len()).all(|i| turn(c[i], c[(i + 1) % c.len()], q) >= 0.0);
+    if sa.iter().any(|&x| sb.iter().any(|&y| crosses(x, y))) || a.iter().any(|&q| inside(b, q)) || b.iter().any(|&q| inside(a, q)) {
+        return 0.0;
+    }
+    let to_side = |q: P2, (p, r): (P2, P2)| {
+        let (d, len2) = ([r[0] - p[0], r[1] - p[1]], dist2(p, r));
+        let t = if len2 < 1e-18 { 0.0 } else { (((q[0] - p[0]) * d[0] + (q[1] - p[1]) * d[1]) / len2).clamp(0.0, 1.0) };
+        dist2(q, [p[0] + t * d[0], p[1] + t * d[1]]).sqrt()
+    };
+    let one_way = |c: &[P2], s: &[(P2, P2)]| c.iter().flat_map(|&q| s.iter().map(move |&x| to_side(q, x))).fold(f64::MAX, f64::min);
+    one_way(a, &sb).min(one_way(b, &sa))
+}
+
 /// A region's area, mm²: outer contours minus holes.
 pub fn area(r: &Region) -> f64 {
     r.iter().flatten().map(|c| crate::slice::area(c)).sum()
@@ -255,6 +279,23 @@ mod tests {
         assert!(hull([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0], [3.0, 3.0]]).len() < 3);
         assert_eq!(hull([[0.0, 0.0], [f64::NAN, 1.0], [1.0, 0.0], [0.0, f64::INFINITY], [0.0, 1.0]]).len(), 3);
         assert!(hull(std::iter::empty()).is_empty());
+    }
+
+    #[test]
+    fn convex_polygons_are_as_far_apart_as_their_nearest_corner_and_side() {
+        let sq = |x: f64, y: f64| hull([[x, y], [x + 10.0, y], [x + 10.0, y + 10.0], [x, y + 10.0]]);
+        assert!((hull_distance(&sq(0.0, 0.0), &sq(15.0, 0.0)) - 5.0).abs() < 1e-12);
+        assert!((hull_distance(&sq(0.0, 0.0), &sq(13.0, 14.0)) - 5.0).abs() < 1e-12, "corner to corner, 3 and 4");
+        assert_eq!(hull_distance(&sq(0.0, 0.0), &sq(5.0, 5.0)), 0.0, "overlapping");
+        assert_eq!(hull_distance(&sq(0.0, 0.0), &sq(10.0, 0.0)), 0.0, "touching");
+        // A plus: two bars crossing with no corner inside the other.
+        let bar = hull([[-10.0, -1.0], [10.0, -1.0], [10.0, 1.0], [-10.0, 1.0]]);
+        let post = hull([[-1.0, -10.0], [1.0, -10.0], [1.0, 10.0], [-1.0, 10.0]]);
+        assert_eq!(hull_distance(&bar, &post), 0.0);
+        // A triangle's slanted side, nearer than the boxes round them would say.
+        let tri = hull([[0.0, 0.0], [10.0, 0.0], [0.0, 10.0]]);
+        let far = sq(8.0, 8.0);
+        assert!((hull_distance(&tri, &far) - 6.0 / 2f64.sqrt()).abs() < 1e-9, "{}", hull_distance(&tri, &far));
     }
 
     #[test]

@@ -90,8 +90,9 @@ changes at most once per extruder per layer: the old one retracts and cools to i
 left to print), the new one is chosen with `T` and waited for at its own temperature (Extruder 2 nozzle, and so on; one left
 alone prints at the nozzle temperature). After each change the new nozzle wipes and purges on the purge tower, a square you place
 with Tower x and y (from the middle of the plate) and Tower size, clear of every object; the tower rises on every layer up to the
-last change so it stays solid. The slice says so when the tower is off the plate, over an object, or too small for the purges of
-one layer. The tool change G-code, in the Start and end G-code group, runs before each `T`. The firmware applies each tool's
+last change so it stays solid. It may stand in an object's notch, or under a part that rises above the tower's last layer.
+The slice says so, naming the object and the layer, when the tower is off the plate, in the way of an object or its support, or
+too small for the purges of one layer. The tool change G-code, in the Start and end G-code group, runs before each `T`. The firmware applies each tool's
 offset; on Klipper, `T0`, `T1` and so on are macros in your printer's config.
 
 ## One object at a time
@@ -99,8 +100,9 @@ offset; on Klipper, `T0`, `T1` and so on are macros in your printer's config.
 Tick Print each object whole, in the One at a time group, to finish each object before the next starts, the shortest first, so
 one that fails spoils none of the others. The print head must not touch what is already printed, so set its size in the same
 group: Head clearance radius is how far it reaches round the nozzle, and Gantry height how far above the nozzle's tip the bar
-that carries it runs. The slice refuses, naming the objects, when two stand closer than the radius, or when an object other
-than the tallest is taller than the gantry. Between objects the head lifts above everything printed before it moves across.
+that carries it runs. The slice refuses, naming the objects, when two stand closer than the radius (measured between their
+outlines seen from above, each wrapped as a rubber band would wrap it), or when an object other than the tallest is taller than
+the gantry. Between objects the head lifts above everything printed before it moves across.
 All the objects print with one extruder.
 
 ## Cutting a part into pieces
