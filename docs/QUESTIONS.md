@@ -2,6 +2,27 @@
 
 Decisions the overnight run took on its own, and what blocked it. Each says the question, the options, the default taken and why.
 
+## 2026-11-24: defaults taken while lifting the known limits
+
+- **R over the 3D view.** R used to turn the picked objects 90 degrees. With Blender's keys (7.10), R over the 3D view starts a turn
+  that follows the pointer (R 90 Enter is the old quarter turn); away from the view R still turns a quarter. Options: keep this;
+  give the quarter turn another key; or make Blender's keys a choice in View. Taken: as described, since R is Blender's turn.
+- **The view keys on the number row.** egui does not tell the numpad from the number row, so 1, 3 and 7 over the 3D view change it
+  wherever they are pressed (Blender's numpad emulation does the same). Digits typed into a field or a keyed transform are not
+  affected. Say if another key set is wanted.
+- **An enforcer works with supports off.** In PrusaSlicer an enforcer counts when supports are on, or with its "for support
+  enforcers only" choice. Lamina's enforcer adds support whatever `support` says, and a blocker takes it away whatever it says.
+  Taken because placing an enforcer is already the choice; say if it should need supports on.
+- **Thread clearance.** An internal thread's tool is 0.2 mm a side wider by default and an external thread has no play, so a printed
+  bolt in a printed nut has 0.2 mm a side. Not printed yet: the first nut will say whether 0.2 is right.
+- **Variable walls stay off.** `wall_generator` is `classic` by default, as the brief asked, until a print shows the variable walls
+  (a thin part's lines meet the classic walls at a junction without a transition).
+- **Tidying booleans to the end.** `tidy_flat` runs until nothing changes (at most 64 rounds); with 8 rounds `chain_score` was 102 of
+  120 against 100, which is within what moving one chain's path changes. Taken: the version that converges, so a result is tidy
+  whatever its size.
+- **Lavapipe in the session.** Mesa's software Vulkan driver was installed with apt in this session to draw the window to pictures;
+  it is not a dependency of Lamina or its build, and CI does not need it (the picture tests are ignored).
+
 ## Pushing was refused, until GitHub was reconnected
 
 During the run every write to GitHub from the cloud session was refused with 403, so the work was committed locally, one commit per
