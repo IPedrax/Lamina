@@ -16,6 +16,9 @@
 //!    Branches that meet go on as one, thicker for the tips they carry and for how far they have come down.
 //! 7. A branch that cannot reach the plate rests on the model, or with `from_plate` is dropped with every tip it carries.
 //! 8. Each layer's branches are the union of their circles, kept out of the model by the gaps as the columns are.
+//!
+//! Supports are planned for the plate, not for one object alone: `solid` is everything on each layer (the object and the others
+//! beside it), which support stands on, keeps the xy gap from and goes round, while only the object's own layers make overhangs.
 
 use serde::{Deserialize, Serialize};
 
@@ -54,9 +57,11 @@ pub struct Layer {
     pub interface: Region,
 }
 
-/// The supports of each layer of an object whose layers are `regions` (bottom first), each `heights[k]` thick.
-pub fn plan(regions: &[Region], heights: &[f64], p: &Profile) -> Vec<Layer> {
-    let n = regions.len();
+/// The supports of each layer of an object whose layers are `regions` (bottom first), each `heights[k]` thick. `solid[k]` is all that
+/// stands on the plate's layer k, this object with the others (the plate's layers are every object's), and holds at least as many
+/// layers as `regions`; for an object printed alone it is `regions`.
+pub fn plan(regions: &[Region], solid: &[Region], heights: &[f64], p: &Profile) -> Vec<Layer> {
+    let n = regions.len().min(solid.len());
     let mut out = vec![Layer::default(); n];
     if p.support == Support::Off || n < 2 {
         return out;
@@ -81,11 +86,12 @@ pub fn plan(regions: &[Region], heights: &[f64], p: &Profile) -> Vec<Layer> {
     if overhang.iter().all(geom::is_empty) {
         return out;
     }
-    // 2. Carried down: what needs holding at layer k is everything above it that is not yet resting on the model.
+    // 2. Carried down: what needs holding at layer k is everything above it that is not yet resting on the model, or on another
+    // object.
     let mut carry = vec![Region::new(); n];
     for k in (0..n - 1).rev() {
         let above = geom::union(&carry[k + 1], &overhang[k + 1]);
-        carry[k] = geom::difference(&above, &regions[k]);
+        carry[k] = geom::difference(&above, &solid[k]);
     }
     if p.support == Support::FromPlate {
         // Only the columns that stand on the plate: each layer keeps what the layer below it keeps.
@@ -96,7 +102,7 @@ pub fn plan(regions: &[Region], heights: &[f64], p: &Profile) -> Vec<Layer> {
     // 3. Gaps: from the walls by the xy gap, and below the model by whole layers.
     let gap_layers = (p.support_z_gap / p.layer_height).round().max(0.0) as usize;
     let near = |from: usize, to: usize| -> Region {
-        (from..=to.min(n - 1)).fold(Region::new(), |a, j| geom::union(&a, &geom::inset(&regions[j], -p.support_xy_gap)))
+        (from..=to.min(n - 1)).fold(Region::new(), |a, j| geom::union(&a, &geom::inset(&solid[j], -p.support_xy_gap)))
     };
     let tree = p.support_style == SupportStyle::Tree;
     let mut roofs = vec![Region::new(); if tree { n } else { 0 }];
@@ -104,7 +110,7 @@ pub fn plan(regions: &[Region], heights: &[f64], p: &Profile) -> Vec<Layer> {
         if geom::is_empty(&carry[k]) {
             continue;
         }
-        let mut area = geom::difference(&carry[k], &geom::inset(&regions[k], -p.support_xy_gap));
+        let mut area = geom::difference(&carry[k], &geom::inset(&solid[k], -p.support_xy_gap));
         if gap_layers > 0 {
             area = geom::difference(&area, &near(k + 1, k + gap_layers));
         }
@@ -124,7 +130,7 @@ pub fn plan(regions: &[Region], heights: &[f64], p: &Profile) -> Vec<Layer> {
         }
     }
     if tree {
-        return trees(regions, heights, p, &roofs, out, &|k| near(k, k + gap_layers));
+        return trees(&solid[..n], heights, p, &roofs, out, &|k| near(k, k + gap_layers));
     }
     out
 }
@@ -155,8 +161,9 @@ fn disc(c: P2, r: f64) -> Loop {
     (0..24).map(|i| std::f64::consts::TAU * f64::from(i) / 24.0).map(|a| [c[0] + r * a.cos(), c[1] + r * a.sin()]).collect()
 }
 
-/// Steps 5 to 8: trees under the columns' `roofs`, keeping the columns' interface. `keep_out(k)`: where support may not be on layer
-/// `k` (the model grown by the xy gap, there and in the z gap above).
+/// Steps 5 to 8: trees under the columns' `roofs`, keeping the columns' interface. `regions`: what stands on each layer (the model
+/// and the objects beside it). `keep_out(k)`: where support may not be on layer `k` (the model grown by the xy gap, there and in the
+/// z gap above).
 fn trees(
     regions: &[Region],
     heights: &[f64],
@@ -318,7 +325,16 @@ fn trees(
             b.grown += heights[j] * GROWTH;
         }
     }
-    // 8. Each layer's circles, of the branches not dropped, out of the model's way, without slivers, and under the interface.
+    // 8. Each layer's circles, of the branches not dropped, out of the model's way, without slivers, and under the interface. From
+    // the plate only, nothing of a branch may hang over what is below it either (its edge would rest on the model's top).
+    let mut below = Region::new();
+    let mut shadows: Vec<Region> = Vec::with_capacity(if p.support == Support::FromPlate { n } else { 0 });
+    if p.support == Support::FromPlate {
+        for r in regions.iter().take(n) {
+            shadows.push(below.clone());
+            below = geom::union(&below, r);
+        }
+    }
     let root = |mut i: usize| {
         for _ in 0..branches.len() {
             if branches[i].into == i {
@@ -336,7 +352,10 @@ fn trees(
             if discs.is_empty() {
                 return Layer { sparse: Region::new(), interface: layer.interface };
             }
-            let tree = geom::difference(&geom::region(&discs), &keep_out(j));
+            let mut tree = geom::difference(&geom::region(&discs), &keep_out(j));
+            if let Some(shadow) = shadows.get(j) {
+                tree = geom::difference(&tree, shadow);
+            }
             let tree = geom::inset(&geom::inset(&tree, w / 2.0), -w / 2.0);
             Layer { sparse: geom::difference(&tree, &layer.interface), interface: layer.interface }
         })
@@ -364,7 +383,7 @@ mod tests {
     fn a_tee_gets_support_under_its_arms_only_stopping_a_gap_below_them() {
         let (regions, heights) = tee();
         let p = Profile { support: Support::Everywhere, ..Profile::default() };
-        let s = plan(&regions, &heights, &p);
+        let s = plan(&regions, &regions, &heights, &p);
         let area = |l: &Layer| geom::area(&l.sparse) + geom::area(&l.interface);
         // Under the arms, two columns 9 - 3 - gap wide, 6 deep; nothing beside the pillar's own footprint.
         let side = 9.0 - 3.0 - p.support_xy_gap;
@@ -375,7 +394,7 @@ mod tests {
         assert!(geom::area(&s[18].interface) > 1.0 && geom::area(&s[17].interface) > 1.0 && geom::area(&s[16].interface) < 1e-6);
         assert!((20..30).all(|k| area(&s[k]) < 1e-6), "nothing above the arms' underside");
         // Off is off.
-        assert!(plan(&regions, &heights, &Profile::default()).iter().all(|l| geom::is_empty(&l.sparse)));
+        assert!(plan(&regions, &regions, &heights, &Profile::default()).iter().all(|l| geom::is_empty(&l.sparse)));
     }
 
     #[test]
@@ -384,23 +403,55 @@ mod tests {
         let mut regions: Vec<Region> = (0..10).map(|_| geom::region(&[rect(-10.0, -3.0, 10.0, 3.0)])).collect();
         regions.extend(tee().0.into_iter().skip(10));
         let heights = vec![0.2; regions.len()];
-        let everywhere = plan(&regions, &heights, &Profile { support: Support::Everywhere, ..Profile::default() });
+        let everywhere = plan(&regions, &regions, &heights, &Profile { support: Support::Everywhere, ..Profile::default() });
         assert!(geom::area(&everywhere[15].sparse) > 10.0, "it stands on the base");
         assert!(everywhere[..10].iter().all(|l| geom::is_empty(&l.sparse) && geom::is_empty(&l.interface)), "none inside the base");
-        let plate = plan(&regions, &heights, &Profile { support: Support::FromPlate, ..Profile::default() });
+        let plate = plan(&regions, &regions, &heights, &Profile { support: Support::FromPlate, ..Profile::default() });
         assert!(plate.iter().all(|l| geom::is_empty(&l.sparse) && geom::is_empty(&l.interface)));
         // Trees alike: on the base, never in it; from the plate only, none.
         let tree = |support| Profile { support, support_style: SupportStyle::Tree, ..Profile::default() };
-        let everywhere = plan(&regions, &heights, &tree(Support::Everywhere));
+        let everywhere = plan(&regions, &regions, &heights, &tree(Support::Everywhere));
         assert!(geom::area(&everywhere[15].sparse) > 0.5, "a tree stands on the base");
         assert!(everywhere[..10].iter().all(|l| geom::is_empty(&l.sparse) && geom::is_empty(&l.interface)), "none inside the base");
         assert!(
-            plan(&regions, &heights, &tree(Support::FromPlate)).iter().all(|l| geom::is_empty(&l.sparse) && geom::is_empty(&l.interface))
+            plan(&regions, &regions, &heights, &tree(Support::FromPlate))
+                .iter()
+                .all(|l| geom::is_empty(&l.sparse) && geom::is_empty(&l.interface))
         );
     }
 
     fn tree() -> Profile {
         Profile { support: Support::Everywhere, support_style: SupportStyle::Tree, ..Profile::default() }
+    }
+
+    #[test]
+    fn support_stands_on_another_object_and_never_inside_it() {
+        // The tee, and beside its pillar another object: a box 2 mm tall (10 layers) under the right arm, from x 4 to 8.
+        let (tee, heights) = tee();
+        let other = geom::region(&[rect(4.0, -3.0, 8.0, 3.0)]);
+        let solid: Vec<Region> = tee.iter().enumerate().map(|(k, r)| if k < 10 { geom::union(r, &other) } else { r.clone() }).collect();
+        for style in [SupportStyle::Columns, SupportStyle::Tree] {
+            let each = |support| Profile { support, support_style: style, ..Profile::default() };
+            let alone = plan(&tee, &tee, &heights, &each(Support::Everywhere));
+            let s = plan(&tee, &solid, &heights, &each(Support::Everywhere));
+            let near = geom::inset(&other, -(Profile::default().support_xy_gap - 0.01));
+            for k in 0..10 {
+                for l in [&s[k], &alone[k]] {
+                    assert!(geom::area(&geom::intersect(&l.sparse, &tee[k])) < 1e-6, "{style:?}: never inside the tee");
+                }
+                assert!(geom::area(&geom::intersect(&s[k].sparse, &near)) < 1e-6, "{style:?}: layer {k} keeps the xy gap from the box");
+            }
+            // Planned alone, the right arm's support went through the box.
+            assert!(geom::area(&geom::intersect(&alone[5].sparse, &other)) > 1.0, "{style:?}: the old plan stood in the box");
+            // Above the box it holds the arm, standing on the box's top.
+            assert!(geom::area(&geom::intersect(&s[12].sparse, &geom::inset(&other, 0.5))) > 0.5, "{style:?}: it stands on the box");
+            // From the plate only, the column over the box is left out, and the left arm's still stands.
+            let plate = plan(&tee, &solid, &heights, &each(Support::FromPlate));
+            // (A strip beside the box, between it and the arm's end, does reach the plate.)
+            let left = geom::region(&[rect(-9.0, -3.0, -3.0, 3.0)]);
+            assert!(plate.iter().all(|l| geom::area(&geom::intersect(&l.sparse, &other)) < 1e-6), "{style:?}: nothing on the box");
+            assert!(geom::area(&geom::intersect(&plate[2].sparse, &left)) > 0.5, "{style:?}: the left arm keeps its support");
+        }
     }
 
     /// The shapes of `r` and the middle of each (the mean of its outer contour's points).
@@ -422,13 +473,13 @@ mod tests {
             .collect();
         let heights = vec![0.2; regions.len()];
         let p = tree();
-        let s = plan(&regions, &heights, &p);
+        let s = plan(&regions, &regions, &heights, &p);
         // On the plate, a trunk on each side, beyond the pillar and its gap.
         let feet = middles(&s[0].sparse);
         assert!(feet.iter().any(|m| m[0] > 4.0) && feet.iter().any(|m| m[0] < -4.0), "{feet:?}");
         assert!(feet.len() <= 4, "the tips gathered into a few trunks: {feet:?}");
         // The interface under the arms is the columns' own; the tree is under it, never beside the arms' underside.
-        let columns = plan(&regions, &heights, &Profile { support_style: SupportStyle::Columns, ..p.clone() });
+        let columns = plan(&regions, &regions, &heights, &Profile { support_style: SupportStyle::Columns, ..p.clone() });
         for k in [97, 98] {
             assert!(geom::area(&s[k].interface) > 50.0 && (geom::area(&s[k].interface) - geom::area(&columns[k].interface)).abs() < 1e-6);
         }
@@ -457,7 +508,7 @@ mod tests {
                 }
             })
             .collect();
-        let s = plan(&regions, &heights_of(&regions), &tree());
+        let s = plan(&regions, &regions, &heights_of(&regions), &tree());
         let top = middles(&s[71].sparse);
         assert!(top.iter().any(|m| m[1] < -2.0) && top.iter().any(|m| m[1] > 2.0), "a branch under each ledge: {top:?}");
         let foot = middles(&s[0].sparse);
@@ -472,7 +523,11 @@ mod tests {
     #[test]
     fn a_part_with_nothing_to_hold_up_gets_no_tree() {
         let regions: Vec<Region> = (0..40).map(|_| geom::region(&[rect(-5.0, -5.0, 5.0, 5.0)])).collect();
-        assert!(plan(&regions, &heights_of(&regions), &tree()).iter().all(|l| geom::is_empty(&l.sparse) && geom::is_empty(&l.interface)));
+        assert!(
+            plan(&regions, &regions, &heights_of(&regions), &tree())
+                .iter()
+                .all(|l| geom::is_empty(&l.sparse) && geom::is_empty(&l.interface))
+        );
         let cube = vec![(1, lamina_core::Mesh::cuboid([10.0, 10.0, 8.0]))];
         let out = crate::print::gcode(&cube, &tree()).unwrap();
         assert!(!out.features.contains_key("support") && !out.gcode.contains(";TYPE:support"), "{:?}", out.features);
@@ -484,7 +539,7 @@ mod tests {
         let regions: Vec<Region> = (0..20)
             .map(|k| if k < 15 { geom::region(&[rect(-3.0, -3.0, 3.0, 3.0)]) } else { geom::region(&[rect(-50.0, -50.0, 50.0, 50.0)]) })
             .collect();
-        let s = plan(&regions, &heights_of(&regions), &Profile { tree_tip_spacing: 1.0, ..tree() });
+        let s = plan(&regions, &regions, &heights_of(&regions), &Profile { tree_tip_spacing: 1.0, ..tree() });
         let tips = s[11].sparse.len();
         assert!((1000..=(MAX_TIPS * 1.3) as usize).contains(&tips), "{tips} tips");
     }
@@ -511,8 +566,8 @@ mod tests {
         // is held up all along its underside, not in strips.
         let grow = |step: f64| -> Vec<Region> { (0..20).map(|k| geom::region(&[rect(0.0, 0.0, 5.0 + step * k as f64, 5.0)])).collect() };
         let p = Profile { support: Support::Everywhere, ..Profile::default() };
-        assert!(plan(&grow(0.1), &[0.2; 20], &p).iter().all(|l| geom::is_empty(&l.sparse) && geom::is_empty(&l.interface)));
-        let steep = plan(&grow(0.4), &[0.2; 20], &p);
+        assert!(plan(&grow(0.1), &grow(0.1), &[0.2; 20], &p).iter().all(|l| geom::is_empty(&l.sparse) && geom::is_empty(&l.interface)));
+        let steep = plan(&grow(0.4), &grow(0.4), &[0.2; 20], &p);
         let total = geom::area(&steep[2].sparse) + geom::area(&steep[2].interface);
         // At layer 2 the slope above reaches 12.6 mm; for the z gap the support keeps clear of layer 3 (5 + 3 x 0.4 mm) by the xy gap.
         assert!((total - (12.6 - (5.0 + 3.0 * 0.4) - 0.6) * 5.0).abs() < 0.5, "{total}");

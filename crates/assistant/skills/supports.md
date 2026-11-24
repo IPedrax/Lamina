@@ -52,6 +52,11 @@ the load then runs along the layers.
 Try them: `slice_check {profile: {support: "from_plate", support_angle: 50}}`. In the result, `features` gives the filament the
 support and its interface take: a large share means another orientation is worth trying.
 
+## Several parts on the plate
+
+Supports are planned for the whole plate: one part's support never stands inside another part, and rests on it where it is in the
+way (or, with `"from_plate"`, is left out there). Leave room under an overhang if the part beneath it should not carry marks.
+
 ## One part supported, the others not
 
 `set_object_settings {id, profile: {support: "everywhere"}}` turns supports on for one object only.

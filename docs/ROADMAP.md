@@ -216,6 +216,14 @@ Priorities:
   closed loop for each of `skirt_loops`, round all the objects at once, never into a notch. Tested with an L and two cubes apart
   (each loop convex, every wall inside it, `skirt_distance` from the outer wall); the golden bridge and two-object cases now have one
   skirt loop round both parts.
+- **4.19 Supports planned across the plate.** Every object is sliced before any support is planned, and `support::plan` takes
+  `solid`, all that stands on each of the plate's layers, beside the object's own layers: an overhang carried down stops on another
+  object, keeps the xy gap from it, is dropped with `from_plate` where it meets one, and a tree goes round it. Objects are planned
+  in order and a later one's support leaves out what an earlier one's already covers, so none is printed twice. With `from_plate`, a
+  tree's branch is also cut back where it would hang over what is below it, so its edge never rests on a model's top. Objects
+  printed one at a time stand apart and are planned alone. Tested with a T whose arm reaches over a lower box: in the G-code, columns
+  and trees put no support in the box and stand on its top; from the plate only, nothing over it; two copies of a T in one place
+  share one support.
 - **5.1 Process presets.** A third kind in `presets.rs`, setting only the layers and the strength (`PROCESS_FIELDS`): 0.12 mm Fine,
   0.20 mm Standard, 0.28 mm Draft and Strong. `slice` and `slice_check` take `process` (after the printer and the filament, before
   `profile`); `slicer_presets` lists them; the window has a Process picker and Save process, kept in the settings file and the
@@ -404,13 +412,6 @@ after, and keep a test that a chain which passed still passes with the same volu
 
 ## 4. Slicer
 
-**4.19 Supports planned across the plate (P1).** Each object's supports are planned alone, so one may stand inside another object.
-How: slice every object first; on each layer the other objects' regions (the plate's layers are shared) join the object's own as
-what support may not enter: an overhang carried down stops on them, the xy gap keeps clear of them, `from_plate` drops a column
-that meets one, and a tree's branches go round them. Objects printed one at a time stand apart and are left as they are. Test: a T
-whose arm overhangs a lower box has no support inside the box, and its support stands on the box's top or, from the plate only,
-is left out there.
-
 **4.20 A tree's interface only where its tips hold it (P1).** A tree keeps the columns' interface, which covers the whole overhang,
 and with `from_plate` a branch dropped for not reaching the plate leaves its corner of the interface over air. How: after the walk,
 each interface layer keeps only what lies within a tip's reach (`tree_tip_spacing` times 0.71, the cell a tip stands for) of a tip
@@ -455,9 +456,8 @@ which Bambu's 2025 authorization keeps to Bambu Connect or a printer in Develope
 
 ## Known limits today
 
-- Walls are constant width; a thin feature gets one gap-fill line, not walls of varying width. Supports, columns or trees, are
-  planned for each object alone, so one may stand in another object's way. A tree's interface covers the whole overhang, as the
-  columns' does, and with `from_plate` a branch left out can leave a corner of it over air.
+- Walls are constant width; a thin feature gets one gap-fill line, not walls of varying width. A tree's interface covers the whole
+  overhang, as the columns' does, and with `from_plate` a branch left out can leave a corner of it over air.
 - The time estimate has not been checked against a real print.
 - A mesh whose holes are too big to fill without guessing stays open, and prints with parts missing, with a warning. STL, 3MF, OBJ and glTF in; STL and 3MF out.
 - Booleans refuse about 1 in 100 random pairs (the rest of a sphere-with-sphere union mostly). Booleans of earlier results are

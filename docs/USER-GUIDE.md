@@ -57,7 +57,9 @@ all, set the environment variable `LAMINA_NO_UPDATE_CHECK=1`: the menu items and
    Standard, 0.28 mm Draft and Strong.
 3. **Check the settings.** The main ones are in Print settings; the rest are in the groups under it (speeds, retraction and travel,
    the skirt, cooling, support details, the machine, and the start and end G-code). Supports are columns or trees: pick Tree
-   beside Supports for branches that gather into a few trunks, less plastic under a tall overhang.
+   beside Supports for branches that gather into a few trunks, less plastic under a tall overhang. They are planned for the whole
+   plate: a support never goes through another object, and stands on it where it is in the way (From the plate only leaves those
+   out).
 4. **Slice.** Press Slice. The window stays usable while it works, and the Preview tab opens when it is done, with the layer count,
    the filament and the print time.
 5. **Look at the preview.** In 3D, every layer up to the one on the slider is drawn, coloured by what it prints: walls, infill,
